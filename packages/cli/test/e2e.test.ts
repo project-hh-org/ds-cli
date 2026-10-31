@@ -95,6 +95,8 @@ describe("fixtures/with-ds-app", () => {
       "components/ui/Button",
       "src/legacy/Button",
     ]);
+    // Settings.tsx의 `@/legacy/Button` 별칭 import는 Admin.tsx의 상대 경로 import와 같은 출처로 합쳐진다.
+    expect(result.components.find((c) => c.importedFrom === "src/legacy/Button")?.count).toBe(2);
     expect(result.health.dsImportShare).toBeGreaterThan(0);
     expect(result.health.duplicateCount).toBe(1);
     expect(report).toMatchSnapshot();

@@ -2,13 +2,23 @@ import { posix } from "node:path";
 import type { File, JSXMemberExpression, JSXOpeningElement } from "@babel/types";
 import type { ComponentUsage } from "../model/component-usage.js";
 import { traverse } from "../parse/tsx.js";
+import { normalizeSpecifier } from "./specifier.js";
 
 const SOURCE_EXTENSION = /\.(?:[cm]?[jt]sx?)$/;
+const PATH_ALIAS = /^[@~]\//;
 
-/** 상대 경로 specifier는 importer 디렉터리 기준으로 풀어 root 상대 POSIX 경로(확장자 없음)로, 패키지명은 그대로 둔다. */
+/**
+ * 상대 경로 specifier는 importer 디렉터리 기준으로 풀어 root 상대 POSIX 경로(확장자 없음)로, 패키지명은 그대로 둔다.
+ * `@/`·`~/` 별칭은 importer가 `src/` 아래면 `src/` 기준(Next·Vite 관례), 아니면 root 기준으로 풀어
+ * 같은 모듈을 상대 경로로 import한 것과 같은 값이 되게 한다.
+ */
 function resolveSource(file: string, specifier: string): string {
-  if (!specifier.startsWith(".")) return specifier;
-  return posix.join(posix.dirname(file), specifier).replace(SOURCE_EXTENSION, "");
+  if (specifier.startsWith(".")) return posix.join(posix.dirname(file), specifier).replace(SOURCE_EXTENSION, "");
+  if (PATH_ALIAS.test(specifier)) {
+    const base = file.startsWith("src/") ? "src/" : "";
+    return `${base}${normalizeSpecifier(specifier)}`.replace(SOURCE_EXTENSION, "");
+  }
+  return specifier;
 }
 
 function memberRoot(name: JSXMemberExpression): string | null {

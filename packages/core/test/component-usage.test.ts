@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { normalizeSpecifier } from "../src/index.js";
 import { extractComponentUsage } from "../src/index/component-usage.js";
 import { parseTsx } from "../src/parse/tsx.js";
 
@@ -76,5 +77,37 @@ describe("extractComponentUsage", () => {
 
   it("소문자 요소와 fragment는 제외한다", () => {
     expect(usages(`const a = <><div /><span /></>;`)).toEqual([]);
+  });
+
+  it("@/ 별칭과 상대 경로로 import한 같은 모듈은 같은 importedFrom으로 해석된다", () => {
+    const result = usages(
+      [
+        `import { Button } from "@/components/ui/button";`,
+        `import { Button as B2 } from "../components/ui/button";`,
+        `import { Card } from "~/components/ui/card.tsx";`,
+        `const a = <><Button /><B2 /><Card /></>;`,
+      ].join("\n"),
+      "src/pages/x.tsx",
+    );
+    expect(result.map((u) => u.importedFrom)).toEqual([
+      "src/components/ui/button",
+      "src/components/ui/button",
+      "src/components/ui/card",
+    ]);
+  });
+
+  it("src/ 밖의 파일에서 쓴 @/ 별칭은 root 기준으로 해석한다", () => {
+    const result = usages(`import { Nav } from "@/components/nav"; const a = <Nav />;`, "app/page.tsx");
+    expect(result[0]?.importedFrom).toBe("components/nav");
+  });
+});
+
+describe("normalizeSpecifier", () => {
+  it("./, ../, @/, ~/, 선행 /, 선행 src/를 벗긴다", () => {
+    expect(normalizeSpecifier("@/components/ui/button")).toBe("components/ui/button");
+    expect(normalizeSpecifier("../../components/ui")).toBe("components/ui");
+    expect(normalizeSpecifier("~/src/ui")).toBe("ui");
+    expect(normalizeSpecifier("src/components/ui")).toBe("components/ui");
+    expect(normalizeSpecifier("@acme/ui")).toBe("@acme/ui");
   });
 });

@@ -16,6 +16,7 @@ export { parseTsx, traverse } from "./parse/tsx.js";
 export type { Index, IndexOptions } from "./index/indexer.js";
 export { indexRepo } from "./index/indexer.js";
 export { extractComponentUsage } from "./index/component-usage.js";
+export { normalizeSpecifier } from "./index/specifier.js";
 export { readIndex, writeIndex } from "./index/store.js";
 export { colorDistance, lengthDistance } from "./match/distance.js";
 export type { ColorCluster } from "./cluster/color-cluster.js";

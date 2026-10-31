@@ -1,4 +1,5 @@
 import path from "node:path";
+import { normalizeSpecifier } from "@ds-cli/core";
 import { isDir, listFiles } from "./fs-utils.js";
 
 export interface DsDetection {
@@ -56,11 +57,6 @@ export async function detectDs(root: string, deps: string[]): Promise<DsDetectio
   }
   if (localDir !== undefined) return { kind: "local", dir: localDir, tokenFiles };
   return { kind: "none", tokenFiles };
-}
-
-/** `./`, `../`, `@/`, `~/`, 선행 `/`, 선행 `src/`를 벗겨 별칭·상대경로 차이를 무시한다. */
-function normalizeSpecifier(spec: string): string {
-  return spec.replace(/^(?:\.{1,2}\/)+/, "").replace(/^[@~]?\//, "").replace(/^src\//, "");
 }
 
 /** import 지정자가 감지된 DS(npm 패키지 또는 로컬 디렉터리)를 가리키는지. */

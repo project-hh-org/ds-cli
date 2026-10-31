@@ -160,14 +160,14 @@ exports[`fixtures/with-ds-app > radix + 로컬 components/ui는 로컬 DS이고,
 - 날짜: <date>
 - state: 1
 - provisional: false
-- 분석한 파일: 4개 (스타일 사용 6, 컴포넌트 사용 2)
+- 분석한 파일: 5개 (스타일 사용 6, 컴포넌트 사용 3)
 
-건강 점수: 66
+건강 점수: 61
 
 산식: 100 × (0.5×(1−hardcodedShare) + 0.3×dsImportShare + 0.2×max(0, 1−duplicateCount/10))
 
 - hardcodedShare: 0.3333
-- dsImportShare: 0.5
+- dsImportShare: 0.3333
 - duplicateCount: 1
 
 ## 하드코딩 색 후보
@@ -184,8 +184,8 @@ exports[`fixtures/with-ds-app > radix + 로컬 components/ui는 로컬 DS이고,
 
 | 컴포넌트 | 출처 | 사용 수 |
 | --- | --- | --- |
+| Button | src/legacy/Button | 2 |
 | Button | components/ui/Button | 1 |
-| Button | src/legacy/Button | 1 |
 
 ## 중복 컴포넌트
 
