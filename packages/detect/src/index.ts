@@ -1,5 +1,5 @@
 import path from "node:path";
-import type { Index } from "@ds-cli/core";
+import type { Index } from "@dsmith/core";
 import { detectDs, type DsDetection } from "./detect-ds.js";
 import { detectFramework, type FrameworkDetection } from "./detect-framework.js";
 import { detectLint, type LintDetection } from "./detect-lint.js";
@@ -38,7 +38,7 @@ export interface DetectResult {
 /**
  * 레포 환경을 감지한다.
  * index가 있으면 비율을 index에서, 없으면 파일 스캔으로 추정하고 `provisional: true`로 표시한다.
- * 기존 `.ds-cli/detect.json`에 overrides가 있으면 새 결과 위에 적용하고 보존한다.
+ * 기존 `.dsmith/detect.json`에 overrides가 있으면 새 결과 위에 적용하고 보존한다.
  */
 export async function detect(rootArg: string, index?: Index): Promise<DetectResult> {
   const root = path.resolve(rootArg);

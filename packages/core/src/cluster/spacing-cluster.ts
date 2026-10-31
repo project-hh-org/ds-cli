@@ -1,4 +1,4 @@
-import type { StyleUsage } from "@ds-cli/extractor-api";
+import type { StyleUsage } from "@dsmith/extractor-api";
 
 export interface SpacingCandidate {
   px: number;

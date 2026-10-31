@@ -1,7 +1,7 @@
 import path from "node:path";
-import { detect, MONOREPO_ROOT_EVIDENCE, writeDetect, type DetectResult } from "@ds-cli/detect";
+import { detect, MONOREPO_ROOT_EVIDENCE, writeDetect, type DetectResult } from "@dsmith/detect";
 
-/** detect를 실행하고 `.ds-cli/detect.json`에 저장한다. 결과는 provisional이다. */
+/** detect를 실행하고 `.dsmith/detect.json`에 저장한다. 결과는 provisional이다. */
 export async function runDetect(root: string): Promise<DetectResult> {
   const absRoot = path.resolve(root);
   const result = await detect(absRoot);

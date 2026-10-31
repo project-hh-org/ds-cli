@@ -1,7 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import fg from "fast-glob";
-import type { ExtractContext, Extractor, StyleUsage } from "@ds-cli/extractor-api";
+import type { ExtractContext, Extractor, StyleUsage } from "@dsmith/extractor-api";
 import type { ComponentUsage } from "../model/component-usage.js";
 import { parseTsx } from "../parse/tsx.js";
 import { extractComponentUsage } from "./component-usage.js";
@@ -18,7 +18,7 @@ export interface Index {
 export interface IndexOptions {
   /** 대상 glob. 지정하면 기본값(모든 tsx, jsx, ts, js 파일)을 대체한다. */
   include?: string[];
-  /** 추가로 제외할 glob. 기본 제외(node_modules, dist, .next, build, coverage, .ds-cli)에 더해지며 대체하지 않는다. */
+  /** 추가로 제외할 glob. 기본 제외(node_modules, dist, .next, build, coverage, .dsmith)에 더해지며 대체하지 않는다. */
   exclude?: string[];
 }
 
@@ -29,7 +29,7 @@ const DEFAULT_EXCLUDE = [
   "**/.next/**",
   "**/build/**",
   "**/coverage/**",
-  "**/.ds-cli/**",
+  "**/.dsmith/**",
 ];
 
 function messageOf(err: unknown): string {

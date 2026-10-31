@@ -1,5 +1,5 @@
-import { parseTsx } from "@ds-cli/core";
-import { runConformance, type ConformanceCase } from "@ds-cli/extractor-api";
+import { parseTsx } from "@dsmith/core";
+import { runConformance, type ConformanceCase } from "@dsmith/extractor-api";
 import { describe, expect, it } from "vitest";
 import { KNOWN_UTILITIES } from "../src/class-parser.js";
 import { RULES } from "../src/extract.js";

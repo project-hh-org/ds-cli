@@ -1,6 +1,6 @@
-import type { Extractor } from "@ds-cli/extractor-api";
-import { inlineStyleExtractor } from "@ds-cli/extractor-inline-style";
-import { tailwindExtractor } from "@ds-cli/extractor-tailwind";
+import type { Extractor } from "@dsmith/extractor-api";
+import { inlineStyleExtractor } from "@dsmith/extractor-inline-style";
+import { tailwindExtractor } from "@dsmith/extractor-tailwind";
 
 /** detect.activeExtractors의 이름 → Extractor. 키는 Extractor.name과 같아야 한다. */
 export const registry: Record<string, () => Extractor> = {

@@ -16,13 +16,13 @@ function mask(markdown: string, root: string): string {
 }
 
 function readJson(root: string, file: string): any {
-  return JSON.parse(fs.readFileSync(path.join(root, ".ds-cli", file), "utf-8"));
+  return JSON.parse(fs.readFileSync(path.join(root, ".dsmith", file), "utf-8"));
 }
 
-// runAudit은 fixture 안에 .ds-cli/를 쓴다. 재현 가능하도록 실행 전후로 지운다.
+// runAudit은 fixture 안에 .dsmith/를 쓴다. 재현 가능하도록 실행 전후로 지운다.
 let root = "";
 function clean(): void {
-  if (root !== "") fs.rmSync(path.join(root, ".ds-cli"), { recursive: true, force: true });
+  if (root !== "") fs.rmSync(path.join(root, ".dsmith"), { recursive: true, force: true });
 }
 beforeEach(() => {
   root = "";

@@ -1,7 +1,7 @@
 {
-  "name": "@ds-cli/extractor-api",
+  "name": "@dsmith/extractor-api",
   "version": "0.0.0",
-  "description": "ds-cli Extractor 플러그인 계약과 conformance 러너",
+  "description": "dsmith Extractor 플러그인 계약과 conformance 러너",
   "type": "module",
   "engines": {
     "node": ">=20"

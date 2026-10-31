@@ -1,9 +1,9 @@
-# ds-cli 설계 스펙 (임시 이름)
+# dsmith 설계 스펙
 
 작성일: 2026-10-31
 상태: 승인 (2026-10-31, 셀프 리뷰 반영: install/ai 경계, 건강 점수 정의)
 
-> 도구 이름 `ds-cli`는 임시다. 첫 릴리스 전에 확정하고 디렉터리·npm 스코프·슬래시 접두사를 한 번에 바꾼다.
+> 도구 이름: dsmith (DS + smith — 디자인 시스템을 만들고 다듬는 도구). npm: `dsmith`, 스코프 `@dsmith/*`.
 
 ## 1. 목적
 
@@ -31,12 +31,12 @@
 | 커맨드 | 역할 | 산출물 |
 | --- | --- | --- |
 | `install` | 사용 중인 AI 도구를 감지해 슬래시 명령(`/ds-*`)과 MCP 서버를 등록. DS 유무와 무관, 보통 가장 먼저 | 도구별 스킬/명령 파일, MCP 설정 |
-| `detect` | 레포를 읽어 스타일링 방식, DS 유무·위치, 프레임워크, 시작 상태를 판별 (모든 분석 커맨드가 먼저 실행) | `.ds-cli/detect.json` — 활성 Extractor, DS 소스 어댑터, 시작 상태 |
+| `detect` | 레포를 읽어 스타일링 방식, DS 유무·위치, 프레임워크, 시작 상태를 판별 (모든 분석 커맨드가 먼저 실행) | `.dsmith/detect.json` — 활성 Extractor, DS 소스 어댑터, 시작 상태 |
 | `audit` | 하드코딩 색·간격·폰트 분포, 중복 컴포넌트 탐지, 색상 클러스터링으로 토큰 후보 추출 | 리포트 1장: DS 건강 점수, 토큰 후보표, 통합 대상 컴포넌트 |
 | `init` | audit 결과로 토큰 파일 + 컴포넌트 스캐폴드 생성 | DS 패키지 초안 |
 | `migrate` | 하드코딩 값 → 토큰 치환 codemod, 중복 컴포넌트 → 표준 컴포넌트 매핑 | 변경 PR |
 | `guard` | ESLint 규칙(하드코딩 재유입 차단), CI 드리프트 검사 | lint 패키지, CI 리포트 |
-| `ai` | DS 소스에서 컴포넌트 카탈로그를 빌드하고 `AGENTS.md`·스킬에 이 레포의 DS 규칙을 주입. MCP 서버는 이 카탈로그를 읽음 (DS가 생긴 뒤, `install` 이후) | `.ds-cli/catalog.json`, `AGENTS.md` DS 섹션 |
+| `ai` | DS 소스에서 컴포넌트 카탈로그를 빌드하고 `AGENTS.md`·스킬에 이 레포의 DS 규칙을 주입. MCP 서버는 이 카탈로그를 읽음 (DS가 생긴 뒤, `install` 이후) | `.dsmith/catalog.json`, `AGENTS.md` DS 섹션 |
 | `usage` | 컴포넌트·variant·토큰별 사용량 집계 | 대시보드 (deprecated 제거 판단) |
 
 `install`과 `ai`의 경계: `install`은 도구 등록(어느 레포에서나 같은 파일), `ai`는 이 레포의 DS 내용(레포마다 다른 파일). 상태 0에서는 `install` → `detect` → `audit` → `init` → `ai` 순이 된다.
@@ -166,11 +166,11 @@ CLI는 측정을 하고, 에이전트는 판단을 돕는다. 스킬이 CLI 커�
 
 ## 7. 실행 방식 — 슬래시 명령이 기본 진입점
 
-설치 후에는 Claude Code·Codex 같은 AI 도구에서 `/ds-*` 슬래시 명령으로 바로 실행한다. 터미널 `npx ds-cli <커맨드>`는 같은 일을 하는 두 번째 진입점, CI는 세 번째다.
+설치 후에는 Claude Code·Codex 같은 AI 도구에서 `/ds-*` 슬래시 명령으로 바로 실행한다. 터미널 `npx dsmith <커맨드>`는 같은 일을 하는 두 번째 진입점, CI는 세 번째다.
 
 ```bash
-npx ds-cli install          # 한 번 — 사용 중인 AI 도구를 감지해 슬래시 명령 + MCP 등록
-npx ds-cli install --global # 레포 무관하게 사용자 레벨에 등록
+npx dsmith install          # 한 번 — 사용 중인 AI 도구를 감지해 슬래시 명령 + MCP 등록
+npx dsmith install --global # 레포 무관하게 사용자 레벨에 등록
 ```
 
 | 슬래시 명령 | 하는 일 | 내부에서 부르는 것 |
@@ -198,7 +198,7 @@ npx ds-cli install --global # 레포 무관하게 사용자 레벨에 등록
 | Gemini CLI | `.gemini/commands/ds-<cmd>.toml` | |
 | 그 외 | `AGENTS.md`만 | 슬래시 명령 없이 문장으로 호출 |
 
-설치 후 일상: 사람이 코드를 쓰면 `guard`(ESLint)가, AI가 코드를 쓰면 MCP가 백그라운드에서 DS를 지킨다. CI는 `npx ds-cli guard --ci`가 PR 코멘트로 재유입을 보고한다.
+설치 후 일상: 사람이 코드를 쓰면 `guard`(ESLint)가, AI가 코드를 쓰면 MCP가 백그라운드에서 DS를 지킨다. CI는 `npx dsmith guard --ci`가 PR 코멘트로 재유입을 보고한다.
 
 ## 8. 배포 방식
 
@@ -206,11 +206,11 @@ npm 공개. 사용자가 설치하는 단위와 레포 안 패키지 단위를 �
 
 | 설치 단위 | 패키지 | 포함 |
 | --- | --- | --- |
-| CLI | `ds-cli` | core + detect + 기본 Extractor 번들 — `npx` 한 번에 동작 |
-| lint | `eslint-plugin-ds-cli` | ESLint 표준 네이밍 |
-| MCP | `@ds-cli/mcp` (또는 `npx ds-cli mcp`) | 단독 바이너리 |
-| 추가 Extractor | `@ds-cli/extractor-*` | detect가 감지했는데 미설치면 설치 안내 |
-| 플러그인 계약 | `@ds-cli/extractor-api`, `@ds-cli/ds-source-api` | 제3자 Extractor 제작용 |
+| CLI | `dsmith` | core + detect + 기본 Extractor 번들 — `npx` 한 번에 동작 |
+| lint | `eslint-plugin-dsmith` | ESLint 표준 네이밍 |
+| MCP | `@dsmith/mcp` (또는 `npx dsmith mcp`) | 단독 바이너리 |
+| 추가 Extractor | `@dsmith/extractor-*` | detect가 감지했는데 미설치면 설치 안내 |
+| 플러그인 계약 | `@dsmith/extractor-api`, `@dsmith/ds-source-api` | 제3자 Extractor 제작용 |
 
 - 스킬·슬래시 명령·AGENTS.md는 `install`이 내려쓰므로 별도 배포 없음. Claude Code 전역 설치용 플러그인 레포만 따로
 - 버전 관리 changesets, GitHub Actions에서 `npm publish --provenance`, 0.x로 시작, MIT, 처음부터 public
@@ -221,7 +221,7 @@ npm 공개. 사용자가 설치하는 단위와 레포 안 패키지 단위를 �
 pnpm 워크스페이스 모노레포.
 
 ```
-ds-cli/
+dsmith/
 ├─ package.json / pnpm-workspace.yaml / tsconfig.base.json
 ├─ packages/
 │  ├─ core/                 # 정규화 모델, 인덱스, 정규화, 매처, 클러스터링, 카탈로그, 규칙, 결정 카드
@@ -234,7 +234,7 @@ ds-cli/
 │  ├─ ds-source-npm/ · ds-source-local/ · ds-source-bootstrap/
 │  ├─ detect/
 │  ├─ render-diff/          # variant 스크린샷 + diff (Playwright)
-│  ├─ cli/                  # npx ds-cli — commands/, report/
+│  ├─ cli/                  # npx dsmith — commands/, report/
 │  ├─ eslint-plugin/
 │  ├─ mcp-server/           # tools/, resources/, budget.ts
 │  ├─ agent-skill/          # commands/*.md (한 소스), renderers/ (도구별), templates/
@@ -244,7 +244,7 @@ ds-cli/
 └─ docs/superpowers/specs/, docs/decisions/ (ADR)
 ```
 
-대상 레포에 남는 파일: `.ds-cli/detect.json`, `.ds-cli/index.json`, `.ds-cli/decisions.json`, `.ds-cli/reports/*`, `AGENTS.md`, `.claude/skills/ds-*/SKILL.md`, `.mcp.json`, `eslint.config.*` 수정.
+대상 레포에 남는 파일: `.dsmith/detect.json`, `.dsmith/index.json`, `.dsmith/decisions.json`, `.dsmith/reports/*`, `AGENTS.md`, `.claude/skills/ds-*/SKILL.md`, `.mcp.json`, `eslint.config.*` 수정.
 
 ## 10. 범위 통제
 
@@ -275,7 +275,7 @@ MVP 구현 순서:
 
 구현 전제(감지 대상이 아닌 고정값): TypeScript, pnpm, npm 배포(`npx` 실행), React 계열 코드베이스 대상. Extractor 구현 순서는 미리 정하지 않고 데모 레포에서 감지된 방식부터 만든다.
 
-- [ ] 도구 이름 확정 (임시: `ds-cli`)
+- [x] 도구 이름 확정: `dsmith`
 - [ ] 데모용 공개 레거시 레포 선정
 - [ ] 벤치마크 프롬프트 수와 사용 에이전트
 - [ ] `install --desktop` 옵션과 `.mcpb` 패키징 포함 여부

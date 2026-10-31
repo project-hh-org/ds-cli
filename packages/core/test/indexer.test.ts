@@ -2,13 +2,13 @@ import fs from "node:fs";
 import fsp from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { inlineStyleExtractor } from "@ds-cli/extractor-inline-style";
+import { inlineStyleExtractor } from "@dsmith/extractor-inline-style";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { indexRepo } from "../src/index/indexer.js";
 
 let tmp: string;
 beforeEach(() => {
-  tmp = fs.mkdtempSync(path.join(os.tmpdir(), "ds-cli-"));
+  tmp = fs.mkdtempSync(path.join(os.tmpdir(), "dsmith-"));
 });
 afterEach(() => {
   fs.rmSync(tmp, { recursive: true, force: true });
@@ -107,12 +107,12 @@ describe("indexRepo", () => {
     expect(empty.files.scanned).toBe(2);
   });
 
-  it(".next, build, coverage, .ds-cli 디렉터리는 기본으로 제외한다", async () => {
+  it(".next, build, coverage, .dsmith 디렉터리는 기본으로 제외한다", async () => {
     put("src/a.tsx", `const a = <p />;`);
     put(".next/server/page.js", `const a = 1;`);
     put("build/out.js", `const a = 1;`);
     put("coverage/lcov.js", `const a = 1;`);
-    put(".ds-cli/cache.js", `const a = 1;`);
+    put(".dsmith/cache.js", `const a = 1;`);
     put("pkg/node_modules/x/index.js", `const a = 1;`);
     const seen: string[] = [];
     const spy = {

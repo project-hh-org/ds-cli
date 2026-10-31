@@ -1,5 +1,5 @@
 {
-  "name": "ds-cli-monorepo",
+  "name": "dsmith-monorepo",
   "private": true,
   "version": "0.0.0",
   "description": "디자인시스템 라이프사이클 CLI — detect · audit · init · migrate · guard · ai · usage (임시 이름)",

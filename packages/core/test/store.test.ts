@@ -7,7 +7,7 @@ import type { Index } from "../src/index/indexer.js";
 
 let tmp: string;
 beforeEach(() => {
-  tmp = fs.mkdtempSync(path.join(os.tmpdir(), "ds-cli-"));
+  tmp = fs.mkdtempSync(path.join(os.tmpdir(), "dsmith-"));
 });
 afterEach(() => {
   fs.rmSync(tmp, { recursive: true, force: true });
@@ -36,7 +36,7 @@ const sample: Index = {
 describe("index store", () => {
   it("writeIndex 후 readIndex가 동일한 객체를 돌려주고 쓴 경로를 반환한다", async () => {
     const written = await writeIndex(tmp, sample);
-    expect(written).toBe(path.join(tmp, ".ds-cli", "index.json"));
+    expect(written).toBe(path.join(tmp, ".dsmith", "index.json"));
     expect(fs.readFileSync(written, "utf-8")).toContain('\n  "root"');
     expect(await readIndex(tmp)).toEqual(sample);
   });

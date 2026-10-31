@@ -8,8 +8,8 @@ import {
   writeIndex,
   type ComponentUsage,
   type Index,
-} from "@ds-cli/core";
-import { detect, sharesFromIndex, writeDetect, type DetectResult } from "@ds-cli/detect";
+} from "@dsmith/core";
+import { detect, sharesFromIndex, writeDetect, type DetectResult } from "@dsmith/detect";
 import type { AuditResult } from "../audit-result.js";
 import { buildExtractors } from "../registry.js";
 import { localDate, renderAuditReport } from "../report/audit-report.js";
@@ -108,7 +108,7 @@ export function computeAudit(detectResult: DetectResult, index: Index): AuditRes
 
 /**
  * 감지(잠정) → 인덱싱 → 재감지(정제) → 집계 → 리포트 저장.
- * 대상 레포에는 `.ds-cli/`만 쓴다.
+ * 대상 레포에는 `.dsmith/`만 쓴다.
  */
 export async function runAudit(rootArg: string): Promise<{ result: AuditResult; reportPath: string }> {
   const root = path.resolve(rootArg);
@@ -124,7 +124,7 @@ export async function runAudit(rootArg: string): Promise<{ result: AuditResult; 
 
   const result = computeAudit(refined, index);
 
-  const reportPath = path.join(root, ".ds-cli", "reports", `audit-${localDate(new Date())}.md`);
+  const reportPath = path.join(root, ".dsmith", "reports", `audit-${localDate(new Date())}.md`);
   await fs.mkdir(path.dirname(reportPath), { recursive: true });
   await fs.writeFile(reportPath, renderAuditReport(result), "utf-8");
   return { result, reportPath };

@@ -11,7 +11,7 @@ export const EXCLUDE = [
   "**/.next/**",
   "**/build/**",
   "**/coverage/**",
-  "**/.ds-cli/**",
+  "**/.dsmith/**",
 ];
 
 export interface SourceFile {

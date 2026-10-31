@@ -1,11 +1,11 @@
-import { normalizeColor, normalizeLength, parseTsx, traverse } from "@ds-cli/core";
+import { normalizeColor, normalizeLength, parseTsx, traverse } from "@dsmith/core";
 import type {
   ExtractContext,
   Extractor,
   StyleProperty,
   StyleSource,
   StyleUsage,
-} from "@ds-cli/extractor-api";
+} from "@dsmith/extractor-api";
 import type { Node } from "@babel/types";
 import { parseClassToken, type ParsedClass } from "./class-parser.js";
 import { defaultTheme } from "./default-theme.js";

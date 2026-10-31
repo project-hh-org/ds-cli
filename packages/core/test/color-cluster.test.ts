@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { StyleSource, StyleUsage } from "@ds-cli/extractor-api";
+import type { StyleSource, StyleUsage } from "@dsmith/extractor-api";
 import { clusterColors } from "../src/cluster/color-cluster.js";
 import type { NormalizedColor } from "../src/model/style-usage.js";
 import { colorDistance } from "../src/match/distance.js";

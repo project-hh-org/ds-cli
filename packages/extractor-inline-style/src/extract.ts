@@ -1,10 +1,10 @@
-import { normalizeColor, normalizeLength, parseTsx, traverse } from "@ds-cli/core";
+import { normalizeColor, normalizeLength, parseTsx, traverse } from "@dsmith/core";
 import type {
   ExtractContext,
   Extractor,
   StyleProperty,
   StyleUsage,
-} from "@ds-cli/extractor-api";
+} from "@dsmith/extractor-api";
 import type { Expression, NumericLiteral, ObjectProperty, PatternLike } from "@babel/types";
 import { registerPatchTarget, write } from "./write.js";
 
