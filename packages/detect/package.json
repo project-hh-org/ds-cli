@@ -1,0 +1,31 @@
+{
+  "name": "@ds-cli/detect",
+  "version": "0.0.0",
+  "description": "ds-cli 레포 환경 감지(스타일링·DS·프레임워크·Storybook·lint)와 시작 상태 판정",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "dependencies": {
+    "@ds-cli/core": "workspace:*",
+    "@ds-cli/extractor-api": "workspace:*",
+    "fast-glob": "^3.3.3"
+  },
+  "devDependencies": {
+    "vitest": "^3.0.0"
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  }
+}

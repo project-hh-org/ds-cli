@@ -1,0 +1,31 @@
+{
+  "name": "ds-cli",
+  "version": "0.0.0",
+  "description": "디자인시스템 라이프사이클 CLI — detect · audit",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "bin": {
+    "ds-cli": "./dist/bin.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "dependencies": {
+    "@ds-cli/core": "workspace:*",
+    "@ds-cli/detect": "workspace:*",
+    "@ds-cli/extractor-api": "workspace:*",
+    "@ds-cli/extractor-inline-style": "workspace:*",
+    "@ds-cli/extractor-tailwind": "workspace:*",
+    "commander": "^12.1.0"
+  },
+  "devDependencies": {
+    "vitest": "^3.0.0"
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  }
+}

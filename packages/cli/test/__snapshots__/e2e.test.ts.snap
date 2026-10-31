@@ -1,0 +1,209 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`fixtures/inline-app > inline-style만 켜지고 동적 값 1건을 센다. background 축약형 색도 색 클러스터에 들어간다 1`] = `
+"# DS Audit
+
+- root: <root>
+- 날짜: <date>
+- state: 0
+- provisional: false
+- 분석한 파일: 3개 (스타일 사용 5, 컴포넌트 사용 0)
+- 동적 값: 1
+
+건강 점수: 20
+
+산식: 100 × (0.5×(1−hardcodedShare) + 0.3×dsImportShare + 0.2×max(0, 1−duplicateCount/10))
+
+- hardcodedShare: 1
+- dsImportShare: 0
+- duplicateCount: 0
+
+## 하드코딩 색 후보
+
+| 대표 hex | 사용 수 | 제안 이름 | 변종 |
+| --- | --- | --- | --- |
+| #10b981 | 1 | teal-400 | #10b981 ×1 |
+| #ef4444 | 1 | red-400 | #ef4444 ×1 |
+
+## 간격 후보
+
+| px | 사용 수 | 스케일 |
+| --- | --- | --- |
+| 12 | 1 | 4px 배수 |
+
+## 컴포넌트 사용량
+
+없음
+
+## 중복 컴포넌트
+
+없음
+
+## 파일별 하드코딩 상위
+
+| 파일 | 하드코딩 수 |
+| --- | --- |
+| src/Alert.tsx | 2 |
+| src/Badge.tsx | 2 |
+
+## 건너뜀
+
+건너뜀 0개
+"
+`;
+
+exports[`fixtures/mixed-app > 두 extractor가 켜지고, 한 파일에서 양쪽 usage가 모두 인덱스에 남는다 1`] = `
+"# DS Audit
+
+- root: <root>
+- 날짜: <date>
+- state: 0
+- provisional: false
+- 분석한 파일: 2개 (스타일 사용 3, 컴포넌트 사용 0)
+- 동적 값: 0
+
+건강 점수: 37
+
+산식: 100 × (0.5×(1−hardcodedShare) + 0.3×dsImportShare + 0.2×max(0, 1−duplicateCount/10))
+
+- hardcodedShare: 0.6667
+- dsImportShare: 0
+- duplicateCount: 0
+
+## 하드코딩 색 후보
+
+| 대표 hex | 사용 수 | 제안 이름 | 변종 |
+| --- | --- | --- | --- |
+| #3b82f6 | 1 | blue-400 | #3b82f6 ×1 |
+
+## 간격 후보
+
+| px | 사용 수 | 스케일 |
+| --- | --- | --- |
+| 12 | 1 | 4px 배수 |
+
+## 컴포넌트 사용량
+
+없음
+
+## 중복 컴포넌트
+
+없음
+
+## 파일별 하드코딩 상위
+
+| 파일 | 하드코딩 수 |
+| --- | --- |
+| src/Banner.tsx | 2 |
+
+## 건너뜀
+
+건너뜀 0개
+"
+`;
+
+exports[`fixtures/tailwind-app > Tailwind만 켜지고, 근접한 파랑 두 개가 한 클러스터로 합쳐진다 1`] = `
+"# DS Audit
+
+- root: <root>
+- 날짜: <date>
+- state: 0
+- provisional: false
+- 분석한 파일: 5개 (스타일 사용 13, 컴포넌트 사용 1)
+- 동적 값: 0
+
+건강 점수: 55
+
+산식: 100 × (0.5×(1−hardcodedShare) + 0.3×dsImportShare + 0.2×max(0, 1−duplicateCount/10))
+
+- hardcodedShare: 0.3077
+- dsImportShare: 0
+- duplicateCount: 0
+
+## 하드코딩 색 후보
+
+| 대표 hex | 사용 수 | 제안 이름 | 변종 |
+| --- | --- | --- | --- |
+| #3b82f6 | 2 | blue-400 | #3b82f6 ×1, #3c83f7 ×1 |
+| #ef4444 | 1 | red-400 | #ef4444 ×1 |
+
+## 간격 후보
+
+| px | 사용 수 | 스케일 |
+| --- | --- | --- |
+| 13 | 1 | 벗어남 |
+
+## 컴포넌트 사용량
+
+| 컴포넌트 | 출처 | 사용 수 |
+| --- | --- | --- |
+| PricingCard | app/components/PricingCard | 1 |
+
+## 중복 컴포넌트
+
+없음
+
+## 파일별 하드코딩 상위
+
+| 파일 | 하드코딩 수 |
+| --- | --- |
+| app/components/PricingCard.tsx | 3 |
+| app/components/CtaButton.tsx | 1 |
+
+## 건너뜀
+
+건너뜀 0개
+"
+`;
+
+exports[`fixtures/with-ds-app > radix + 로컬 components/ui는 로컬 DS이고, Button 중복과 DS import 비율을 보고한다 1`] = `
+"# DS Audit
+
+- root: <root>
+- 날짜: <date>
+- state: 1
+- provisional: false
+- 분석한 파일: 5개 (스타일 사용 6, 컴포넌트 사용 3)
+- 동적 값: 0
+
+건강 점수: 61
+
+산식: 100 × (0.5×(1−hardcodedShare) + 0.3×dsImportShare + 0.2×max(0, 1−duplicateCount/10))
+
+- hardcodedShare: 0.3333
+- dsImportShare: 0.3333
+- duplicateCount: 1
+
+## 하드코딩 색 후보
+
+| 대표 hex | 사용 수 | 제안 이름 | 변종 |
+| --- | --- | --- | --- |
+| #111111 | 2 | gray-900 | #111111 ×2 |
+
+## 간격 후보
+
+없음
+
+## 컴포넌트 사용량
+
+| 컴포넌트 | 출처 | 사용 수 |
+| --- | --- | --- |
+| Button | src/legacy/Button | 2 |
+| Button | components/ui/Button | 1 |
+
+## 중복 컴포넌트
+
+- Button (same-name-different-source)
+
+## 파일별 하드코딩 상위
+
+| 파일 | 하드코딩 수 |
+| --- | --- |
+| src/pages/Admin.tsx | 1 |
+| src/pages/Home.tsx | 1 |
+
+## 건너뜀
+
+건너뜀 0개
+"
+`;

@@ -1,0 +1,27 @@
+export type {
+  ExtractContext,
+  Extractor,
+  StyleProperty,
+  StyleSource,
+  StyleUsage,
+  WritePatch,
+} from "@ds-cli/extractor-api";
+export type { NormalizedColor } from "./model/style-usage.js";
+export { isRatedUsage } from "./model/style-usage.js";
+export type { ComponentUsage } from "./model/component-usage.js";
+export type { Token, TokenSet } from "./model/token.js";
+export { normalizeColor } from "./normalize/color.js";
+export { normalizeLength } from "./normalize/length.js";
+export { parseTsx, traverse } from "./parse/tsx.js";
+export type { Index, IndexOptions } from "./index/indexer.js";
+export { indexRepo } from "./index/indexer.js";
+export { extractComponentUsage } from "./index/component-usage.js";
+export { normalizeSpecifier } from "./index/specifier.js";
+export { readIndex, writeIndex } from "./index/store.js";
+export { colorDistance, lengthDistance } from "./match/distance.js";
+export type { ColorCluster } from "./cluster/color-cluster.js";
+export { clusterColors } from "./cluster/color-cluster.js";
+export type { SpacingCandidate } from "./cluster/spacing-cluster.js";
+export { clusterSpacing } from "./cluster/spacing-cluster.js";
+export type { TokenMatch } from "./match/token-matcher.js";
+export { matchToken } from "./match/token-matcher.js";
