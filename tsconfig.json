@@ -1,4 +1,4 @@
 {
   "files": [],
-  "references": [{ "path": "packages/extractor-api" }]
+  "references": [{ "path": "packages/extractor-api" }, { "path": "packages/core" }]
 }
