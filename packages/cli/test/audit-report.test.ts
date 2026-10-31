@@ -51,12 +51,13 @@ function fixture(): AuditResult {
 describe("renderAuditReport", () => {
   const md = renderAuditReport(fixture());
 
-  it("제목·헤더 블록에 root, 날짜, state, provisional을 표기한다", () => {
+  it("제목·헤더 블록에 root, 날짜, state, provisional, 동적 값 수를 표기한다", () => {
     expect(md).toContain("# DS Audit");
     expect(md).toContain("/repo/app");
     expect(md).toContain("2026-10-31");
     expect(md).toMatch(/state.*1/);
     expect(md).toContain("provisional: false");
+    expect(md).toContain("- 동적 값: 3\n");
   });
 
   it("건강 점수와 산식, 세 입력값을 표기한다", () => {

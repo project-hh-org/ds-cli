@@ -67,6 +67,7 @@ export function renderAuditReport(r: AuditResult): string {
   lines.push(`- state: ${detect.state}`);
   lines.push(`- provisional: ${detect.provisional}`);
   lines.push(`- 분석한 파일: ${index.files.scanned}개 (스타일 사용 ${index.styleCount}, 컴포넌트 사용 ${index.componentCount})`);
+  lines.push(`- 동적 값: ${r.dynamicCount}`);
   const unanalyzed = unanalyzedMethods(r);
   if (unanalyzed.length > 0) lines.push(`- ${unanalyzedLine(unanalyzed)}`);
   lines.push("");
