@@ -11,3 +11,4 @@ export type { ComponentUsage } from "./model/component-usage.js";
 export type { Token, TokenSet } from "./model/token.js";
 export { normalizeColor } from "./normalize/color.js";
 export { normalizeLength } from "./normalize/length.js";
+export { parseTsx, traverse } from "./parse/tsx.js";

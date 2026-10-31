@@ -16,10 +16,14 @@
     "dist"
   ],
   "dependencies": {
+    "@babel/parser": "^7.29.12",
+    "@babel/traverse": "^7.29.12",
+    "@babel/types": "^7.29.11",
     "@ds-cli/extractor-api": "workspace:*",
     "culori": "^4.0.1"
   },
   "devDependencies": {
+    "@types/babel__traverse": "^7.28.0",
     "@types/culori": "^2.1.1",
     "vitest": "^3.0.0"
   },
