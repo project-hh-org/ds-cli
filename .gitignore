@@ -1,0 +1,10 @@
+node_modules/
+dist/
+coverage/
+*.tsbuildinfo
+.DS_Store
+.env
+.env.*
+!.env.example
+# 도구가 대상 레포에 남기는 작업 파일 (fixtures 안에서 생성됨)
+fixtures/**/.ds-cli/
