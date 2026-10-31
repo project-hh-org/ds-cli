@@ -42,6 +42,7 @@ describe("runDetect", () => {
     expect(result.provisional).toBe(true);
     expect(fs.existsSync(path.join(tmp, ".dsmith", "detect.json"))).toBe(true);
     expect(result.activeExtractors).toContain("tailwind");
+    expect(result.extractorsResolved).toBe(true);
   });
 
   it("모노레포 루트면 --root apps/<app> 힌트를 낸다", async () => {
@@ -77,6 +78,7 @@ describe("runAudit", () => {
 
     const saved = JSON.parse(fs.readFileSync(path.join(tmp, ".dsmith", "detect.json"), "utf-8"));
     expect(saved.provisional).toBe(false);
+    expect(saved.extractorsResolved).toBe(true);
 
     const md = fs.readFileSync(reportPath, "utf-8");
     expect(md).toContain("# DS Audit");

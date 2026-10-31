@@ -1,16 +1,14 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import type { Index } from "@dsmith/core";
+import type { ExtractorMeta } from "@dsmith/extractor-api";
 import { isMonorepoRoot, listFiles, type SourceFile } from "./fs-utils.js";
 
-export type StylingMethodName = "tailwind" | "inline-style" | "css-modules" | "styled" | "emotion";
+export type StylingMethodName = "tailwind" | "inline-style" | "css" | "css-modules" | "styled" | "emotion" | "sx";
 
 export interface StylingDetection {
   methods: { name: StylingMethodName; evidence: string[]; share: number }[];
 }
-
-/** 구현된 Extractor 이름. CLI 레지스트리 키, Extractor.name과 같아야 한다. */
-const IMPLEMENTED_EXTRACTORS: StylingMethodName[] = ["tailwind", "inline-style"];
 
 const TAILWIND_CONFIGS = "**/tailwind.config.*";
 const TAILWIND_CSS_IMPORT = /@import\s+(?:url\()?["']tailwindcss(?:\/[^"']*)?["']/;
@@ -18,6 +16,8 @@ const TAILWIND_CSS_IMPORT = /@import\s+(?:url\()?["']tailwindcss(?:\/[^"']*)?["'
 const TAILWIND_DIRECTIVE = /@tailwind\s+(?:base|components|utilities)\b/;
 /** 루트가 모노레포 루트일 때 감지된 방식의 근거에 붙인다. CLI가 `--root apps/<app>` 힌트를 낸다. */
 export const MONOREPO_ROOT_EVIDENCE = "monorepo-root";
+/** 감지된 방식이 없을 때 inline-style을 대신 켜는 근거. */
+const FALLBACK_EVIDENCE = "fallback";
 const EVIDENCE_FILE_CAP = 3;
 
 const INLINE_STYLE = /style=\{\{/;
@@ -25,6 +25,8 @@ const CSS_MODULE_IMPORT = /\.module\.(?:css|scss)["']/;
 const STYLED = /\bstyled\.|\bstyled\(/;
 const EMOTION = /\bcss`|@emotion\//;
 const CLASS_NAME = /className=/;
+const SX_PROP = /sx=\{\{/;
+const MUI_SX_DEPS = ["@mui/material", "@mui/joy"];
 
 function cap(files: string[], label: (f: string) => string): string[] {
   return files.slice(0, EVIDENCE_FILE_CAP).map(label);
@@ -67,11 +69,11 @@ function indexShare(index: Index, extractor: string): number {
 export interface StylingInput {
   deps: string[];
   sources: SourceFile[];
-  index?: Index | undefined;
 }
 
+/** 파일·의존성 근거로 스타일링 방식을 감지한다. Extractor 해석(폴백)·index 비율·모노레포 표시는 호출자가 이어서 적용한다. */
 export async function detectStyling(root: string, input: StylingInput): Promise<StylingDetection> {
-  const { deps, sources, index } = input;
+  const { deps, sources } = input;
   const methods: StylingDetection["methods"] = [];
 
   const twEvidence = await tailwindEvidence(root, deps);
@@ -91,6 +93,12 @@ export async function detectStyling(root: string, input: StylingInput): Promise<
       evidence: cap(inlineFiles, (f) => `style={{ in ${f}`),
       share: fileShare(sources, (s) => INLINE_STYLE.test(s.content)),
     });
+  }
+
+  // 일반 스타일시트. 파일 이름에 `.module.`이 들어가면 css-modules 쪽이다.
+  const cssFiles = (await listFiles(root, ["**/*.{css,scss}"])).filter((f) => !path.posix.basename(f).includes(".module."));
+  if (cssFiles.length > 0) {
+    methods.push({ name: "css", evidence: cap(cssFiles, (f) => f), share: 0 });
   }
 
   const moduleFiles = await listFiles(root, ["**/*.module.{css,scss}"]);
@@ -119,31 +127,48 @@ export async function detectStyling(root: string, input: StylingInput): Promise<
     });
   }
 
-  // Extractor가 있는 방식은 index의 usage 비율로 덮어쓴다. 나머지는 파일 스캔 기반 share를 유지한다.
-  if (index) {
-    for (const m of methods) {
-      if (IMPLEMENTED_EXTRACTORS.includes(m.name)) m.share = indexShare(index, m.name);
-    }
-  }
-
-  // 구현된 Extractor에 대응하는 방식이 하나도 없으면(근거 없음, 또는 css-modules·styled·emotion뿐)
-  // 가장 값싼 inline-style Extractor로 대체한다. activeExtractors가 비는 일은 없다.
-  if (!methods.some((m) => IMPLEMENTED_EXTRACTORS.includes(m.name))) {
+  // MUI sx prop: 의존성만으로는 부족하고, sx={{ 를 쓰는 소스가 있어야 한다.
+  const muiDeps = MUI_SX_DEPS.filter((d) => deps.includes(d));
+  const sxFiles = muiDeps.length > 0 ? sources.filter((s) => SX_PROP.test(s.content)).map((s) => s.file) : [];
+  if (sxFiles.length > 0) {
     methods.push({
-      name: "inline-style",
-      evidence: ["fallback"],
-      share: index ? indexShare(index, "inline-style") : 0,
+      name: "sx",
+      evidence: [...muiDeps.map((d) => `package.json: ${d}`), ...cap(sxFiles, (f) => `sx={{ in ${f}`)],
+      share: fileShare(sources, (s) => SX_PROP.test(s.content)),
     });
-  }
-
-  if (await isMonorepoRoot(root)) {
-    for (const m of methods) m.evidence.push(MONOREPO_ROOT_EVIDENCE);
   }
 
   return { methods };
 }
 
-/** 감지된 방식 중 Extractor가 구현된 것만 돌려준다. */
-export function activeExtractorsOf(styling: StylingDetection): string[] {
-  return IMPLEMENTED_EXTRACTORS.filter((n) => styling.methods.some((m) => m.name === n));
+/** 이번 실행에서 쓴 Extractor(`index.extractors`)가 있는 방식의 share를 index의 usage 비율로 덮어쓴다. 나머지는 파일 스캔 기반 share를 유지한다. */
+export function applyIndexShares(styling: StylingDetection, index: Index): void {
+  for (const m of styling.methods) {
+    if (index.extractors.includes(m.name)) m.share = indexShare(index, m.name);
+  }
+}
+
+/** 루트가 모노레포 루트면 모든 방식의 근거에 `monorepo-root`를 붙인다. */
+export async function markMonorepoRoot(root: string, styling: StylingDetection): Promise<void> {
+  if (!(await isMonorepoRoot(root))) return;
+  for (const m of styling.methods) m.evidence.push(MONOREPO_ROOT_EVIDENCE);
+}
+
+/**
+ * 감지된 방식 중 사용 가능한 Extractor가 있는 것의 이름을 방식 순서대로 돌려준다.
+ * - `available`이 없으면 Extractor 해석 없이 감지된 방식 이름을 그대로 돌려준다(폴백 없음).
+ * - 교집합이 비고 `available`에 `inline-style`이 있으면 `["inline-style"]`로 대체하고,
+ *   `styling.methods`의 inline-style 항목에 `fallback` 근거를 더한다(없으면 만든다).
+ */
+export function activeExtractorsOf(styling: StylingDetection, available: ExtractorMeta[] | undefined): string[] {
+  if (available === undefined) return styling.methods.map((m) => m.name);
+
+  const availableNames = new Set(available.map((a) => a.name));
+  const active = styling.methods.map((m) => m.name).filter((n) => availableNames.has(n));
+  if (active.length > 0 || !availableNames.has("inline-style")) return active;
+
+  const existing = styling.methods.find((m) => m.name === "inline-style");
+  if (existing) existing.evidence.push(FALLBACK_EVIDENCE);
+  else styling.methods.push({ name: "inline-style", evidence: [FALLBACK_EVIDENCE], share: 0 });
+  return ["inline-style"];
 }

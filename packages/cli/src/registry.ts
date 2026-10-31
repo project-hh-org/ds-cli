@@ -1,4 +1,4 @@
-import type { Extractor } from "@dsmith/extractor-api";
+import { metaOf, type Extractor, type ExtractorMeta } from "@dsmith/extractor-api";
 import { inlineStyleExtractor } from "@dsmith/extractor-inline-style";
 import { tailwindExtractor } from "@dsmith/extractor-tailwind";
 
@@ -20,4 +20,9 @@ export function buildExtractors(names: string[]): Extractor[] {
     extractors.push(factory());
   }
   return extractors;
+}
+
+/** 레지스트리의 모든 Extractor 메타. detect에 `available`로 넘겨 activeExtractors를 해석하게 한다. */
+export function metas(): ExtractorMeta[] {
+  return Object.values(registry).map((factory) => metaOf(factory()));
 }

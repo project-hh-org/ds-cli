@@ -4,7 +4,7 @@ import { isDir, listFiles } from "./fs-utils.js";
 
 export interface DsDetection {
   kind: "npm" | "local" | "none";
-  /** npm DS: 첫 번째로 매칭된 패키지 */
+  /** npm DS: 대표 패키지. 아이콘·x-*·styled-engine·utils·system이 아닌 첫 매칭 패키지(모두 해당하면 첫 번째) */
   packageName?: string;
   /** npm DS: DS로 판정되는 모든 의존성(import 집계에 쓴다) */
   packageNames?: string[];
@@ -15,6 +15,8 @@ export interface DsDetection {
 const NPM_DS_PREFIXES = ["@radix-ui/", "@mantine/", "@chakra-ui/", "@mui/"];
 /** 완성된 DS가 아니라 로컬 DS 아래에 깔리는 프리미티브 라이브러리(shadcn 패턴). */
 const PRIMITIVE_PREFIXES = ["@radix-ui/", "@headlessui/"];
+/** 대표 패키지로 고르지 않는 보조 패키지(아이콘, @mui/x-*, styled-engine, utils, system). */
+const SECONDARY_PACKAGE = /icons|\/x-|styled-engine|utils|system/;
 const LOCAL_DS_DIRS = ["components/ui", "src/components/ui", "src/ui", "src/design-system", "packages/ui"];
 const TOKEN_FILES = "**/{tokens.css,tokens.ts,tokens.json,theme.ts,theme.css,design-tokens.*}";
 
@@ -51,9 +53,9 @@ export async function detectDs(root: string, deps: string[]): Promise<DsDetectio
 
   // 프리미티브(@radix-ui, @headlessui)만 있고 로컬 DS 디렉터리가 있으면 로컬 디렉터리가 DS다.
   const onlyPrimitives = packageNames.every(isPrimitive);
-  const [first] = packageNames;
-  if (first !== undefined && !(onlyPrimitives && localDir !== undefined)) {
-    return { kind: "npm", packageName: first, packageNames, tokenFiles };
+  const representative = packageNames.find((n) => !SECONDARY_PACKAGE.test(n)) ?? packageNames[0];
+  if (representative !== undefined && !(onlyPrimitives && localDir !== undefined)) {
+    return { kind: "npm", packageName: representative, packageNames, tokenFiles };
   }
   if (localDir !== undefined) return { kind: "local", dir: localDir, tokenFiles };
   return { kind: "none", tokenFiles };

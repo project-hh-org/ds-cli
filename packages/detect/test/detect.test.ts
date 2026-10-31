@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { ComponentUsage, Index, StyleUsage } from "@dsmith/core";
+import type { ExtractorMeta } from "@dsmith/extractor-api";
 import { decideState, detect, readDetect, writeDetect } from "../src/index.js";
 import { sharesFromIndex, sharesFromSources } from "../src/detect-state.js";
 import { loadSources } from "../src/fs-utils.js";
@@ -28,7 +29,14 @@ function repo(files: Record<string, string | null>): void {
   }
 }
 
-function pkg(deps: Record<string, string> = {}, devDeps: Record<string, string> = {}): string {
+function meta(name: string): ExtractorMeta {
+  return { name, files: ["**/*.{tsx,jsx,ts,js}"], parses: "tsx" };
+}
+
+/** 현재 CLI 레지스트리와 같은 두 Extractor. */
+const AVAILABLE: ExtractorMeta[] = [meta("tailwind"), meta("inline-style")];
+
+function pkg(deps:Record<string, string> = {}, devDeps: Record<string, string> = {}): string {
   return JSON.stringify({ name: "app", dependencies: deps, devDependencies: devDeps });
 }
 
@@ -115,7 +123,7 @@ describe("styling 감지", () => {
 
   it("pnpm-workspace.yaml이 있어도 monorepo-root 근거를 더한다 (Tailwind가 없어도 폴백 방식에 붙는다)", async () => {
     repo({ "package.json": pkg(), "pnpm-workspace.yaml": "packages:\n  - apps/*\n" });
-    const r = await detect(tmp);
+    const r = await detect(tmp, undefined, { available: AVAILABLE });
     expect(r.styling.methods).toEqual([{ name: "inline-style", evidence: ["fallback", "monorepo-root"], share: 0 }]);
   });
 
@@ -131,7 +139,7 @@ describe("styling 감지", () => {
       "src/A.tsx": "export const A = () => <div style={{ color: 'red' }} />;",
       "src/B.module.css": ".b{}",
     });
-    const r = await detect(tmp);
+    const r = await detect(tmp, undefined, { available: AVAILABLE });
     const names = r.styling.methods.map((m) => m.name);
     expect(names).toEqual(["inline-style", "css-modules", "styled", "emotion"]);
     expect(r.styling.methods.find((m) => m.name === "css-modules")?.evidence).toEqual(["src/B.module.css"]);
@@ -143,7 +151,7 @@ describe("styling 감지", () => {
 
   it("css-modules·styled·emotion 근거만 있어도 activeExtractors는 inline-style로 폴백한다", async () => {
     repo({ "package.json": pkg({ "styled-components": "^6" }), "src/A.tsx": "export const A = 1;" });
-    const r = await detect(tmp);
+    const r = await detect(tmp, undefined, { available: AVAILABLE });
     expect(r.activeExtractors).toEqual(["inline-style"]);
     expect(r.styling.methods.map((m) => m.name)).toEqual(["styled", "inline-style"]);
     expect(r.styling.methods.find((m) => m.name === "inline-style")?.evidence).toEqual(["fallback"]);
@@ -152,9 +160,121 @@ describe("styling 감지", () => {
 
   it("근거가 하나도 없으면 inline-style을 fallback 근거와 함께 활성화한다", async () => {
     repo({ "package.json": pkg(), "src/A.tsx": "export const A = () => <div />;" });
-    const r = await detect(tmp);
+    const r = await detect(tmp, undefined, { available: AVAILABLE });
     expect(r.styling.methods).toEqual([{ name: "inline-style", evidence: ["fallback"], share: 0 }]);
     expect(r.activeExtractors).toEqual(["inline-style"]);
+  });
+
+  it("(a) available 없이 호출하면 activeExtractors는 방식 이름 그대로이고 폴백이 없으며 extractorsResolved는 false", async () => {
+    repo({ "package.json": pkg({ "styled-components": "^6" }), "src/A.tsx": "export const A = 1;" });
+    const r = await detect(tmp);
+    expect(r.activeExtractors).toEqual(["styled"]);
+    expect(r.extractorsResolved).toBe(false);
+    expect(r.styling.methods.map((m) => m.name)).toEqual(["styled"]);
+  });
+
+  it("available를 주면 extractorsResolved는 true", async () => {
+    repo({ "package.json": pkg() });
+    expect((await detect(tmp, undefined, { available: AVAILABLE })).extractorsResolved).toBe(true);
+  });
+
+  it("(b) available에 inline-style이 없으면 맞는 Extractor가 없어도 폴백하지 않는다", async () => {
+    repo({ "package.json": pkg({ "styled-components": "^6" }), "src/A.tsx": "export const A = 1;" });
+    const r = await detect(tmp, undefined, { available: [meta("tailwind")] });
+    expect(r.activeExtractors).toEqual([]);
+    expect(r.styling.methods.map((m) => m.name)).toEqual(["styled"]);
+  });
+
+  it("available에 있는 방식만 교집합으로 활성화한다 (방식 순서 유지)", async () => {
+    repo({
+      "package.json": pkg({ "styled-components": "^6" }, { tailwindcss: "^3" }),
+      "src/A.tsx": "export const A = () => <div style={{ color: 'red' }} />;",
+    });
+    const r = await detect(tmp, undefined, { available: [meta("inline-style"), meta("styled"), meta("tailwind")] });
+    expect(r.activeExtractors).toEqual(["tailwind", "inline-style", "styled"]);
+  });
+
+  it("교집합이 비면(css만 감지, available은 inline-style뿐) inline-style로 폴백하고 방식 목록에 fallback 항목을 더한다", async () => {
+    repo({ "package.json": pkg(), "src/app.css": "a{color:red}" });
+    const r = await detect(tmp, undefined, { available: [meta("inline-style")] });
+    expect(r.activeExtractors).toEqual(["inline-style"]);
+    expect(r.styling.methods.map((m) => m.name)).toEqual(["css", "inline-style"]);
+    expect(r.styling.methods.find((m) => m.name === "inline-style")?.evidence).toEqual(["fallback"]);
+  });
+
+  it("(c) @mui/material 의존성과 sx={{ 가 있는 파일이 있으면 sx 방식", async () => {
+    repo({
+      "package.json": pkg({ "@mui/material": "^6" }),
+      "src/x.tsx": "export const X = () => <Box sx={{ p: 2 }} />;",
+      "src/y.tsx": "export const Y = () => <Box />;",
+    });
+    const r = await detect(tmp);
+    const sx = r.styling.methods.find((m) => m.name === "sx");
+    expect(sx?.evidence).toEqual(["package.json: @mui/material", "sx={{ in src/x.tsx"]);
+    expect(sx?.share).toBe(0.5);
+  });
+
+  it("sx는 @mui/joy 의존성도 인정하고, 의존성만 있고 sx={{ 가 없으면 감지하지 않는다", async () => {
+    repo({ "package.json": pkg({ "@mui/joy": "^5" }), "src/x.tsx": "export const X = () => <Box sx={{ p: 2 }} />;" });
+    expect((await detect(tmp)).styling.methods.find((m) => m.name === "sx")?.evidence).toEqual([
+      "package.json: @mui/joy",
+      "sx={{ in src/x.tsx",
+    ]);
+    fs.rmSync(path.join(tmp, "src"), { recursive: true });
+    repo({ "src/x.tsx": "export const X = () => <Box />;" });
+    expect((await detect(tmp)).styling.methods.some((m) => m.name === "sx")).toBe(false);
+  });
+
+  it("MUI 의존성 없이 sx={{ 만 있으면 sx가 아니다", async () => {
+    repo({ "package.json": pkg(), "src/x.tsx": "export const X = () => <Box sx={{ p: 2 }} />;" });
+    expect((await detect(tmp)).styling.methods.some((m) => m.name === "sx")).toBe(false);
+  });
+
+  it("(d) .module.이 아닌 css/scss 파일이 있으면 css 방식이고 근거는 파일 경로(최대 3개)", async () => {
+    repo({
+      "package.json": pkg(),
+      "styles/app.css": "a{}",
+      "styles/b.scss": "a{}",
+      "styles/c.css": "a{}",
+      "styles/d.css": "a{}",
+      "node_modules/x/index.css": "a{}",
+    });
+    const r = await detect(tmp);
+    expect(r.styling.methods.find((m) => m.name === "css")?.evidence).toEqual([
+      "styles/app.css",
+      "styles/b.scss",
+      "styles/c.css",
+    ]);
+  });
+
+  it("(d) .module.css만 있으면 css 방식이 없고 css-modules만 있다", async () => {
+    repo({ "package.json": pkg(), "src/a.module.css": ".a{}", "src/b.module.scss": ".b{}" });
+    const names = (await detect(tmp)).styling.methods.map((m) => m.name);
+    expect(names).toContain("css-modules");
+    expect(names).not.toContain("css");
+  });
+
+  it("index.extractors에 이름이 있는 모든 방식의 share는 index의 usage 비율 (css·sx 포함)", async () => {
+    repo({
+      "package.json": pkg({ "@mui/material": "^6" }),
+      "src/x.tsx": "export const X = () => <Box sx={{ p: 2 }} />;",
+      "styles/app.css": "a{}",
+    });
+    const index: Index = {
+      ...indexOf([style("css", "hardcoded"), style("css", "hardcoded"), style("sx", "hardcoded"), style("inline-style", "hardcoded")], []),
+      extractors: ["css", "sx", "inline-style"],
+    };
+    const r = await detect(tmp, index);
+    const share = (n: string) => r.styling.methods.find((m) => m.name === n)?.share;
+    expect(share("css")).toBe(0.5);
+    expect(share("sx")).toBe(0.25);
+  });
+
+  it("폴백으로 만들어진 inline-style 항목의 share도 index에서 계산한다", async () => {
+    repo({ "package.json": pkg() });
+    const index = indexOf([style("inline-style", "hardcoded"), style("tailwind", "token")], []);
+    const r = await detect(tmp, index, { available: AVAILABLE });
+    expect(r.styling.methods).toEqual([{ name: "inline-style", evidence: ["fallback"], share: 0.5 }]);
   });
 });
 
@@ -221,6 +341,18 @@ describe("ds 감지: 로컬 DS 우선 판정", () => {
     const r = await detect(tmp);
     expect(r.ds.kind).toBe("npm");
     expect(r.ds.packageNames).toEqual(["@radix-ui/react-slot", "@mantine/core"]);
+  });
+
+  it("(e) 대표 패키지는 icons·x-*·styled-engine·utils·system이 아닌 첫 패키지 (@mui/icons-material이 먼저 선언돼도 @mui/material)", async () => {
+    repo({ "package.json": pkg({ "@mui/icons-material": "^6", "@mui/material": "^6" }) });
+    const r = await detect(tmp);
+    expect(r.ds.packageName).toBe("@mui/material");
+    expect(r.ds.packageNames).toEqual(["@mui/icons-material", "@mui/material"]);
+  });
+
+  it("대표 패키지 후보가 모두 제외 대상이면 첫 번째 패키지", async () => {
+    repo({ "package.json": pkg({ "@mui/icons-material": "^6", "@mui/system": "^6" }) });
+    expect((await detect(tmp)).ds.packageName).toBe("@mui/icons-material");
   });
 
   it("프리미티브만 있고 로컬 디렉터리가 없으면 npm", async () => {
@@ -381,7 +513,7 @@ describe("손상된 입력과 빈 레포", () => {
   });
 
   it("완전히 빈 디렉터리: state 0, provisional true, 예외 없음", async () => {
-    const r = await detect(tmp);
+    const r = await detect(tmp, undefined, { available: AVAILABLE });
     expect(r.state).toBe(0);
     expect(r.provisional).toBe(true);
     expect(r.activeExtractors).toEqual(["inline-style"]);
@@ -434,7 +566,7 @@ describe("index 없이(provisional) 감지", () => {
 
   it("evidence만 있고 마커 파일이 없는 방식은 share 0", async () => {
     repo({ "package.json": pkg({ "styled-components": "^6" }), "src/A.tsx": "export const A = 1;" });
-    const r = await detect(tmp);
+    const r = await detect(tmp, undefined, { available: AVAILABLE });
     // 구현된 Extractor가 없으므로 inline-style 폴백이 함께 붙는다
     expect(r.styling.methods).toEqual([
       { name: "styled", evidence: ["package.json: styled-components"], share: 0 },

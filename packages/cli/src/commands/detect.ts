@@ -1,10 +1,11 @@
 import path from "node:path";
 import { detect, MONOREPO_ROOT_EVIDENCE, writeDetect, type DetectResult } from "@dsmith/detect";
+import { metas } from "../registry.js";
 
 /** detect를 실행하고 `.dsmith/detect.json`에 저장한다. 결과는 provisional이다. */
 export async function runDetect(root: string): Promise<DetectResult> {
   const absRoot = path.resolve(root);
-  const result = await detect(absRoot);
+  const result = await detect(absRoot, undefined, { available: metas() });
   await writeDetect(absRoot, result);
   return result;
 }

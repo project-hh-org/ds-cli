@@ -11,7 +11,7 @@ import {
 } from "@dsmith/core";
 import { detect, sharesFromIndex, writeDetect, type DetectResult } from "@dsmith/detect";
 import type { AuditResult } from "../audit-result.js";
-import { buildExtractors } from "../registry.js";
+import { buildExtractors, metas } from "../registry.js";
 import { localDate, renderAuditReport } from "../report/audit-report.js";
 
 export type { AuditResult } from "../audit-result.js";
@@ -113,13 +113,13 @@ export function computeAudit(detectResult: DetectResult, index: Index): AuditRes
 export async function runAudit(rootArg: string): Promise<{ result: AuditResult; reportPath: string }> {
   const root = path.resolve(rootArg);
 
-  const provisional = await detect(root);
+  const provisional = await detect(root, undefined, { available: metas() });
   await writeDetect(root, provisional);
 
   const index = await indexRepo(root, buildExtractors(provisional.activeExtractors));
   await writeIndex(root, index);
 
-  const refined = await detect(root, index);
+  const refined = await detect(root, index, { available: metas() });
   await writeDetect(root, refined);
 
   const result = computeAudit(refined, index);
