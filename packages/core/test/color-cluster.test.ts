@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { StyleSource, StyleUsage } from "@ds-cli/extractor-api";
 import { clusterColors } from "../src/cluster/color-cluster.js";
+import type { NormalizedColor } from "../src/model/style-usage.js";
 import { colorDistance } from "../src/match/distance.js";
 import { normalizeColor } from "../src/normalize/color.js";
 
@@ -41,6 +42,13 @@ describe("colorDistance", () => {
   it("거의 같은 파랑은 작은 거리, 파랑과 빨강은 큰 거리를 가진다", () => {
     expect(colorDistance(norm("#3B82F6"), norm("#3C83F7"))).toBeLessThan(0.01);
     expect(colorDistance(norm("#3B82F6"), norm("#EF4444"))).toBeGreaterThan(0.2);
+  });
+
+  it("hue가 0/360 경계를 넘어도 가까운 색은 가깝다", () => {
+    const at = (h: number): NormalizedColor => ({ kind: "color", hex: "#000000", l: 0.6, c: 0.15, h });
+    const wrapped = colorDistance(at(359), at(1));
+    expect(wrapped).toBeLessThan(0.03);
+    expect(wrapped).toBeLessThan(colorDistance(at(1), at(20)));
   });
 
   it("교환법칙이 성립한다", () => {
@@ -128,5 +136,29 @@ describe("clusterColors hue 구간", () => {
 
   it("채도가 낮으면 hue와 무관하게 gray다", () => {
     expect(nameOf("oklch(0.6 0.02 265)")).toBe("gray");
+  });
+});
+
+describe("clusterColors hue 구간 경계", () => {
+  function nameAt(h: number, c = 0.15): string | undefined {
+    const usage: StyleUsage = {
+      ...colorUsage("#000000"),
+      normalized: { kind: "color", hex: "#123456", l: 0.6, c, h },
+    };
+    return clusterColors([usage])[0]?.suggestedName.split("-")[0];
+  }
+
+  it("구간 경계에서 올바른 이름을 고른다", () => {
+    expect(nameAt(0)).toBe("pink");
+    expect(nameAt(9.9)).toBe("pink");
+    expect(nameAt(10)).toBe("red");
+    expect(nameAt(39.9)).toBe("red");
+    expect(nameAt(40)).toBe("orange");
+    expect(nameAt(359.9)).toBe("pink");
+  });
+
+  it("채도 0.03 미만은 gray, 0.03 이상은 hue 이름이다", () => {
+    expect(nameAt(260, 0.0299)).toBe("gray");
+    expect(nameAt(260, 0.03)).toBe("blue");
   });
 });

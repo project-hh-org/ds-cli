@@ -22,6 +22,7 @@ function pickNearest(
   return best;
 }
 
+/** 거리가 같으면 입력 순서상 앞선 토큰이 선택되며, 필요하면 호출 측에서 카테고리별로 tokens를 미리 거른다. */
 export function matchToken(
   normalized: StyleUsage["normalized"],
   tokens: Token[],

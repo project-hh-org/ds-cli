@@ -62,6 +62,13 @@ describe("clusterSpacing", () => {
     ]);
   });
 
+  it("반올림 결과가 -0이면 0으로 정규화한다", () => {
+    const result = clusterSpacing([lengthUsage(-0.001), lengthUsage(0)]);
+    expect(result).toHaveLength(1);
+    expect(result[0]?.count).toBe(2);
+    expect(Object.is(result[0]?.px, 0)).toBe(true);
+  });
+
   it("count와 onScale이 같으면 px 오름차순이다", () => {
     const usages = [20, 8, 12].map((px) => lengthUsage(px));
     expect(clusterSpacing(usages).map((c) => c.px)).toEqual([8, 12, 20]);
