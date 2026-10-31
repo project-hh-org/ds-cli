@@ -1,4 +1,5 @@
 import { runConformance, type ConformanceCase } from "@ds-cli/extractor-api";
+import { parseTsx } from "@ds-cli/core";
 import { describe, expect, it } from "vitest";
 import { cssPropertyToStyleProperty, inlineStyleExtractor } from "../src/index.js";
 
@@ -26,6 +27,13 @@ const cases: ConformanceCase[] = [
     code: `export const C = () => <div style={{ color: theme.primary }} />;`,
     expect: [
       { property: "color", raw: "theme.primary", source: "dynamic", normalized: { kind: "unknown" } },
+    ],
+  },
+  {
+    file: "d.tsx",
+    code: `export const D = () => <div style={{ margin: -4 }} />;`,
+    expect: [
+      { property: "margin", raw: "-4", source: "hardcoded", normalized: { kind: "length", px: -4 } },
     ],
   },
 ];
@@ -90,9 +98,20 @@ describe("inlineStyleExtractor", () => {
     ]);
   });
 
-  it("복구 불가능한 문법 오류는 예외 대신 빈 배열을 돌려준다", () => {
+  it("복구 불가능한 문법 오류는 parseTsx와 마찬가지로 예외를 던진다", () => {
     const code = `const x = <div style={{ color: "red" }} />;\nconst = ;`;
-    expect(inlineStyleExtractor.extract({ root: "/", file: "i.tsx", code })).toEqual([]);
+    expect(() => parseTsx(code, "i.tsx")).toThrow();
+    expect(() => inlineStyleExtractor.extract({ root: "/", file: "i.tsx", code })).toThrow();
+  });
+
+  it("단항 +/- 숫자 리터럴은 hardcoded length다", () => {
+    const code = "const x = <div style={{ margin: -4, top: +2, left: -x }} />;";
+    const usages = inlineStyleExtractor.extract({ root: "/", file: "j.tsx", code });
+    expect(usages.map((u) => [u.raw, u.source, u.normalized])).toEqual([
+      ["-4", "hardcoded", { kind: "length", px: -4 }],
+      ["2", "hardcoded", { kind: "length", px: 2 }],
+      ["-x", "dynamic", { kind: "unknown" }],
+    ]);
   });
 });
 

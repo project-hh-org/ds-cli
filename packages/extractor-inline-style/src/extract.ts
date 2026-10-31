@@ -105,6 +105,21 @@ function buildUsage(
     registerPatchTarget(usage, { start, end, file: ctx.file });
     return usage;
   }
+  if (
+    value.type === "UnaryExpression" &&
+    (value.operator === "-" || value.operator === "+") &&
+    value.argument.type === "NumericLiteral"
+  ) {
+    const px = value.operator === "-" ? -value.argument.value : value.argument.value;
+    const usage: StyleUsage = {
+      ...base,
+      raw: `${value.operator === "-" ? "-" : ""}${value.argument.value}`,
+      normalized: { kind: "length", px },
+      source: "hardcoded",
+    };
+    registerPatchTarget(usage, { start, end, file: ctx.file });
+    return usage;
+  }
   return {
     ...base,
     raw: ctx.code.slice(start, end),
@@ -114,13 +129,8 @@ function buildUsage(
 }
 
 function extract(ctx: ExtractContext): StyleUsage[] {
-  let ast;
-  try {
-    ast = parseTsx(ctx.code, ctx.file);
-  } catch {
-    // errorRecovery로도 복구되지 않는 문법 오류: 파일 하나 때문에 스캔 전체를 중단하지 않는다.
-    return [];
-  }
+  // 복구 불가능한 문법 오류는 그대로 던진다. 파일 단위 실패 기록은 호출자(indexer) 몫이다.
+  const ast = parseTsx(ctx.code, ctx.file);
 
   const usages: StyleUsage[] = [];
   traverse(ast, {

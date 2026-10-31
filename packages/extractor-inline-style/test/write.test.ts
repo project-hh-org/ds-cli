@@ -31,6 +31,14 @@ describe("inlineStyleExtractor.write", () => {
     expect(out).toBe(`const x = <div style={{ color: "var(--c)", padding: 12, margin: theme.m }} />;`);
   });
 
+  it("음수 리터럴은 단항식 전체 구간을 치환한다", () => {
+    const neg = `const x = <div style={{ margin: -4 }} />;`;
+    const usage = inlineStyleExtractor.extract({ root: "/", file: "n.tsx", code: neg })[0]!;
+    const patch = inlineStyleExtractor.write(usage, "var(--space-neg)")!;
+    expect(neg.slice(patch.start, patch.end)).toBe("-4");
+    expect(patch.replacement).toBe(`"var(--space-neg)"`);
+  });
+
   it("dynamic usage에는 null을 돌려준다", () => {
     expect(inlineStyleExtractor.write(extractOne(code, "margin"), "var(--m)")).toBeNull();
   });
