@@ -68,6 +68,22 @@ importers:
         specifier: ^3.0.0
         version: 3.2.7(@types/node@22.20.5)
 
+  packages/extractor-tailwind:
+    dependencies:
+      '@ds-cli/core':
+        specifier: workspace:*
+        version: link:../core
+      '@ds-cli/extractor-api':
+        specifier: workspace:*
+        version: link:../extractor-api
+    devDependencies:
+      '@babel/types':
+        specifier: ^7.29.11
+        version: 7.29.11
+      vitest:
+        specifier: ^3.0.0
+        version: 3.2.7(@types/node@22.20.5)
+
 packages:
 
   '@babel/code-frame@7.29.7':

@@ -3,6 +3,7 @@
   "references": [
     { "path": "packages/extractor-api" },
     { "path": "packages/core" },
-    { "path": "packages/extractor-inline-style" }
+    { "path": "packages/extractor-inline-style" },
+    { "path": "packages/extractor-tailwind" }
   ]
 }
