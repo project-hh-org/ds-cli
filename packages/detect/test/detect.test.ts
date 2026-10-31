@@ -4,7 +4,8 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { ComponentUsage, Index, StyleUsage } from "@ds-cli/core";
 import { decideState, detect, readDetect, writeDetect } from "../src/index.js";
-import { sharesFromIndex } from "../src/detect-state.js";
+import { sharesFromIndex, sharesFromSources } from "../src/detect-state.js";
+import { loadSources } from "../src/fs-utils.js";
 
 let tmp: string;
 beforeEach(() => {
@@ -93,6 +94,15 @@ describe("styling 감지", () => {
     expect(r.activeExtractors).toEqual(["inline-style"]);
   });
 
+  it("css-modules·styled·emotion 근거만 있어도 activeExtractors는 inline-style로 폴백한다", async () => {
+    repo({ "package.json": pkg({ "styled-components": "^6" }), "src/A.tsx": "export const A = 1;" });
+    const r = await detect(tmp);
+    expect(r.activeExtractors).toEqual(["inline-style"]);
+    expect(r.styling.methods.map((m) => m.name)).toEqual(["styled", "inline-style"]);
+    expect(r.styling.methods.find((m) => m.name === "inline-style")?.evidence).toEqual(["fallback"]);
+    expect(r.styling.methods.find((m) => m.name === "styled")?.evidence).toEqual(["package.json: styled-components"]);
+  });
+
   it("근거가 하나도 없으면 inline-style을 fallback 근거와 함께 활성화한다", async () => {
     repo({ "package.json": pkg(), "src/A.tsx": "export const A = () => <div />;" });
     const r = await detect(tmp);
@@ -111,9 +121,14 @@ describe("ds 감지", () => {
   });
 
   it("@radix-ui/* 같은 의존성은 npm DS로 보고 packageName을 담는다", async () => {
-    repo({ "package.json": pkg({ react: "^19", "@radix-ui/react-dialog": "^1" }), "components/ui": null });
+    repo({ "package.json": pkg({ react: "^19", "@radix-ui/react-dialog": "^1" }) });
     const r = await detect(tmp);
-    expect(r.ds).toEqual({ kind: "npm", packageName: "@radix-ui/react-dialog", tokenFiles: [] });
+    expect(r.ds).toEqual({
+      kind: "npm",
+      packageName: "@radix-ui/react-dialog",
+      packageNames: ["@radix-ui/react-dialog"],
+      tokenFiles: [],
+    });
   });
 
   it("이름에 design-system, ui-kit 또는 /ui로 끝나는 패키지도 npm DS로 본다", async () => {
@@ -130,6 +145,61 @@ describe("ds 감지", () => {
     repo({ "package.json": pkg(), "node_modules/x/tokens.css": "", "src/theme.ts": "export {}" });
     const r = await detect(tmp);
     expect(r.ds).toEqual({ kind: "none", tokenFiles: ["src/theme.ts"] });
+  });
+});
+
+describe("ds 감지: 로컬 DS 우선 판정", () => {
+  it("shadcn 패턴: radix 의존성 + components/ui/ → local, 로컬 디렉터리 import가 집계된다", async () => {
+    repo({
+      "package.json": pkg({ "@radix-ui/react-dialog": "^1", "@radix-ui/react-slot": "^1" }),
+      "components/ui/button.tsx": "export const Button = () => null;",
+      "src/A.tsx": "import { Button } from './components/ui/button';\nexport const A = () => <Button />;",
+      "src/B.tsx": "export const B = () => <div />;",
+    });
+    const r = await detect(tmp);
+    expect(r.ds.kind).toBe("local");
+    expect(r.ds.dir).toBe("components/ui");
+    const index = indexOf([], [comp("Button", "./components/ui/button"), comp("div", null)]);
+    expect(sharesFromIndex(index, r.ds).dsImportShare).toBe(0.5);
+    expect(sharesFromSources([{ file: "src/A.tsx", content: "import { Button } from './components/ui/button';" }], r.ds).dsImportShare).toBeGreaterThan(0);
+  });
+
+  it("@headlessui/ 같은 프리미티브만 있고 로컬 DS 디렉터리가 있어도 local", async () => {
+    repo({ "package.json": pkg({ "@radix-ui/react-slot": "^1", "@headlessui/react": "^2" }), "src/ui": null });
+    expect((await detect(tmp)).ds.kind).toBe("local");
+  });
+
+  it("완성된 DS 패키지(@mantine/*)가 있으면 로컬 디렉터리가 있어도 npm", async () => {
+    repo({ "package.json": pkg({ "@radix-ui/react-slot": "^1", "@mantine/core": "^7" }), "components/ui": null });
+    const r = await detect(tmp);
+    expect(r.ds.kind).toBe("npm");
+    expect(r.ds.packageNames).toEqual(["@radix-ui/react-slot", "@mantine/core"]);
+  });
+
+  it("프리미티브만 있고 로컬 디렉터리가 없으면 npm", async () => {
+    repo({ "package.json": pkg({ "@radix-ui/react-slot": "^1" }) });
+    expect((await detect(tmp)).ds.kind).toBe("npm");
+  });
+
+  it("npm DS의 import 비율은 DS로 판정된 모든 패키지를 센다 (@mui/material + @mui/icons-material)", async () => {
+    repo({
+      "package.json": pkg({ "@mui/material": "^6", "@mui/icons-material": "^6" }),
+      "src/A.tsx": "import { Button } from '@mui/material';\nexport const A = () => <Button />;",
+      "src/B.tsx": "import DeleteIcon from '@mui/icons-material/Delete';\nexport const B = () => <DeleteIcon />;",
+      "src/C.tsx": "export const C = () => <div />;",
+      "src/D.tsx": "export const D = () => <div />;",
+    });
+    const r = await detect(tmp);
+    expect(r.ds.packageName).toBe("@mui/material");
+    expect(r.ds.packageNames).toEqual(["@mui/material", "@mui/icons-material"]);
+    // 파일 스캔: 4개 중 2개
+    expect(sharesFromSources(await loadSources(tmp), r.ds).dsImportShare).toBe(0.5);
+    // index: ComponentUsage 4개 중 2개(두 패키지 모두)
+    const index = indexOf(
+      [],
+      [comp("Button", "@mui/material"), comp("DeleteIcon", "@mui/icons-material/Delete"), comp("X", "./X"), comp("Y", null)],
+    );
+    expect(sharesFromIndex(index, r.ds).dsImportShare).toBe(0.5);
   });
 });
 
@@ -245,6 +315,45 @@ describe("overrides", () => {
   });
 });
 
+describe("손상된 입력과 빈 레포", () => {
+  it("package.json이 손상되면 오류 메시지에 package.json이 들어간다", async () => {
+    repo({ "package.json": "{ not json" });
+    await expect(detect(tmp)).rejects.toThrow(/package\.json: /);
+  });
+
+  it("detect.json이 손상되면 오류 메시지에 .ds-cli/detect.json이 들어간다", async () => {
+    repo({ "package.json": pkg(), ".ds-cli/detect.json": "{ not json" });
+    await expect(readDetect(tmp)).rejects.toThrow(/\.ds-cli\/detect\.json: /);
+    await expect(detect(tmp)).rejects.toThrow(/detect\.json: /);
+  });
+
+  it("dependencies가 객체가 아니어도 빈 것으로 취급한다", async () => {
+    repo({ "package.json": JSON.stringify({ dependencies: ["next"], devDependencies: null }) });
+    const r = await detect(tmp);
+    expect(r.framework).toEqual({ name: "unknown" });
+  });
+
+  it("완전히 빈 디렉터리: state 0, provisional true, 예외 없음", async () => {
+    const r = await detect(tmp);
+    expect(r.state).toBe(0);
+    expect(r.provisional).toBe(true);
+    expect(r.activeExtractors).toEqual(["inline-style"]);
+  });
+
+  it("package.json 없이 소스만 있는 디렉터리도 같은 결과", async () => {
+    repo({ "src/A.tsx": "export const A = () => <div />;" });
+    const r = await detect(tmp);
+    expect(r.state).toBe(0);
+    expect(r.provisional).toBe(true);
+    expect(r.ds.kind).toBe("none");
+  });
+
+  it("존재하지 않는 root는 경로를 담은 명확한 오류를 던진다", async () => {
+    const missing = path.join(tmp, "nope");
+    await expect(detect(missing)).rejects.toThrow(missing);
+  });
+});
+
 describe("store", () => {
   it("readDetect는 파일이 없으면 null", async () => {
     expect(await readDetect(tmp)).toBeNull();
@@ -279,8 +388,10 @@ describe("index 없이(provisional) 감지", () => {
   it("evidence만 있고 마커 파일이 없는 방식은 share 0", async () => {
     repo({ "package.json": pkg({ "styled-components": "^6" }), "src/A.tsx": "export const A = 1;" });
     const r = await detect(tmp);
+    // 구현된 Extractor가 없으므로 inline-style 폴백이 함께 붙는다
     expect(r.styling.methods).toEqual([
       { name: "styled", evidence: ["package.json: styled-components"], share: 0 },
+      { name: "inline-style", evidence: ["fallback"], share: 0 },
     ]);
   });
 

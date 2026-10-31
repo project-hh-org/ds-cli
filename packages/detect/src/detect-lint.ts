@@ -21,7 +21,15 @@ export async function detectLint(root: string): Promise<LintDetection> {
   if (flat) return { tool: "eslint", configFile: flat };
 
   // 레거시 설정: .eslintrc, .eslintrc.json, .eslintrc.cjs ...
-  const rc = (await fs.readdir(root)).filter((n) => /^\.eslintrc(?:\..+)?$/.test(n)).sort()[0];
+  let entries: string[];
+  try {
+    entries = await fs.readdir(root);
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException).code;
+    if (code === "ENOENT" || code === "ENOTDIR") throw new Error(`root directory not found: ${root}`, { cause: err });
+    throw err;
+  }
+  const rc = entries.filter((n) => /^\.eslintrc(?:\..+)?$/.test(n)).sort()[0];
   if (rc) return { tool: "eslint", configFile: rc };
 
   const ox = await firstExisting(root, OXLINT);

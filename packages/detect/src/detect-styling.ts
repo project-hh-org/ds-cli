@@ -120,8 +120,9 @@ export async function detectStyling(root: string, input: StylingInput): Promise<
     }
   }
 
-  // 근거가 하나도 없으면 가장 값싼 inline-style Extractor로 대체한다.
-  if (methods.length === 0) {
+  // 구현된 Extractor에 대응하는 방식이 하나도 없으면(근거 없음, 또는 css-modules·styled·emotion뿐)
+  // 가장 값싼 inline-style Extractor로 대체한다. activeExtractors가 비는 일은 없다.
+  if (!methods.some((m) => IMPLEMENTED_EXTRACTORS.includes(m.name))) {
     methods.push({
       name: "inline-style",
       evidence: ["fallback"],

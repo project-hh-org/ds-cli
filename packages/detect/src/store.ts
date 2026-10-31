@@ -1,5 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
+import { parseJsonFile } from "./fs-utils.js";
 import type { DetectResult } from "./index.js";
 
 const DIR = ".ds-cli";
@@ -18,7 +19,7 @@ export async function readDetect(root: string): Promise<DetectResult | null> {
     if ((err as NodeJS.ErrnoException).code === "ENOENT") return null;
     throw err;
   }
-  return JSON.parse(text) as DetectResult;
+  return parseJsonFile(text, `${DIR}/${FILE}`) as DetectResult;
 }
 
 /** `.ds-cli/`를 만들고 detect.json을 쓴 뒤 쓴 경로를 반환한다. */

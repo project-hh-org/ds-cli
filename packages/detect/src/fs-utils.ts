@@ -43,6 +43,19 @@ export async function listFiles(root: string, patterns: string[]): Promise<strin
   return files.map((f) => f.split(path.sep).join("/")).sort();
 }
 
+/** JSON을 파싱하고, 실패하면 파일 경로를 메시지에 담아 던진다. */
+export function parseJsonFile(text: string, displayPath: string): unknown {
+  try {
+    return JSON.parse(text);
+  } catch (err) {
+    throw new Error(`${displayPath}: ${err instanceof Error ? err.message : String(err)}`, { cause: err });
+  }
+}
+
+function keysOf(value: unknown): string[] {
+  return typeof value === "object" && value !== null && !Array.isArray(value) ? Object.keys(value) : [];
+}
+
 /** `package.json`의 dependencies, devDependencies 이름을 선언 순서대로 돌려준다. 파일이 없으면 빈 배열. */
 export async function readDependencyNames(root: string): Promise<string[]> {
   let text: string;
@@ -52,11 +65,10 @@ export async function readDependencyNames(root: string): Promise<string[]> {
     if ((err as NodeJS.ErrnoException).code === "ENOENT") return [];
     throw err;
   }
-  const json = JSON.parse(text) as {
-    dependencies?: Record<string, string>;
-    devDependencies?: Record<string, string>;
-  };
-  return [...Object.keys(json.dependencies ?? {}), ...Object.keys(json.devDependencies ?? {})];
+  const json = parseJsonFile(text, "package.json");
+  if (typeof json !== "object" || json === null) return [];
+  const { dependencies, devDependencies } = json as Record<string, unknown>;
+  return [...keysOf(dependencies), ...keysOf(devDependencies)];
 }
 
 const READ_BATCH = 64;
