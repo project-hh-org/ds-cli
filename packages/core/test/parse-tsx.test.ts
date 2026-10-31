@@ -16,6 +16,16 @@ describe("parseTsx", () => {
     expect(() => parseTsx(`const = ;`, "c.tsx")).toThrow();
   });
 
+  it(".ts 파일은 jsx 플러그인 없이 파싱해 타입 단언·제네릭 화살표 함수를 허용한다", () => {
+    const ast = parseTsx(`const y = 1 as unknown;\nconst x = <number>y;\nconst id = <T>(v: T) => v;`, "a.ts");
+    expect(ast.program.body).toHaveLength(3);
+  });
+
+  it(".tsx 파일은 계속 JSX를 파싱한다", () => {
+    const ast = parseTsx(`const y = <div />;`, "a.tsx");
+    expect(ast.program.body).toHaveLength(1);
+  });
+
   it("traverse는 호출 가능한 함수다", () => {
     const ast = parseTsx(`const y = <div />;`, "c.tsx");
     const names: string[] = [];

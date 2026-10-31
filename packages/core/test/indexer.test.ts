@@ -1,8 +1,9 @@
 import fs from "node:fs";
+import fsp from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { inlineStyleExtractor } from "@ds-cli/extractor-inline-style";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { indexRepo } from "../src/index/indexer.js";
 
 let tmp: string;
@@ -72,7 +73,7 @@ describe("indexRepo", () => {
     expect(original.file).toBe("a.tsx");
   });
 
-  it("appliesTo가 false인 extractor는 호출하지 않고, include/exclude 옵션을 따른다", async () => {
+  it("appliesTo가 false인 extractor는 호출하지 않고, include 옵션은 기본 include를 대체한다", async () => {
     put("a.tsx", `const a = <p />;`);
     put("skip/b.tsx", `const b = <p />;`);
     let calls = 0;
@@ -85,11 +86,99 @@ describe("indexRepo", () => {
       },
       write: () => null,
     };
-    const index = await indexRepo(tmp, [never], { exclude: ["skip/**"] });
+    const all = await indexRepo(tmp, [never]);
+    expect(all.files.scanned).toBe(2);
     expect(calls).toBe(0);
-    expect(index.files.scanned).toBe(1);
 
-    const only = await indexRepo(tmp, [never], { include: ["skip/**/*.tsx"], exclude: [] });
+    const only = await indexRepo(tmp, [never], { include: ["skip/**/*.tsx"] });
     expect(only.files.scanned).toBe(1);
+  });
+
+  it("exclude 옵션은 기본 제외에 더해진다(대체하지 않는다)", async () => {
+    put("a.tsx", `const a = <p />;`);
+    put("skip/b.tsx", `const b = <p />;`);
+    put("node_modules/pkg/c.tsx", `const c = <p />;`);
+    const none = { name: "none", appliesTo: () => false, extract: () => [], write: () => null };
+    const index = await indexRepo(tmp, [none], { exclude: ["skip/**"] });
+    expect(index.files.scanned).toBe(1);
+    expect(index.files.skipped).toEqual([]);
+
+    const empty = await indexRepo(tmp, [none], { exclude: [] });
+    expect(empty.files.scanned).toBe(2);
+  });
+
+  it(".next, build, coverage, .ds-cli 디렉터리는 기본으로 제외한다", async () => {
+    put("src/a.tsx", `const a = <p />;`);
+    put(".next/server/page.js", `const a = 1;`);
+    put("build/out.js", `const a = 1;`);
+    put("coverage/lcov.js", `const a = 1;`);
+    put(".ds-cli/cache.js", `const a = 1;`);
+    put("pkg/node_modules/x/index.js", `const a = 1;`);
+    const seen: string[] = [];
+    const spy = {
+      name: "spy",
+      appliesTo: (ctx: { file: string }) => {
+        seen.push(ctx.file);
+        return false;
+      },
+      extract: () => [],
+      write: () => null,
+    };
+    const index = await indexRepo(tmp, [spy], { include: ["**/*.{tsx,jsx,ts,js}"], exclude: [] });
+    expect(seen).toEqual(["src/a.tsx"]);
+    expect(index.files.scanned).toBe(1);
+  });
+
+  it("한 파일의 extractor 하나라도 던지면 그 파일은 skipped이고 styles·components에 아무것도 남기지 않는다", async () => {
+    put("bad.tsx", `import { B } from "./B"; const a = <B />;`);
+    put("good.tsx", `import { G } from "./G"; const a = <G />;`);
+    const usage = (file: string) => ({
+      file,
+      line: 1,
+      column: 0,
+      property: "color" as const,
+      raw: "#fff",
+      normalized: { kind: "unknown" as const },
+      source: "hardcoded" as const,
+      extractor: "first",
+    });
+    const first = {
+      name: "first",
+      appliesTo: () => true,
+      extract: (ctx: { file: string }) => [usage(ctx.file)],
+      write: () => null,
+    };
+    const second = {
+      name: "second",
+      appliesTo: () => true,
+      extract: (ctx: { file: string }) => {
+        if (ctx.file === "bad.tsx") throw new Error("boom");
+        return [];
+      },
+      write: () => null,
+    };
+    const index = await indexRepo(tmp, [first, second]);
+    expect(index.files.scanned).toBe(1);
+    expect(index.files.skipped).toEqual([{ file: "bad.tsx", reason: "parse: boom" }]);
+    expect(index.styles.map((s) => s.file)).toEqual(["good.tsx"]);
+    expect(index.components.map((c) => c.file)).toEqual(["good.tsx"]);
+  });
+
+  it("읽기 실패는 reason이 read:로 시작하는 skipped로 기록하고 계속 진행한다", async () => {
+    put("a.tsx", `const a = <p />;`);
+    put("b.tsx", `const b = <p />;`);
+    const original = fsp.readFile.bind(fsp);
+    vi.spyOn(fsp, "readFile").mockImplementation(((p: unknown, ...rest: unknown[]) => {
+      if (String(p).endsWith("a.tsx")) return Promise.reject(new Error("EACCES: denied"));
+      return (original as (...args: unknown[]) => Promise<unknown>)(p, ...rest);
+    }) as typeof fsp.readFile);
+    try {
+      const none = { name: "none", appliesTo: () => false, extract: () => [], write: () => null };
+      const index = await indexRepo(tmp, [none]);
+      expect(index.files.scanned).toBe(1);
+      expect(index.files.skipped).toEqual([{ file: "a.tsx", reason: "read: EACCES: denied" }]);
+    } finally {
+      vi.restoreAllMocks();
+    }
   });
 });

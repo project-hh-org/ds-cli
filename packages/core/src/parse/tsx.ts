@@ -13,7 +13,8 @@ export const traverse: TraverseFn =
 export function parseTsx(code: string, file: string): File {
   return parse(code, {
     sourceType: "module",
-    plugins: ["jsx", "typescript"],
+    // .ts에서는 jsx 플러그인이 `<T>expr` 단언과 제네릭 화살표 함수를 깨뜨리므로 끈다.
+    plugins: file.endsWith(".ts") ? ["typescript"] : ["jsx", "typescript"],
     errorRecovery: true,
     sourceFilename: file,
   });

@@ -16,7 +16,9 @@ export interface Index {
 }
 
 export interface IndexOptions {
+  /** 대상 glob. 지정하면 기본값(모든 tsx, jsx, ts, js 파일)을 대체한다. */
   include?: string[];
+  /** 추가로 제외할 glob. 기본 제외(node_modules, dist, .next, build, coverage, .ds-cli)에 더해지며 대체하지 않는다. */
   exclude?: string[];
 }
 
@@ -42,7 +44,7 @@ export async function indexRepo(
   const files = (
     await fg(opts.include ?? DEFAULT_INCLUDE, {
       cwd: root,
-      ignore: opts.exclude ?? DEFAULT_EXCLUDE,
+      ignore: [...DEFAULT_EXCLUDE, ...(opts.exclude ?? [])],
       absolute: false,
       dot: false,
     })
