@@ -53,6 +53,21 @@ export function cssPropertyToStyleProperty(cssProp: string): StyleProperty {
   }
 }
 
+/** 값이 색일 때만 색 속성으로 보는 축약 속성. 그 외 값(`1px solid red`, `url(...)`)은 "other"로 둔다. */
+const COLOR_SHORTHANDS: Readonly<Record<string, StyleProperty>> = {
+  background: "background-color",
+  border: "border-color",
+  outline: "border-color",
+};
+
+function propertyOf(key: string, value: Expression | PatternLike): StyleProperty {
+  const shorthand = COLOR_SHORTHANDS[camelToKebab(key)];
+  if (shorthand !== undefined && value.type === "StringLiteral" && normalizeColor(value.value) !== null) {
+    return shorthand;
+  }
+  return cssPropertyToStyleProperty(key);
+}
+
 function propertyKeyName(prop: ObjectProperty): string | null {
   if (prop.computed) return null;
   if (prop.key.type === "Identifier") return prop.key.name;
@@ -165,7 +180,7 @@ function extract(ctx: ExtractContext): StyleUsage[] {
         if (prop.type !== "ObjectProperty") continue;
         const key = propertyKeyName(prop);
         if (key === null) continue;
-        const usage = buildUsage(ctx, cssPropertyToStyleProperty(key), prop.value);
+        const usage = buildUsage(ctx, propertyOf(key, prop.value), prop.value);
         if (usage !== null) usages.push(usage);
       }
     },

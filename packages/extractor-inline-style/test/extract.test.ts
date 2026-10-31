@@ -36,6 +36,39 @@ const cases: ConformanceCase[] = [
       { property: "margin", raw: "-4", source: "hardcoded", normalized: { kind: "length", px: -4 } },
     ],
   },
+  {
+    file: "e.tsx",
+    code: `export const E = () => <div style={{ background: "#EF4444" }} />;`,
+    expect: [
+      {
+        property: "background-color",
+        raw: "#EF4444",
+        source: "hardcoded",
+        normalized: { kind: "color", hex: "#ef4444" },
+      },
+    ],
+  },
+  {
+    file: "f.tsx",
+    code: `export const F = () => <div style={{ background: "url(x.png)" }} />;`,
+    expect: [{ property: "other", source: "hardcoded", normalized: { kind: "unknown" } }],
+  },
+  {
+    file: "g.tsx",
+    code: `export const G = () => <div style={{ border: "#ef4444", outline: "rgb(0, 0, 0)" }} />;`,
+    expect: [
+      { property: "border-color", normalized: { kind: "color", hex: "#ef4444" } },
+      { property: "border-color", normalized: { kind: "color", hex: "#000000" } },
+    ],
+  },
+  {
+    file: "h.tsx",
+    code: `export const H = () => <div style={{ border: "1px solid #ef4444", background: theme.bg }} />;`,
+    expect: [
+      { property: "other", source: "hardcoded", normalized: { kind: "unknown" } },
+      { property: "other", source: "dynamic", normalized: { kind: "unknown" } },
+    ],
+  },
 ];
 
 describe("inlineStyleExtractor", () => {
