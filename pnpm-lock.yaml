@@ -105,6 +105,19 @@ importers:
         specifier: ^3.0.0
         version: 3.2.7(@types/node@22.20.5)
 
+  packages/extractor-css:
+    dependencies:
+      '@dsmith/core':
+        specifier: workspace:*
+        version: link:../core
+      '@dsmith/extractor-api':
+        specifier: workspace:*
+        version: link:../extractor-api
+    devDependencies:
+      vitest:
+        specifier: ^3.0.0
+        version: 3.2.7(@types/node@22.20.5)
+
   packages/extractor-inline-style:
     dependencies:
       '@dsmith/core':

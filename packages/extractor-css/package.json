@@ -1,0 +1,30 @@
+{
+  "name": "@dsmith/extractor-css",
+  "version": "0.0.0",
+  "description": "dsmith .css/.scss 파일 추출기",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "dependencies": {
+    "@dsmith/core": "workspace:*",
+    "@dsmith/extractor-api": "workspace:*"
+  },
+  "devDependencies": {
+    "vitest": "^3.0.0"
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  }
+}
