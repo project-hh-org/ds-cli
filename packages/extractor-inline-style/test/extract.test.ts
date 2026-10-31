@@ -1,5 +1,5 @@
-import { runConformance, type ConformanceCase } from "@ds-cli/extractor-api";
-import { parseTsx } from "@ds-cli/core";
+import { runConformance, type ConformanceCase } from "@dsmith/extractor-api";
+import { parseTsx } from "@dsmith/core";
 import { describe, expect, it } from "vitest";
 import { cssPropertyToStyleProperty, inlineStyleExtractor } from "../src/index.js";
 

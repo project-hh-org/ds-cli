@@ -20,19 +20,19 @@ importers:
 
   packages/cli:
     dependencies:
-      '@ds-cli/core':
+      '@dsmith/core':
         specifier: workspace:*
         version: link:../core
-      '@ds-cli/detect':
+      '@dsmith/detect':
         specifier: workspace:*
         version: link:../detect
-      '@ds-cli/extractor-api':
+      '@dsmith/extractor-api':
         specifier: workspace:*
         version: link:../extractor-api
-      '@ds-cli/extractor-inline-style':
+      '@dsmith/extractor-inline-style':
         specifier: workspace:*
         version: link:../extractor-inline-style
-      '@ds-cli/extractor-tailwind':
+      '@dsmith/extractor-tailwind':
         specifier: workspace:*
         version: link:../extractor-tailwind
       commander:
@@ -54,7 +54,7 @@ importers:
       '@babel/types':
         specifier: ^7.29.11
         version: 7.29.11
-      '@ds-cli/extractor-api':
+      '@dsmith/extractor-api':
         specifier: workspace:*
         version: link:../extractor-api
       culori:
@@ -64,7 +64,7 @@ importers:
         specifier: ^3.3.3
         version: 3.3.3
     devDependencies:
-      '@ds-cli/extractor-inline-style':
+      '@dsmith/extractor-inline-style':
         specifier: workspace:*
         version: link:../extractor-inline-style
       '@types/babel__traverse':
@@ -79,10 +79,10 @@ importers:
 
   packages/detect:
     dependencies:
-      '@ds-cli/core':
+      '@dsmith/core':
         specifier: workspace:*
         version: link:../core
-      '@ds-cli/extractor-api':
+      '@dsmith/extractor-api':
         specifier: workspace:*
         version: link:../extractor-api
       fast-glob:
@@ -101,10 +101,10 @@ importers:
 
   packages/extractor-inline-style:
     dependencies:
-      '@ds-cli/core':
+      '@dsmith/core':
         specifier: workspace:*
         version: link:../core
-      '@ds-cli/extractor-api':
+      '@dsmith/extractor-api':
         specifier: workspace:*
         version: link:../extractor-api
     devDependencies:
@@ -117,10 +117,10 @@ importers:
 
   packages/extractor-tailwind:
     dependencies:
-      '@ds-cli/core':
+      '@dsmith/core':
         specifier: workspace:*
         version: link:../core
-      '@ds-cli/extractor-api':
+      '@dsmith/extractor-api':
         specifier: workspace:*
         version: link:../extractor-api
     devDependencies:

@@ -2,14 +2,14 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import type { ComponentUsage, Index, StyleUsage } from "@ds-cli/core";
+import type { ComponentUsage, Index, StyleUsage } from "@dsmith/core";
 import { decideState, detect, readDetect, writeDetect } from "../src/index.js";
 import { sharesFromIndex, sharesFromSources } from "../src/detect-state.js";
 import { loadSources } from "../src/fs-utils.js";
 
 let tmp: string;
 beforeEach(() => {
-  tmp = fs.mkdtempSync(path.join(os.tmpdir(), "ds-cli-detect-"));
+  tmp = fs.mkdtempSync(path.join(os.tmpdir(), "dsmith-detect-"));
 });
 afterEach(() => {
   fs.rmSync(tmp, { recursive: true, force: true });
@@ -368,9 +368,9 @@ describe("손상된 입력과 빈 레포", () => {
     await expect(detect(tmp)).rejects.toThrow(/package\.json: /);
   });
 
-  it("detect.json이 손상되면 오류 메시지에 .ds-cli/detect.json이 들어간다", async () => {
-    repo({ "package.json": pkg(), ".ds-cli/detect.json": "{ not json" });
-    await expect(readDetect(tmp)).rejects.toThrow(/\.ds-cli\/detect\.json: /);
+  it("detect.json이 손상되면 오류 메시지에 .dsmith/detect.json이 들어간다", async () => {
+    repo({ "package.json": pkg(), ".dsmith/detect.json": "{ not json" });
+    await expect(readDetect(tmp)).rejects.toThrow(/\.dsmith\/detect\.json: /);
     await expect(detect(tmp)).rejects.toThrow(/detect\.json: /);
   });
 
@@ -406,11 +406,11 @@ describe("store", () => {
     expect(await readDetect(tmp)).toBeNull();
   });
 
-  it("writeDetect는 .ds-cli/detect.json에 쓰고 절대 경로를 반환하며 readDetect가 동일하게 읽는다", async () => {
+  it("writeDetect는 .dsmith/detect.json에 쓰고 절대 경로를 반환하며 readDetect가 동일하게 읽는다", async () => {
     repo({ "package.json": pkg() });
     const r = await detect(tmp);
     const written = await writeDetect(tmp, r);
-    expect(written).toBe(path.join(tmp, ".ds-cli", "detect.json"));
+    expect(written).toBe(path.join(tmp, ".dsmith", "detect.json"));
     expect(fs.readFileSync(written, "utf-8")).toContain('\n  "version": 1');
     expect(await readDetect(tmp)).toEqual(r);
   });

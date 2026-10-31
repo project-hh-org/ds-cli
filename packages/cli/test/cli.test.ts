@@ -3,15 +3,15 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { auditWarnings, localDate } from "../src/report/audit-report.js";
-import type { Index } from "@ds-cli/core";
-import type { DetectResult } from "@ds-cli/detect";
-import type { StyleUsage } from "@ds-cli/extractor-api";
+import type { Index } from "@dsmith/core";
+import type { DetectResult } from "@dsmith/detect";
+import type { StyleUsage } from "@dsmith/extractor-api";
 import { computeAudit, runAudit } from "../src/commands/audit.js";
 import { detectHints, runDetect } from "../src/commands/detect.js";
 
 let tmp: string;
 beforeEach(() => {
-  tmp = fs.mkdtempSync(path.join(os.tmpdir(), "ds-cli-cli-"));
+  tmp = fs.mkdtempSync(path.join(os.tmpdir(), "dsmith-cli-"));
 });
 afterEach(() => {
   fs.rmSync(tmp, { recursive: true, force: true });
@@ -40,7 +40,7 @@ describe("runDetect", () => {
     tailwindInlineRepo();
     const result = await runDetect(tmp);
     expect(result.provisional).toBe(true);
-    expect(fs.existsSync(path.join(tmp, ".ds-cli", "detect.json"))).toBe(true);
+    expect(fs.existsSync(path.join(tmp, ".dsmith", "detect.json"))).toBe(true);
     expect(result.activeExtractors).toContain("tailwind");
   });
 
@@ -63,9 +63,9 @@ describe("runAudit", () => {
     tailwindInlineRepo();
     const { result, reportPath } = await runAudit(tmp);
 
-    expect(fs.existsSync(path.join(tmp, ".ds-cli", "detect.json"))).toBe(true);
-    expect(fs.existsSync(path.join(tmp, ".ds-cli", "index.json"))).toBe(true);
-    const expectedReport = path.join(tmp, ".ds-cli", "reports", `audit-${localDate(new Date())}.md`);
+    expect(fs.existsSync(path.join(tmp, ".dsmith", "detect.json"))).toBe(true);
+    expect(fs.existsSync(path.join(tmp, ".dsmith", "index.json"))).toBe(true);
+    const expectedReport = path.join(tmp, ".dsmith", "reports", `audit-${localDate(new Date())}.md`);
     expect(reportPath).toBe(expectedReport);
     expect(fs.existsSync(expectedReport)).toBe(true);
 
@@ -75,7 +75,7 @@ describe("runAudit", () => {
     expect(result.hardcoded.spacing.some((s) => s.px === 13)).toBe(true);
     expect(result.hardcoded.byFile.map((f) => f.file).sort()).toEqual(["src/A.tsx", "src/B.tsx"]);
 
-    const saved = JSON.parse(fs.readFileSync(path.join(tmp, ".ds-cli", "detect.json"), "utf-8"));
+    const saved = JSON.parse(fs.readFileSync(path.join(tmp, ".dsmith", "detect.json"), "utf-8"));
     expect(saved.provisional).toBe(false);
 
     const md = fs.readFileSync(reportPath, "utf-8");

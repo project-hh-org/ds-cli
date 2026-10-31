@@ -1,6 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import type { Index } from "@ds-cli/core";
+import type { Index } from "@dsmith/core";
 import { isMonorepoRoot, listFiles, type SourceFile } from "./fs-utils.js";
 
 export type StylingMethodName = "tailwind" | "inline-style" | "css-modules" | "styled" | "emotion";

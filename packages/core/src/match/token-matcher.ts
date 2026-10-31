@@ -1,4 +1,4 @@
-import type { StyleUsage } from "@ds-cli/extractor-api";
+import type { StyleUsage } from "@dsmith/extractor-api";
 import type { Token } from "../model/token.js";
 import { colorDistance, lengthDistance } from "./distance.js";
 

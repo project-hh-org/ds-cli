@@ -1,1 +1,1 @@
-ds-cli 테스트용 fixture (실제 앱이 아님).
+dsmith 테스트용 fixture (실제 앱이 아님).

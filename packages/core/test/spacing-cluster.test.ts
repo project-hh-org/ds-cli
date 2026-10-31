@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { StyleProperty, StyleSource, StyleUsage } from "@ds-cli/extractor-api";
+import type { StyleProperty, StyleSource, StyleUsage } from "@dsmith/extractor-api";
 import { clusterSpacing } from "../src/cluster/spacing-cluster.js";
 
 function lengthUsage(

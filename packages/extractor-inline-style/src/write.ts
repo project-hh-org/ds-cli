@@ -1,4 +1,4 @@
-import type { StyleUsage, WritePatch } from "@ds-cli/extractor-api";
+import type { StyleUsage, WritePatch } from "@dsmith/extractor-api";
 
 /** 치환 패치에 필요한 값 노드의 소스 구간(따옴표 포함). */
 interface PatchTarget {

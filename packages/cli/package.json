@@ -1,5 +1,5 @@
 {
-  "name": "ds-cli",
+  "name": "dsmith",
   "version": "0.0.0",
   "description": "디자인시스템 라이프사이클 CLI — detect · audit",
   "type": "module",
@@ -7,17 +7,17 @@
     "node": ">=20"
   },
   "bin": {
-    "ds-cli": "./dist/bin.js"
+    "dsmith": "./dist/bin.js"
   },
   "files": [
     "dist"
   ],
   "dependencies": {
-    "@ds-cli/core": "workspace:*",
-    "@ds-cli/detect": "workspace:*",
-    "@ds-cli/extractor-api": "workspace:*",
-    "@ds-cli/extractor-inline-style": "workspace:*",
-    "@ds-cli/extractor-tailwind": "workspace:*",
+    "@dsmith/core": "workspace:*",
+    "@dsmith/detect": "workspace:*",
+    "@dsmith/extractor-api": "workspace:*",
+    "@dsmith/extractor-inline-style": "workspace:*",
+    "@dsmith/extractor-tailwind": "workspace:*",
     "commander": "^12.1.0"
   },
   "devDependencies": {

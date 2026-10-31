@@ -11,7 +11,7 @@ interface CommonOptions {
 }
 
 const program = new Command();
-program.name("ds-cli").description("디자인시스템 라이프사이클 CLI").exitOverride();
+program.name("dsmith").description("디자인시스템 라이프사이클 CLI").exitOverride();
 
 function common(cmd: Command): Command {
   return cmd
@@ -19,7 +19,7 @@ function common(cmd: Command): Command {
     .option("--json", "결과를 JSON으로만 stdout에 출력");
 }
 
-common(program.command("detect").description("레포 환경을 감지하고 .ds-cli/detect.json에 저장")).action(
+common(program.command("detect").description("레포 환경을 감지하고 .dsmith/detect.json에 저장")).action(
   async (opts: CommonOptions) => {
     const result = await runDetect(opts.root);
     for (const hint of detectHints(result)) process.stderr.write(`${hint}\n`);
@@ -27,7 +27,7 @@ common(program.command("detect").description("레포 환경을 감지하고 .ds-
   },
 );
 
-common(program.command("audit").description("하드코딩·컴포넌트 사용을 분석해 .ds-cli/reports에 리포트 저장")).action(
+common(program.command("audit").description("하드코딩·컴포넌트 사용을 분석해 .dsmith/reports에 리포트 저장")).action(
   async (opts: CommonOptions) => {
     const { result, reportPath } = await runAudit(opts.root);
     for (const line of [...detectHints(result.detect), ...auditWarnings(result)]) process.stderr.write(`${line}\n`);

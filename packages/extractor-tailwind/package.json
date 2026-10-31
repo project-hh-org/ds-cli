@@ -1,7 +1,7 @@
 {
-  "name": "@ds-cli/extractor-tailwind",
+  "name": "@dsmith/extractor-tailwind",
   "version": "0.0.0",
-  "description": "ds-cli Tailwind className 추출기",
+  "description": "dsmith Tailwind className 추출기",
   "type": "module",
   "engines": {
     "node": ">=20"
@@ -16,8 +16,8 @@
     "dist"
   ],
   "dependencies": {
-    "@ds-cli/core": "workspace:*",
-    "@ds-cli/extractor-api": "workspace:*"
+    "@dsmith/core": "workspace:*",
+    "@dsmith/extractor-api": "workspace:*"
   },
   "devDependencies": {
     "@babel/types": "^7.29.11",

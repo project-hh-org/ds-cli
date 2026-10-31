@@ -1,7 +1,7 @@
 {
-  "name": "@ds-cli/core",
+  "name": "@dsmith/core",
   "version": "0.0.0",
-  "description": "ds-cli 공통 모델과 색·길이 정규화",
+  "description": "dsmith 공통 모델과 색·길이 정규화",
   "type": "module",
   "engines": {
     "node": ">=20"
@@ -19,12 +19,12 @@
     "@babel/parser": "^7.29.12",
     "@babel/traverse": "^7.29.12",
     "@babel/types": "^7.29.11",
-    "@ds-cli/extractor-api": "workspace:*",
+    "@dsmith/extractor-api": "workspace:*",
     "culori": "^4.0.1",
     "fast-glob": "^3.3.3"
   },
   "devDependencies": {
-    "@ds-cli/extractor-inline-style": "workspace:*",
+    "@dsmith/extractor-inline-style": "workspace:*",
     "@types/babel__traverse": "^7.28.0",
     "@types/culori": "^2.1.1",
     "vitest": "^3.0.0"

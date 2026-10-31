@@ -1,4 +1,4 @@
-import type { StyleUsage, WritePatch } from "@ds-cli/extractor-api";
+import type { StyleUsage, WritePatch } from "@dsmith/extractor-api";
 import { describe, expect, it } from "vitest";
 import { tailwindExtractor } from "../src/index.js";
 

@@ -5,7 +5,7 @@ export type {
   StyleSource,
   StyleUsage,
   WritePatch,
-} from "@ds-cli/extractor-api";
+} from "@dsmith/extractor-api";
 export type { NormalizedColor } from "./model/style-usage.js";
 export { isRatedUsage } from "./model/style-usage.js";
 export type { ComponentUsage } from "./model/component-usage.js";
