@@ -82,6 +82,7 @@ function healthOf(index: Index, ds: DetectResult["ds"], duplicateCount: number):
     hardcodedShare: round4(shares.hardcodedShare),
     dsImportShare: round4(shares.dsImportShare),
     duplicateCount,
+    rated: shares.rated,
     formula: HEALTH_FORMULA,
   };
 }

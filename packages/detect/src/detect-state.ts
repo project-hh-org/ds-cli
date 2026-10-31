@@ -25,8 +25,13 @@ function ratio(n: number, d: number): number {
   return d === 0 ? 0 : n / d;
 }
 
+export interface IndexShares extends Shares {
+  /** hardcodedShare의 분모: 평가한 스타일 usage 수 */
+  rated: number;
+}
+
 /** 인덱스 기반의 정확한 비율. */
-export function sharesFromIndex(index: Index, ds: DsDetection): Shares {
+export function sharesFromIndex(index: Index, ds: DsDetection): IndexShares {
   // 디자인 속성이 아니거나 정규화되지 않은 값은 분자·분모 모두에서 뺀다. dynamic은 분모에서 제외한다.
   const ratedUsages = index.styles.filter((u) => u.source !== "dynamic" && isRatedUsage(u));
   const hardcoded = ratedUsages.filter((u) => u.source === "hardcoded").length;
@@ -38,6 +43,7 @@ export function sharesFromIndex(index: Index, ds: DsDetection): Shares {
   return {
     hardcodedShare: ratio(hardcoded, rated),
     dsImportShare: ratio(fromDs, index.components.length),
+    rated,
   };
 }
 

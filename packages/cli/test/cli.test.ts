@@ -2,7 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { localDate } from "../src/report/audit-report.js";
+import { auditWarnings, localDate } from "../src/report/audit-report.js";
 import type { Index } from "@ds-cli/core";
 import type { DetectResult } from "@ds-cli/detect";
 import type { StyleUsage } from "@ds-cli/extractor-api";
@@ -94,6 +94,34 @@ describe("runAudit", () => {
     expect(result.components[0]).toEqual({ name: "Button", importedFrom: "src/a/Button", count: 2 });
     expect(result.duplicates).toEqual([{ names: ["Button"], reason: "same-name-different-source" }]);
     expect(result.health.duplicateCount).toBe(1);
+  });
+
+  it("styled-components만 쓰는 레포: 평가한 스타일 값이 0이면 점수를 참고용으로 표기하고 분석하지 않은 방식을 알린다", async () => {
+    write("package.json", JSON.stringify({ name: "app", dependencies: { react: "^18", "styled-components": "^6" } }));
+    write(
+      "src/A.tsx",
+      "import styled from \"styled-components\";\nconst Box = styled.div`color: #ef4444; padding: 13px;`;\nexport const A = () => <Box />;\n",
+    );
+    const { result, reportPath } = await runAudit(tmp);
+    expect(result.index.files.scanned).toBe(1);
+    expect(result.health.rated).toBe(0);
+    const md = fs.readFileSync(reportPath, "utf-8");
+    expect(md).toContain(`(스타일 데이터 없음 — 참고용) 건강 점수: ${result.health.score}`);
+    expect(md).toContain("감지됐지만 분석하지 않은 방식: styled");
+    expect(auditWarnings(result)).toEqual([
+      `경고: (스타일 데이터 없음 — 참고용) 건강 점수: ${result.health.score}`,
+      "경고: 감지됐지만 분석하지 않은 방식: styled",
+    ]);
+  });
+
+  it("평가한 스타일 값이 있으면 참고용 표기·경고가 없다", async () => {
+    tailwindInlineRepo();
+    const { result, reportPath } = await runAudit(tmp);
+    expect(result.health.rated).toBe(3);
+    const md = fs.readFileSync(reportPath, "utf-8");
+    expect(md).not.toContain("스타일 데이터 없음");
+    expect(md).not.toContain("감지됐지만 분석하지 않은 방식");
+    expect(auditWarnings(result)).toEqual([]);
   });
 
   it("빈 디렉터리에서도 예외 없이 점수 0과 분석할 파일 없음을 남긴다", async () => {

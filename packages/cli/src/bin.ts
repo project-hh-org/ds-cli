@@ -3,6 +3,7 @@ import path from "node:path";
 import { Command } from "commander";
 import { runAudit } from "./commands/audit.js";
 import { formatDetectSummary, runDetect } from "./commands/detect.js";
+import { auditWarnings } from "./report/audit-report.js";
 
 interface CommonOptions {
   root: string;
@@ -28,6 +29,7 @@ common(program.command("detect").description("레포 환경을 감지하고 .ds-
 common(program.command("audit").description("하드코딩·컴포넌트 사용을 분석해 .ds-cli/reports에 리포트 저장")).action(
   async (opts: CommonOptions) => {
     const { result, reportPath } = await runAudit(opts.root);
+    for (const warning of auditWarnings(result)) process.stderr.write(`${warning}\n`);
     if (opts.json) {
       process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
       return;

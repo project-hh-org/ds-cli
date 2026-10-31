@@ -14,7 +14,7 @@ export type { FrameworkDetection } from "./detect-framework.js";
 export type { LintDetection } from "./detect-lint.js";
 export type { StylingDetection, StylingMethodName } from "./detect-styling.js";
 export { decideState, sharesFromIndex } from "./detect-state.js";
-export type { Shares } from "./detect-state.js";
+export type { IndexShares, Shares } from "./detect-state.js";
 export { readDetect, writeDetect } from "./store.js";
 
 export interface DetectResult {

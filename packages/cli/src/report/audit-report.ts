@@ -27,6 +27,35 @@ function more(shown: number, total: number): string[] {
   return total > shown ? ["", `외 ${total - shown}개 생략`] : [];
 }
 
+const NO_STYLE_DATA = "(스타일 데이터 없음 — 참고용)";
+
+/** 파일은 분석했지만 평가한 스타일 값이 없어 점수가 산식의 기본값일 뿐인지. */
+function hasNoStyleData(r: AuditResult): boolean {
+  return r.health.rated === 0 && r.index.files.scanned > 0;
+}
+
+function scoreLine(r: AuditResult): string {
+  return `${hasNoStyleData(r) ? `${NO_STYLE_DATA} ` : ""}건강 점수: ${r.health.score}`;
+}
+
+/** 감지됐지만 켜진 Extractor가 없어 분석하지 않은 스타일링 방식 이름. */
+function unanalyzedMethods(r: AuditResult): string[] {
+  return r.detect.styling.methods.map((m) => m.name).filter((name) => !r.detect.activeExtractors.includes(name));
+}
+
+function unanalyzedLine(names: string[]): string {
+  return `감지됐지만 분석하지 않은 방식: ${names.join(", ")}`;
+}
+
+/** CLI가 stderr에 출력할 경고. 리포트의 참고용 표기·미분석 방식과 같은 조건, 같은 문구다. */
+export function auditWarnings(r: AuditResult): string[] {
+  const warnings: string[] = [];
+  if (hasNoStyleData(r)) warnings.push(`경고: ${scoreLine(r)}`);
+  const unanalyzed = unanalyzedMethods(r);
+  if (unanalyzed.length > 0) warnings.push(`경고: ${unanalyzedLine(unanalyzed)}`);
+  return warnings;
+}
+
 export function renderAuditReport(r: AuditResult): string {
   const { detect, index, hardcoded, health } = r;
   const empty = index.files.scanned === 0;
@@ -38,9 +67,11 @@ export function renderAuditReport(r: AuditResult): string {
   lines.push(`- state: ${detect.state}`);
   lines.push(`- provisional: ${detect.provisional}`);
   lines.push(`- 분석한 파일: ${index.files.scanned}개 (스타일 사용 ${index.styleCount}, 컴포넌트 사용 ${index.componentCount})`);
+  const unanalyzed = unanalyzedMethods(r);
+  if (unanalyzed.length > 0) lines.push(`- ${unanalyzedLine(unanalyzed)}`);
   lines.push("");
 
-  lines.push(`건강 점수: ${health.score}`, "");
+  lines.push(scoreLine(r), "");
   lines.push(`산식: ${health.formula}`, "");
   lines.push(`- hardcodedShare: ${health.hardcodedShare}`);
   lines.push(`- dsImportShare: ${health.dsImportShare}`);

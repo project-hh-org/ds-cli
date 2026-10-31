@@ -44,7 +44,7 @@ function fixture(): AuditResult {
       { name: "Card", importedFrom: null, count: 2 },
     ],
     duplicates: [{ names: ["Button"], reason: "same-name-different-source" }],
-    health: { score: 62, hardcodedShare: 0.25, dsImportShare: 0.4, duplicateCount: 1, formula: FORMULA },
+    health: { score: 62, hardcodedShare: 0.25, dsImportShare: 0.4, duplicateCount: 1, rated: 32, formula: FORMULA },
   };
 }
 
@@ -104,7 +104,7 @@ describe("renderAuditReport", () => {
     empty.hardcoded = { colors: [], spacing: [], byFile: [] };
     empty.components = [];
     empty.duplicates = [];
-    empty.health = { score: 0, hardcodedShare: 0, dsImportShare: 0, duplicateCount: 0, formula: FORMULA };
+    empty.health = { score: 0, hardcodedShare: 0, dsImportShare: 0, duplicateCount: 0, rated: 0, formula: FORMULA };
     const out = renderAuditReport(empty);
     expect(out).toContain("분석할 파일 없음");
     expect(out).toContain("건강 점수: 0");

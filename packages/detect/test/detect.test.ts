@@ -492,7 +492,7 @@ describe("index와 함께 감지", () => {
 
   it("sharesFromIndex: 분모가 0이면 0", () => {
     const ds = { kind: "npm", packageName: "@acme/ui", tokenFiles: [] } as const;
-    expect(sharesFromIndex(indexOf([], []), ds)).toEqual({ hardcodedShare: 0, dsImportShare: 0 });
+    expect(sharesFromIndex(indexOf([], []), ds)).toEqual({ hardcodedShare: 0, dsImportShare: 0, rated: 0 });
   });
 
   it("sharesFromIndex: npm은 importedFrom이 패키지명(또는 하위 경로)과 같은 ComponentUsage 비율", () => {

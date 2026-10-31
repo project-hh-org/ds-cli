@@ -19,6 +19,8 @@ export interface AuditResult {
     hardcodedShare: number;
     dsImportShare: number;
     duplicateCount: number;
+    /** hardcodedShare의 분모: 평가한 스타일 usage 수. 0이면 점수는 참고용이다. */
+    rated: number;
     formula: string;
   };
 }
