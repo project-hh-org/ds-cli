@@ -6,6 +6,8 @@ export interface ParsedClass {
   value: string | null;
   arbitrary: boolean;
   negative: boolean;
+  /** important 수식어 위치: `!p-4`/`md:!p-4`는 "prefix", `p-4!`는 "suffix". */
+  important: "prefix" | "suffix" | null;
 }
 
 /** `utility-value` 분리에 쓰는 유틸리티 접두 목록. `gap-x`처럼 하이픈이 든 이름이 있어 가장 긴 접두를 우선한다. */
@@ -50,6 +52,15 @@ export function parseClassToken(raw: string): ParsedClass {
   const variants = segments.slice(0, -1);
   let body = segments[segments.length - 1] ?? "";
 
+  let important: ParsedClass["important"] = null;
+  if (body.startsWith("!")) {
+    important = "prefix";
+    body = body.slice(1);
+  } else if (body.endsWith("!")) {
+    important = "suffix";
+    body = body.slice(0, -1);
+  }
+
   const negative = body.startsWith("-");
   if (negative) body = body.slice(1);
 
@@ -62,17 +73,18 @@ export function parseClassToken(raw: string): ParsedClass {
       value: body.slice(arbitraryAt + 2, -1).replaceAll("_", " "),
       arbitrary: true,
       negative,
+      important,
     };
   }
 
   // `border-t`, `gap-x`처럼 토큰 전체가 유틸리티 이름이면 value 없는 유틸리티다.
   if (KNOWN_UTILITIES.includes(body)) {
-    return { raw, variants, utility: body, value: null, arbitrary: false, negative };
+    return { raw, variants, utility: body, value: null, arbitrary: false, negative, important };
   }
 
   const prefix = BY_LENGTH_DESC.find((name) => body.startsWith(`${name}-`));
   if (prefix === undefined) {
-    return { raw, variants, utility: body, value: null, arbitrary: false, negative };
+    return { raw, variants, utility: body, value: null, arbitrary: false, negative, important };
   }
   const value = body.slice(prefix.length + 1);
   return {
@@ -82,6 +94,7 @@ export function parseClassToken(raw: string): ParsedClass {
     value: value === "" ? null : value,
     arbitrary: false,
     negative,
+    important,
   };
 }
 

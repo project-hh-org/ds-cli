@@ -1,6 +1,8 @@
 import { parseTsx } from "@ds-cli/core";
 import { runConformance, type ConformanceCase } from "@ds-cli/extractor-api";
 import { describe, expect, it } from "vitest";
+import { KNOWN_UTILITIES } from "../src/class-parser.js";
+import { RULES } from "../src/extract.js";
 import { defaultTheme, tailwindExtractor } from "../src/index.js";
 
 const cases: ConformanceCase[] = [
@@ -205,6 +207,19 @@ describe("tailwindExtractor", () => {
       ]);
     });
 
+    it("p-md/gap-lg/m-xl 같은 커스텀 spacing 토큰은 token이다", () => {
+      expect(summary(`const x = <div className="p-md gap-lg m-xl rounded-xl" />;`)).toEqual([
+        ["padding", "p-md", "token", { kind: "unknown" }],
+        ["gap", "gap-lg", "token", { kind: "unknown" }],
+        ["margin", "m-xl", "token", { kind: "unknown" }],
+        ["border-radius", "rounded-xl", "tailwind-default", { kind: "length", px: 12 }],
+      ]);
+    });
+
+    it("max-w/min-w 컨테이너 크기 이름은 무시한다", () => {
+      expect(run(`const x = <div className="max-w-md min-w-xl max-w-7xl" />;`)).toEqual([]);
+    });
+
     it("모델에 없는 길이 이름은 token 소스다", () => {
       expect(summary(`const x = <div className="rounded-card p-gutter" />;`)).toEqual([
         ["border-radius", "rounded-card", "token", { kind: "unknown" }],
@@ -299,9 +314,39 @@ describe("tailwindExtractor", () => {
       expect(run(code).filter((u) => u.source !== "dynamic").map((u) => u.raw)).toEqual(["m-2"]);
     });
 
+    it("undefined/void 0 분기는 dynamic을 만들지 않는다", () => {
+      for (const empty of ["undefined", "void 0", "null", "false"]) {
+        const code = `const x = <div className={cond ? "p-4" : ${empty}} />;`;
+        expect(run(code).map((u) => [u.raw, u.source])).toEqual([["p-4", "tailwind-default"]]);
+      }
+      const code = `const x = <div className={cn("p-4", cond && undefined, other || void 0)} />;`;
+      expect(run(code).map((u) => [u.raw, u.source])).toEqual([
+        ["p-4", "tailwind-default"],
+        ["other", "dynamic"],
+      ]);
+    });
+
     it("빈 문자열과 숫자·불리언 인자는 아무것도 만들지 않는다", () => {
       expect(run(`const x = <div className={cn("", false, 0)} />;`)).toEqual([]);
       expect(run(`const x = <div className="" />;`)).toEqual([]);
+    });
+  });
+
+  describe("important 수식어", () => {
+    it("앞·뒤 !를 벗겨 해석하고 raw는 전체 토큰이다", () => {
+      expect(summary(`const x = <div className="!bg-[#fff] md:!p-[13px] p-4!" />;`)).toEqual([
+        ["background-color", "!bg-[#fff]", "hardcoded", expect.objectContaining({ hex: "#ffffff" })],
+        ["padding", "md:!p-[13px]", "hardcoded", { kind: "length", px: 13 }],
+        ["padding", "p-4!", "tailwind-default", { kind: "length", px: 16 }],
+      ]);
+    });
+  });
+
+  describe("테마 조회", () => {
+    it("프로토타입 속성 이름은 tailwind-default가 되지 않는다", () => {
+      const usages = run(`const x = <div className="p-constructor text-toString bg-hasOwnProperty rounded-valueOf" />;`);
+      expect(usages.map((u) => u.source)).not.toContain("tailwind-default");
+      expect(usages.every((u) => u.source === "token")).toBe(true);
     });
   });
 
@@ -331,6 +376,12 @@ describe("tailwindExtractor", () => {
     const code = `const x = <div className="p-4" />;\nconst = ;`;
     expect(() => parseTsx(code, "i.tsx")).toThrow();
     expect(() => run(code, "i.tsx")).toThrow();
+  });
+});
+
+describe("RULES", () => {
+  it("모든 규칙 키는 KNOWN_UTILITIES에 있다", () => {
+    for (const name of RULES.keys()) expect(KNOWN_UTILITIES).toContain(name);
   });
 });
 

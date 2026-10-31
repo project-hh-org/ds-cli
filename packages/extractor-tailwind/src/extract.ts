@@ -22,7 +22,7 @@ type Rule =
   | { kind: "length"; property: StyleProperty; scale: "spacing" | "radius" }
   | { kind: "text" };
 
-const RULES = new Map<string, Rule>();
+export const RULES = new Map<string, Rule>();
 
 function addRule(names: readonly string[], rule: Rule): void {
   for (const name of names) RULES.set(name, rule);
@@ -62,11 +62,21 @@ const NON_COLOR_VALUES: ReadonlySet<string> = new Set([
   "no", "cover", "contain", "auto", "top", "bottom", "gradient", "blend", "origin",
 ]);
 
-/** 길이 유틸리티 접두를 공유하지만 테마 키가 아닌 값의 첫 구간(키워드, max-w 크기 이름 등). */
+/** 길이 유틸리티 접두를 공유하지만 테마 키가 아닌 값의 첫 구간(키워드). */
 const NON_LENGTH_VALUES: ReadonlySet<string> = new Set([
   "full", "auto", "screen", "svw", "lvw", "dvw", "svh", "lvh", "dvh", "min", "max", "fit", "none", "prose",
+]);
+
+/** `max-w-2xl`, `min-w-md` 같은 컨테이너 크기 이름. 다른 길이 유틸리티의 `p-md`는 커스텀 토큰이다. */
+const CONTAINER_SIZE_NAMES: ReadonlySet<string> = new Set([
   "xs", "sm", "md", "lg", "xl", "2xl", "3xl", "4xl", "5xl", "6xl", "7xl",
 ]);
+const CONTAINER_SIZE_UTILITIES: ReadonlySet<string> = new Set(["max-w", "min-w"]);
+
+/** 프로토타입 체인(`constructor`, `toString` 등)을 타지 않는 테마 조회. */
+function lookup<T>(record: Record<string, T>, key: string): T | undefined {
+  return Object.hasOwn(record, key) ? record[key] : undefined;
+}
 
 const COLOR_NAME = /^[a-z][\w-]*$/i;
 const LENGTH_NAME = /^[a-z0-9][\w.-]*$/i;
@@ -137,23 +147,25 @@ function resolveNamed(c: ParsedClass, rule: Rule): Resolved | null {
     // 접미사 없는 `rounded`만 DEFAULT 값을 가진다.
     const key = value ?? (rule.scale === "radius" ? "DEFAULT" : null);
     if (key === null) return null;
-    const px = scale[key];
+    const px = lookup(scale, key);
     if (px !== undefined) {
       const signed = c.negative ? negate(px) : px;
       return { property: rule.property, normalized: { kind: "length", px: signed }, source: "tailwind-default" };
     }
     if (value === null || !LENGTH_NAME.test(value)) return null;
-    if (NON_LENGTH_VALUES.has(value.split("-")[0] ?? "")) return null;
+    const head = value.split("-")[0] ?? "";
+    if (NON_LENGTH_VALUES.has(head)) return null;
+    if (CONTAINER_SIZE_UTILITIES.has(c.utility) && CONTAINER_SIZE_NAMES.has(head)) return null;
     return { property: rule.property, normalized: UNKNOWN, source: "token" };
   }
 
   if (value === null) return null;
-  const hex = defaultTheme.colors[value];
+  const hex = lookup(defaultTheme.colors, value);
   const colorProperty: StyleProperty = rule.kind === "text" ? "color" : rule.property;
   if (hex !== undefined) {
     return { property: colorProperty, normalized: colorOf(hex), source: "tailwind-default" };
   }
-  const fontSize = rule.kind === "text" ? defaultTheme.fontSize[value] : undefined;
+  const fontSize = rule.kind === "text" ? lookup(defaultTheme.fontSize, value) : undefined;
   if (fontSize !== undefined) {
     return { property: "font-size", normalized: { kind: "length", px: fontSize }, source: "tailwind-default" };
   }
@@ -222,6 +234,7 @@ class Collector {
         start: offset,
         end: offset + token.length,
         variants: parsed.variants,
+        important: parsed.important,
       });
       this.usages.push(usage);
     }
@@ -270,6 +283,15 @@ class Collector {
         // `cond && "x"`의 왼쪽은 조건이지 클래스 값이 아니다.
         if (node.operator !== "&&") this.visit(node.left);
         this.visit(node.right);
+        return;
+      case "Identifier":
+        if (node.name === "undefined") return;
+        this.dynamic(node);
+        return;
+      case "UnaryExpression":
+        // `void 0`
+        if (node.operator === "void" && node.argument.type === "NumericLiteral") return;
+        this.dynamic(node);
         return;
       case "JSXEmptyExpression":
       case "NumericLiteral":

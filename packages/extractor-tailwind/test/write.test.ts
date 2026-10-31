@@ -61,6 +61,27 @@ describe("tailwindExtractor.write", () => {
     expect(code.slice(patch.start, patch.end)).toBe("p-[13px]");
   });
 
+  it("!가 붙은 토큰은 !를 보존한다", () => {
+    const code = `const x = <div className="!bg-[#fff] md:!p-[13px] m-[13px]!" />;`;
+    const bg = tailwindExtractor.write(extractOne(code, "!bg-[#fff]"), "bg-surface")!;
+    expect(code.slice(bg.start, bg.end)).toBe("!bg-[#fff]");
+    expect(bg.replacement).toBe("!bg-surface");
+    const p = tailwindExtractor.write(extractOne(code, "md:!p-[13px]"), "p-3")!;
+    expect(p.replacement).toBe("md:!p-3");
+    const m = tailwindExtractor.write(extractOne(code, "m-[13px]!"), "m-3")!;
+    expect(code.slice(m.start, m.end)).toBe("m-[13px]!");
+    expect(m.replacement).toBe("m-3!");
+    expect(apply(code, m)).toBe(`const x = <div className="!bg-[#fff] md:!p-[13px] m-3!" />;`);
+  });
+
+  it("음수 토큰은 전체를 치환하므로 부호는 tokenRef가 담는다", () => {
+    const code = `const x = <div className="-mt-2 p-4" />;`;
+    const patch = tailwindExtractor.write(extractOne(code, "-mt-2"), "-mt-space-1")!;
+    expect(code.slice(patch.start, patch.end)).toBe("-mt-2");
+    expect(patch.replacement).toBe("-mt-space-1");
+    expect(apply(code, patch)).toBe(`const x = <div className="-mt-space-1 p-4" />;`);
+  });
+
   it("dynamic usage에는 null을 돌려준다", () => {
     const code = `const x = <div className={cn("p-4", props.className)} />;`;
     const dynamic = extractAll(code).find((u) => u.source === "dynamic")!;

@@ -11,13 +11,22 @@ describe("parseClassString", () => {
         value: "#3B82F6",
         arbitrary: true,
         negative: false,
+        important: null,
       },
     ]);
   });
 
   it("음수 접두를 negative로 분리한다", () => {
     expect(parseClassString("-mt-2")).toEqual([
-      { raw: "-mt-2", variants: [], utility: "mt", value: "2", arbitrary: false, negative: true },
+      {
+        raw: "-mt-2",
+        variants: [],
+        utility: "mt",
+        value: "2",
+        arbitrary: false,
+        negative: true,
+        important: null,
+      },
     ]);
   });
 
@@ -102,6 +111,32 @@ describe("parseClassString", () => {
       value: "color:var(--c)",
       arbitrary: true,
     });
+  });
+
+  it("앞·뒤 !를 important로 분리하고 raw는 보존한다", () => {
+    expect(parseClassString("!bg-[#fff]")[0]).toEqual({
+      raw: "!bg-[#fff]",
+      variants: [],
+      utility: "bg",
+      value: "#fff",
+      arbitrary: true,
+      negative: false,
+      important: "prefix",
+    });
+    expect(parseClassString("md:!p-[13px]")[0]).toMatchObject({
+      raw: "md:!p-[13px]",
+      variants: ["md"],
+      utility: "p",
+      value: "13px",
+      important: "prefix",
+    });
+    expect(parseClassString("p-4!")[0]).toMatchObject({
+      raw: "p-4!",
+      utility: "p",
+      value: "4",
+      important: "suffix",
+    });
+    expect(parseClassString("!-mt-2")[0]).toMatchObject({ utility: "mt", value: "2", negative: true, important: "prefix" });
   });
 
   it("음수 arbitrary 값을 인식한다", () => {
