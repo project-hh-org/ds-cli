@@ -71,6 +71,18 @@ export async function readDependencyNames(root: string): Promise<string[]> {
   return [...keysOf(dependencies), ...keysOf(devDependencies)];
 }
 
+/** 루트에 `pnpm-workspace.yaml`이 있거나 `package.json`에 `workspaces`가 있으면 모노레포 루트로 본다. */
+export async function isMonorepoRoot(root: string): Promise<boolean> {
+  if (await pathExists(path.join(root, "pnpm-workspace.yaml"))) return true;
+  try {
+    const json: unknown = JSON.parse(await fs.readFile(path.join(root, "package.json"), "utf-8"));
+    return typeof json === "object" && json !== null && "workspaces" in json;
+  } catch {
+    // 없거나 손상된 package.json은 readDependencyNames가 따로 다룬다.
+    return false;
+  }
+}
+
 const READ_BATCH = 64;
 
 /** 인덱서와 같은 glob의 소스 파일을 텍스트로 읽는다. 읽을 수 없는 파일은 건너뛴다. */

@@ -83,6 +83,48 @@ describe("styling 감지", () => {
     expect(tw?.evidence).toEqual(['@import "tailwindcss" in src/app.css']);
   });
 
+  it("Tailwind v3 CSS 지시어(@tailwind base|components|utilities)도 tailwind 근거가 된다", async () => {
+    repo({ "package.json": pkg(), "src/index.css": "@tailwind base;\n@tailwind components;\n@tailwind utilities;\n" });
+    const r = await detect(tmp);
+    const tw = r.styling.methods.find((m) => m.name === "tailwind");
+    expect(tw?.evidence).toEqual(["@tailwind directive in src/index.css"]);
+    expect(r.activeExtractors).toContain("tailwind");
+  });
+
+  it("루트 아래(apps/web)의 tailwind.config.*도 찾고, 기본 제외 디렉터리 안의 것은 무시한다", async () => {
+    repo({
+      "package.json": pkg(),
+      "apps/web/tailwind.config.js": "module.exports = {}",
+      "node_modules/some-pkg/tailwind.config.js": "module.exports = {}",
+    });
+    const r = await detect(tmp);
+    expect(r.styling.methods.find((m) => m.name === "tailwind")?.evidence).toEqual(["apps/web/tailwind.config.js"]);
+  });
+
+  it("루트 package.json에 workspaces가 있으면 감지된 방식의 근거에 monorepo-root를 더한다", async () => {
+    repo({
+      "package.json": JSON.stringify({ name: "mono", private: true, workspaces: ["apps/*"] }),
+      "apps/web/tailwind.config.ts": "export default {}",
+    });
+    const r = await detect(tmp);
+    expect(r.styling.methods.find((m) => m.name === "tailwind")?.evidence).toEqual([
+      "apps/web/tailwind.config.ts",
+      "monorepo-root",
+    ]);
+  });
+
+  it("pnpm-workspace.yaml이 있어도 monorepo-root 근거를 더한다 (Tailwind가 없어도 폴백 방식에 붙는다)", async () => {
+    repo({ "package.json": pkg(), "pnpm-workspace.yaml": "packages:\n  - apps/*\n" });
+    const r = await detect(tmp);
+    expect(r.styling.methods).toEqual([{ name: "inline-style", evidence: ["fallback", "monorepo-root"], share: 0 }]);
+  });
+
+  it("모노레포 표식이 없으면 monorepo-root 근거가 없다", async () => {
+    repo({ "package.json": pkg({}, { tailwindcss: "^3" }), "tailwind.config.ts": "" });
+    const r = await detect(tmp);
+    expect(r.styling.methods.flatMap((m) => m.evidence)).not.toContain("monorepo-root");
+  });
+
   it("inline-style, css-modules, styled, emotion 근거를 각각 감지한다", async () => {
     repo({
       "package.json": pkg({ "styled-components": "^6", "@emotion/react": "^11" }),

@@ -1,7 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import type { Index } from "@ds-cli/core";
-import { listFiles, pathExists, type SourceFile } from "./fs-utils.js";
+import { isMonorepoRoot, listFiles, type SourceFile } from "./fs-utils.js";
 
 export type StylingMethodName = "tailwind" | "inline-style" | "css-modules" | "styled" | "emotion";
 
@@ -12,8 +12,12 @@ export interface StylingDetection {
 /** 구현된 Extractor 이름. CLI 레지스트리 키, Extractor.name과 같아야 한다. */
 const IMPLEMENTED_EXTRACTORS: StylingMethodName[] = ["tailwind", "inline-style"];
 
-const TAILWIND_CONFIGS = ["js", "cjs", "mjs", "ts"].map((e) => `tailwind.config.${e}`);
+const TAILWIND_CONFIGS = "**/tailwind.config.*";
 const TAILWIND_CSS_IMPORT = /@import\s+(?:url\()?["']tailwindcss(?:\/[^"']*)?["']/;
+/** Tailwind v3 CSS 지시어 */
+const TAILWIND_DIRECTIVE = /@tailwind\s+(?:base|components|utilities)\b/;
+/** 루트가 모노레포 루트일 때 감지된 방식의 근거에 붙인다. CLI가 `--root apps/<app>` 힌트를 낸다. */
+export const MONOREPO_ROOT_EVIDENCE = "monorepo-root";
 const EVIDENCE_FILE_CAP = 3;
 
 const INLINE_STYLE = /style=\{\{/;
@@ -29,9 +33,7 @@ function cap(files: string[], label: (f: string) => string): string[] {
 async function tailwindEvidence(root: string, deps: string[]): Promise<string[]> {
   const evidence: string[] = [];
   if (deps.includes("tailwindcss")) evidence.push("package.json: tailwindcss");
-  for (const name of TAILWIND_CONFIGS) {
-    if (await pathExists(path.join(root, name))) evidence.push(name);
-  }
+  evidence.push(...(await listFiles(root, [TAILWIND_CONFIGS])));
   for (const css of await listFiles(root, ["**/*.css"])) {
     let content: string;
     try {
@@ -41,6 +43,10 @@ async function tailwindEvidence(root: string, deps: string[]): Promise<string[]>
     }
     if (TAILWIND_CSS_IMPORT.test(content)) {
       evidence.push(`@import "tailwindcss" in ${css}`);
+      break;
+    }
+    if (TAILWIND_DIRECTIVE.test(content)) {
+      evidence.push(`@tailwind directive in ${css}`);
       break;
     }
   }
@@ -128,6 +134,10 @@ export async function detectStyling(root: string, input: StylingInput): Promise<
       evidence: ["fallback"],
       share: index ? indexShare(index, "inline-style") : 0,
     });
+  }
+
+  if (await isMonorepoRoot(root)) {
+    for (const m of methods) m.evidence.push(MONOREPO_ROOT_EVIDENCE);
   }
 
   return { methods };

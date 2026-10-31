@@ -7,7 +7,7 @@ import type { Index } from "@ds-cli/core";
 import type { DetectResult } from "@ds-cli/detect";
 import type { StyleUsage } from "@ds-cli/extractor-api";
 import { computeAudit, runAudit } from "../src/commands/audit.js";
-import { runDetect } from "../src/commands/detect.js";
+import { detectHints, runDetect } from "../src/commands/detect.js";
 
 let tmp: string;
 beforeEach(() => {
@@ -42,6 +42,19 @@ describe("runDetect", () => {
     expect(result.provisional).toBe(true);
     expect(fs.existsSync(path.join(tmp, ".ds-cli", "detect.json"))).toBe(true);
     expect(result.activeExtractors).toContain("tailwind");
+  });
+
+  it("모노레포 루트면 --root apps/<app> 힌트를 낸다", async () => {
+    write("package.json", JSON.stringify({ name: "mono", private: true }));
+    write("pnpm-workspace.yaml", "packages:\n  - apps/*\n");
+    write("apps/web/tailwind.config.ts", "export default {}");
+    const result = await runDetect(tmp);
+    expect(detectHints(result)).toEqual(["힌트: 모노레포 루트입니다. --root apps/<app> 로 실행하세요"]);
+  });
+
+  it("모노레포 루트가 아니면 힌트가 없다", async () => {
+    tailwindInlineRepo();
+    expect(detectHints(await runDetect(tmp))).toEqual([]);
   });
 });
 

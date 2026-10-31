@@ -1,5 +1,5 @@
 import path from "node:path";
-import { detect, writeDetect, type DetectResult } from "@ds-cli/detect";
+import { detect, MONOREPO_ROOT_EVIDENCE, writeDetect, type DetectResult } from "@ds-cli/detect";
 
 /** detect를 실행하고 `.ds-cli/detect.json`에 저장한다. 결과는 provisional이다. */
 export async function runDetect(root: string): Promise<DetectResult> {
@@ -22,6 +22,12 @@ function dsLabel(ds: DetectResult["ds"]): string {
     case "none":
       return "none";
   }
+}
+
+/** CLI가 stderr에 출력할 힌트. 모노레포 루트에서 실행하면 앱 디렉터리를 --root로 지정하라고 알린다. */
+export function detectHints(r: DetectResult): string[] {
+  const monorepo = r.styling.methods.some((m) => m.evidence.includes(MONOREPO_ROOT_EVIDENCE));
+  return monorepo ? ["힌트: 모노레포 루트입니다. --root apps/<app> 로 실행하세요"] : [];
 }
 
 /** 사람이 읽는 5줄 요약. */
