@@ -1,0 +1,26 @@
+{
+  "name": "@ds-cli/extractor-api",
+  "version": "0.0.0",
+  "description": "ds-cli Extractor 플러그인 계약과 conformance 러너",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "devDependencies": {
+    "vitest": "^3.0.0"
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  }
+}
