@@ -194,7 +194,7 @@ function extract(ctx: ExtractContext): StyleUsage[] {
 
 export const inlineStyleExtractor: Extractor = {
   name: EXTRACTOR_NAME,
-  appliesTo: (ctx) => /\.[tj]sx$/.test(ctx.file) && ctx.code.includes("style="),
+  appliesTo: (ctx) => /\.[cm]?[jt]sx?$/.test(ctx.file) && ctx.code.includes("style="),
   extract,
   write,
 };

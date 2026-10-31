@@ -77,6 +77,14 @@ const cases: ConformanceCase[] = [
       { property: "padding", source: "token", normalized: { kind: "unknown" } },
     ],
   },
+  {
+    file: "src/App.js",
+    code: `export const App = () => <div style={{ color: "#3B82F6", margin: 8 }} />;`,
+    expect: [
+      { property: "color", source: "hardcoded", normalized: { kind: "color", hex: "#3b82f6" } },
+      { property: "margin", source: "hardcoded", normalized: { kind: "length", px: 8 } },
+    ],
+  },
 ];
 
 describe("inlineStyleExtractor", () => {
@@ -95,13 +103,14 @@ describe("inlineStyleExtractor", () => {
     expect(inlineStyleExtractor.extract({ root: "/", file: "d.tsx", code })).toEqual([]);
   });
 
-  it("appliesTo는 .tsx/.jsx이면서 style=이 있을 때만 true다", () => {
+  it("appliesTo는 JS/TS 소스(.js/.jsx/.ts/.tsx, .mjs/.cjs 등)이면서 style=이 있을 때만 true다", () => {
     const code = `<div style={{ color: "red" }} />`;
     const ctx = (file: string, c: string) => ({ root: "/", file, code: c });
-    expect(inlineStyleExtractor.appliesTo(ctx("a.tsx", code))).toBe(true);
-    expect(inlineStyleExtractor.appliesTo(ctx("a.jsx", code))).toBe(true);
-    expect(inlineStyleExtractor.appliesTo(ctx("a.ts", code))).toBe(false);
+    for (const file of ["a.tsx", "a.jsx", "a.js", "a.ts", "a.mjs", "a.cjs", "a.mts", "a.cts"]) {
+      expect(inlineStyleExtractor.appliesTo(ctx(file, code)), file).toBe(true);
+    }
     expect(inlineStyleExtractor.appliesTo(ctx("a.css", code))).toBe(false);
+    expect(inlineStyleExtractor.appliesTo(ctx("a.json", code))).toBe(false);
     expect(inlineStyleExtractor.appliesTo(ctx("a.tsx", `<div className="x" />`))).toBe(false);
   });
 

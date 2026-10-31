@@ -337,7 +337,7 @@ function extract(ctx: ExtractContext): StyleUsage[] {
 
 export const tailwindExtractor: Extractor = {
   name: EXTRACTOR_NAME,
-  appliesTo: (ctx) => /\.[tj]sx?$/.test(ctx.file) && ctx.code.includes("className"),
+  appliesTo: (ctx) => /\.[cm]?[jt]sx?$/.test(ctx.file) && ctx.code.includes("className"),
   extract,
   write,
 };

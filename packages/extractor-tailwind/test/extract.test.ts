@@ -68,9 +68,9 @@ describe("tailwindExtractor", () => {
   });
 
   describe("appliesTo", () => {
-    it("확장자가 ts/tsx/js/jsx이고 className이 있을 때만 true다", () => {
+    it("확장자가 JS/TS 소스(ts/tsx/js/jsx, mjs/cjs 등)이고 className이 있을 때만 true다", () => {
       const code = `<div className="p-4" />`;
-      for (const file of ["a.tsx", "a.jsx", "a.ts", "a.js"]) {
+      for (const file of ["a.tsx", "a.jsx", "a.ts", "a.js", "a.mjs", "a.cjs", "a.mts", "a.cts"]) {
         expect(tailwindExtractor.appliesTo(ctx(file, code))).toBe(true);
       }
       expect(tailwindExtractor.appliesTo(ctx("a.css", code))).toBe(false);
