@@ -27,5 +27,10 @@ npx ds-cli usage     # 컴포넌트·토큰 사용량 대시보드
 
 ```
 pnpm install
+pnpm -r build   # 테스트가 빌드된 dist를 import하므로 test 전에 필요
 pnpm test
+pnpm typecheck
+
+# fixture로 audit 실행 (결과는 fixtures/<name>/.ds-cli/ 에 생성, git 무시됨)
+node packages/cli/dist/bin.js audit --root fixtures/tailwind-app
 ```
