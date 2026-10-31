@@ -105,6 +105,9 @@ function normalizeString(raw: string, property: StyleProperty): Normalized {
   return px === null ? UNKNOWN : { kind: "length", px };
 }
 
+/** `var(--…)` 값은 CSS 변수(토큰) 참조다. */
+const CSS_VAR_REF = /^\s*var\(\s*--/;
+
 function buildUsage(
   ctx: ExtractContext,
   property: StyleProperty,
@@ -122,11 +125,12 @@ function buildUsage(
   };
 
   if (value.type === "StringLiteral") {
+    const tokenRef = CSS_VAR_REF.test(value.value);
     const usage: StyleUsage = {
       ...base,
       raw: value.value,
-      normalized: normalizeString(value.value, property),
-      source: "hardcoded",
+      normalized: tokenRef ? UNKNOWN : normalizeString(value.value, property),
+      source: tokenRef ? "token" : "hardcoded",
     };
     registerPatchTarget(usage, { start, end, file: ctx.file });
     return usage;

@@ -69,6 +69,14 @@ const cases: ConformanceCase[] = [
       { property: "other", source: "dynamic", normalized: { kind: "unknown" } },
     ],
   },
+  {
+    file: "i.tsx",
+    code: `export const I = () => <div style={{ color: "var(--x)", padding: " var(--space-2) " }} />;`,
+    expect: [
+      { property: "color", raw: "var(--x)", source: "token", normalized: { kind: "unknown" } },
+      { property: "padding", source: "token", normalized: { kind: "unknown" } },
+    ],
+  },
 ];
 
 describe("inlineStyleExtractor", () => {
@@ -113,7 +121,7 @@ describe("inlineStyleExtractor", () => {
   });
 
   it("정규화할 수 없는 문자열은 hardcoded + unknown이다", () => {
-    const code = `const x = <div style={{ color: "var(--c)", padding: "auto" }} />;`;
+    const code = `const x = <div style={{ color: "currentColor", padding: "auto" }} />;`;
     const usages = inlineStyleExtractor.extract({ root: "/", file: "g.tsx", code });
     expect(usages).toHaveLength(2);
     for (const u of usages) {
