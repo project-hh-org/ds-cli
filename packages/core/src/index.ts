@@ -25,3 +25,13 @@ export type { SpacingCandidate } from "./cluster/spacing-cluster.js";
 export { clusterSpacing } from "./cluster/spacing-cluster.js";
 export type { TokenMatch } from "./match/token-matcher.js";
 export { matchToken } from "./match/token-matcher.js";
+export {
+  COLOR_PROPERTIES,
+  LENGTH_PROPERTIES,
+  cssPropertyToStyleProperty,
+  isColorProperty,
+  isLengthProperty,
+  splitShorthandColor,
+} from "./model/css-property.js";
+export type { CssDecl } from "./parse/css-text.js";
+export { PLACEHOLDER, parseCssDeclarations } from "./parse/css-text.js";

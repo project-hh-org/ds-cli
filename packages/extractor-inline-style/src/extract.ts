@@ -1,4 +1,12 @@
-import { normalizeColor, normalizeLength, parseTsx, traverse } from "@dsmith/core";
+import {
+  cssPropertyToStyleProperty,
+  isColorProperty,
+  isLengthProperty,
+  normalizeColor,
+  normalizeLength,
+  parseTsx,
+  traverse,
+} from "@dsmith/core";
 import { JS_FILES } from "@dsmith/extractor-api";
 import type {
   ExtractContext,
@@ -11,47 +19,8 @@ import { registerPatchTarget, write } from "./write.js";
 
 export const EXTRACTOR_NAME = "inline-style";
 
-const COLOR_PROPERTIES: ReadonlySet<StyleProperty> = new Set<StyleProperty>([
-  "color",
-  "background-color",
-  "border-color",
-  "fill",
-  "stroke",
-]);
-
 function camelToKebab(name: string): string {
   return name.replace(/[A-Z]/g, (ch) => `-${ch.toLowerCase()}`);
-}
-
-/** React style 객체 키(camelCase 또는 kebab-case)를 StyleProperty로 분류한다. 모르는 키는 "other". */
-export function cssPropertyToStyleProperty(cssProp: string): StyleProperty {
-  const name = camelToKebab(cssProp);
-  if (/^border(-(top|right|bottom|left))?-color$/.test(name)) return "border-color";
-  if (/^border(-[a-z]+)*-radius$/.test(name)) return "border-radius";
-  if (/^padding(-|$)/.test(name)) return "padding";
-  if (/^margin(-|$)/.test(name)) return "margin";
-  switch (name) {
-    case "color":
-    case "background-color":
-    case "fill":
-    case "stroke":
-    case "font-size":
-      return name;
-    case "gap":
-    case "row-gap":
-    case "column-gap":
-      return "gap";
-    case "width":
-    case "min-width":
-    case "max-width":
-      return "width";
-    case "height":
-    case "min-height":
-    case "max-height":
-      return "height";
-    default:
-      return "other";
-  }
 }
 
 /** 값이 색일 때만 색 속성으로 보는 축약 속성. 그 외 값(`1px solid red`, `url(...)`)은 "other"로 둔다. */
@@ -79,19 +48,9 @@ function propertyKeyName(prop: ObjectProperty): string | null {
 type Normalized = StyleUsage["normalized"];
 const UNKNOWN: Normalized = { kind: "unknown" };
 
-const LENGTH_PROPERTIES: ReadonlySet<StyleProperty> = new Set<StyleProperty>([
-  "padding",
-  "margin",
-  "gap",
-  "width",
-  "height",
-  "font-size",
-  "border-radius",
-]);
-
 /** 단위 없는 숫자는 길이 속성에서만 px로 본다. opacity·zIndex·fontWeight 등은 길이가 아니다. */
 function normalizeNumber(px: number, property: StyleProperty): Normalized {
-  return LENGTH_PROPERTIES.has(property) ? { kind: "length", px } : UNKNOWN;
+  return isLengthProperty(property) ?{ kind: "length", px } : UNKNOWN;
 }
 
 /** 숫자 리터럴의 원본 소스 텍스트(`1.50` 등). */
@@ -101,7 +60,7 @@ function numberRaw(node: NumericLiteral): string {
 }
 
 function normalizeString(raw: string, property: StyleProperty): Normalized {
-  if (COLOR_PROPERTIES.has(property)) return normalizeColor(raw) ?? UNKNOWN;
+  if (isColorProperty(property)) return normalizeColor(raw) ?? UNKNOWN;
   const px = normalizeLength(raw);
   return px === null ? UNKNOWN : { kind: "length", px };
 }
