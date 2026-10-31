@@ -83,6 +83,8 @@ const LENGTH_NAME = /^[a-z0-9][\w.-]*$/i;
 /** 색·길이가 아닌 arbitrary 값(이미지, 그라디언트, 타입 힌트). */
 const NON_STYLE_ARBITRARY = /^(?:url\(|[a-z-]*gradient\(|(?:image|percentage|position|size|number|family):)/i;
 const TYPE_HINT = /^(color|length):(.*)$/s;
+/** `var(--…)` 값은 CSS 변수(토큰) 참조다. */
+const CSS_VAR_REF = /^\s*var\(\s*--/;
 
 interface Resolved {
   property: StyleProperty;
@@ -107,6 +109,19 @@ function resolveArbitrary(c: ParsedClass, rule: Rule): Resolved | null {
     value = hinted[2] ?? "";
   }
   if (NON_STYLE_ARBITRARY.test(value)) return null;
+
+  // `bg-[var(--brand)]`: CSS 변수(토큰) 참조. property는 매핑된 것을 유지하고, `text-`는 힌트가 없으면 알 수 없다.
+  if (CSS_VAR_REF.test(value)) {
+    const token = (property: StyleProperty): Resolved => ({ property, normalized: UNKNOWN, source: "token" });
+    switch (rule.kind) {
+      case "length":
+        return hint === "color" ? null : token(rule.property);
+      case "color":
+        return hint === "length" ? null : token(rule.property);
+      case "text":
+        return token(hint === "color" ? "color" : hint === "length" ? "font-size" : "other");
+    }
+  }
 
   const asColor = (property: StyleProperty): Resolved => ({
     property,

@@ -42,6 +42,11 @@ const cases: ConformanceCase[] = [
       { property: "other", raw: "props.className", source: "dynamic", normalized: { kind: "unknown" } },
     ],
   },
+  {
+    file: "e.tsx",
+    code: `export const E = () => <div className="bg-[var(--brand)]" />;`,
+    expect: [{ property: "background-color", source: "token", normalized: { kind: "unknown" } }],
+  },
 ];
 
 const ctx = (file: string, code: string) => ({ root: "/", file, code });
@@ -111,8 +116,19 @@ describe("tailwindExtractor", () => {
     });
 
     it("arbitrary 색이 파싱되지 않으면 hardcoded + unknown이다", () => {
-      expect(summary(`const x = <div className="bg-[var(--c)]" />;`)).toEqual([
-        ["background-color", "bg-[var(--c)]", "hardcoded", { kind: "unknown" }],
+      expect(summary(`const x = <div className="bg-[foo]" />;`)).toEqual([
+        ["background-color", "bg-[foo]", "hardcoded", { kind: "unknown" }],
+      ]);
+    });
+
+    it("arbitrary var(--…) 값은 token + unknown이고 property는 매핑된 것을 유지한다", () => {
+      expect(
+        summary(`const x = <div className="bg-[var(--brand)] p-[var(--space-2)] text-[color:var(--fg)] text-[var(--x)]" />;`),
+      ).toEqual([
+        ["background-color", "bg-[var(--brand)]", "token", { kind: "unknown" }],
+        ["padding", "p-[var(--space-2)]", "token", { kind: "unknown" }],
+        ["color", "text-[color:var(--fg)]", "token", { kind: "unknown" }],
+        ["other", "text-[var(--x)]", "token", { kind: "unknown" }],
       ]);
     });
 
@@ -144,8 +160,8 @@ describe("tailwindExtractor", () => {
     });
 
     it("해석할 수 없는 text-[...]는 property other + unknown이다", () => {
-      expect(summary(`const x = <div className="text-[var(--x)]" />;`)).toEqual([
-        ["other", "text-[var(--x)]", "hardcoded", { kind: "unknown" }],
+      expect(summary(`const x = <div className="text-[foo]" />;`)).toEqual([
+        ["other", "text-[foo]", "hardcoded", { kind: "unknown" }],
       ]);
     });
   });
