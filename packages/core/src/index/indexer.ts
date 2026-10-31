@@ -58,7 +58,13 @@ export async function indexRepo(
     .sort();
 
   // 준비 단계(설정 파일 로드 등)는 파일을 읽기 전에 Extractor마다 한 번만 실행한다.
-  for (const extractor of extractors) await extractor.prepare?.(root);
+  for (const extractor of extractors) {
+    try {
+      await extractor.prepare?.(root);
+    } catch (err) {
+      throw new Error(`prepare(${extractor.name}): ${messageOf(err)}`);
+    }
+  }
 
   const matchers = extractors.map((e) => ({ extractor: e, matches: picomatch(e.files, { dot: false }) }));
 

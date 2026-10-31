@@ -207,7 +207,7 @@ describe("indexRepo: Extractor 경계", () => {
   });
 
   it("Extractor가 선언한 글롭 합집합으로 파일을 모으고, JS/TS가 아닌 파일은 컴포넌트 파싱 없이 처리한다", async () => {
-    put("notes.txt", `이것은 <div 문법이 깨진 텍스트`);
+    put("notes.txt", `const a = <div>;`);
     put("a.tsx", `const a = <p />;`);
     const txt = {
       name: "txt",
@@ -249,6 +249,22 @@ describe("indexRepo: Extractor 경계", () => {
     expect(calls.filter((c) => c === "prepare")).toHaveLength(1);
     expect(calls.filter((c) => c === "extract")).toHaveLength(2);
     expect(roots).toEqual([tmp]);
+  });
+
+  it("prepare가 실패하면 Extractor 이름을 붙여 indexRepo가 reject된다", async () => {
+    put("a.tsx", `const a = <p />;`);
+    const ext = {
+      name: "prep-bad",
+      files: JS_FILES,
+      parses: "none" as const,
+      prepare: () => {
+        throw new Error("config missing");
+      },
+      appliesTo: () => true,
+      extract: () => [],
+      write: () => null,
+    };
+    await expect(indexRepo(tmp, [ext])).rejects.toThrow("prepare(prep-bad): config missing");
   });
 
   it("각 Extractor는 자기 files 글롭에 맞는 파일에만 호출된다", async () => {
