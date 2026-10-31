@@ -5,7 +5,7 @@ import type {
   StyleProperty,
   StyleUsage,
 } from "@ds-cli/extractor-api";
-import type { Expression, ObjectProperty, PatternLike } from "@babel/types";
+import type { Expression, NumericLiteral, ObjectProperty, PatternLike } from "@babel/types";
 import { registerPatchTarget, write } from "./write.js";
 
 export const EXTRACTOR_NAME = "inline-style";
@@ -63,6 +63,27 @@ function propertyKeyName(prop: ObjectProperty): string | null {
 type Normalized = StyleUsage["normalized"];
 const UNKNOWN: Normalized = { kind: "unknown" };
 
+const LENGTH_PROPERTIES: ReadonlySet<StyleProperty> = new Set<StyleProperty>([
+  "padding",
+  "margin",
+  "gap",
+  "width",
+  "height",
+  "font-size",
+  "border-radius",
+]);
+
+/** 단위 없는 숫자는 길이 속성에서만 px로 본다. opacity·zIndex·fontWeight 등은 길이가 아니다. */
+function normalizeNumber(px: number, property: StyleProperty): Normalized {
+  return LENGTH_PROPERTIES.has(property) ? { kind: "length", px } : UNKNOWN;
+}
+
+/** 숫자 리터럴의 원본 소스 텍스트(`1.50` 등). */
+function numberRaw(node: NumericLiteral): string {
+  const raw = node.extra?.raw;
+  return typeof raw === "string" ? raw : String(node.value);
+}
+
 function normalizeString(raw: string, property: StyleProperty): Normalized {
   if (COLOR_PROPERTIES.has(property)) return normalizeColor(raw) ?? UNKNOWN;
   const px = normalizeLength(raw);
@@ -98,8 +119,8 @@ function buildUsage(
   if (value.type === "NumericLiteral") {
     const usage: StyleUsage = {
       ...base,
-      raw: String(value.value),
-      normalized: { kind: "length", px: value.value },
+      raw: numberRaw(value),
+      normalized: normalizeNumber(value.value, property),
       source: "hardcoded",
     };
     registerPatchTarget(usage, { start, end, file: ctx.file });
@@ -113,8 +134,8 @@ function buildUsage(
     const px = value.operator === "-" ? -value.argument.value : value.argument.value;
     const usage: StyleUsage = {
       ...base,
-      raw: `${value.operator === "-" ? "-" : ""}${value.argument.value}`,
-      normalized: { kind: "length", px },
+      raw: `${value.operator === "-" ? "-" : ""}${numberRaw(value.argument)}`,
+      normalized: normalizeNumber(px, property),
       source: "hardcoded",
     };
     registerPatchTarget(usage, { start, end, file: ctx.file });

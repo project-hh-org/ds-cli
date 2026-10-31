@@ -98,6 +98,37 @@ describe("inlineStyleExtractor", () => {
     ]);
   });
 
+  it("숫자 리터럴은 길이 속성에서만 px로 정규화한다", () => {
+    const code =
+      "const x = <div style={{ opacity: 0.5, zIndex: 10, fontWeight: 600, color: 0, padding: 12, lineHeight: 1.50, margin: -4 }} />;";
+    const usages = inlineStyleExtractor.extract({ root: "/", file: "k.tsx", code });
+    expect(usages.map((u) => [u.property, u.raw, u.source, u.normalized])).toEqual([
+      ["other", "0.5", "hardcoded", { kind: "unknown" }],
+      ["other", "10", "hardcoded", { kind: "unknown" }],
+      ["other", "600", "hardcoded", { kind: "unknown" }],
+      ["color", "0", "hardcoded", { kind: "unknown" }],
+      ["padding", "12", "hardcoded", { kind: "length", px: 12 }],
+      ["other", "1.50", "hardcoded", { kind: "unknown" }],
+      ["margin", "-4", "hardcoded", { kind: "length", px: -4 }],
+    ]);
+  });
+
+  it("숫자 raw는 원본 소스 텍스트를 보존한다", () => {
+    const code = "const x = <div style={{ width: 1.50, height: -2.0 }} />;";
+    const usages = inlineStyleExtractor.extract({ root: "/", file: "l.tsx", code });
+    expect(usages.map((u) => [u.raw, u.normalized])).toEqual([
+      ["1.50", { kind: "length", px: 1.5 }],
+      ["-2.0", { kind: "length", px: -2 }],
+    ]);
+  });
+
+  it("비길이 숫자 리터럴도 치환 패치는 만든다", () => {
+    const code = "const x = <div style={{ opacity: 0.5 }} />;";
+    const [usage] = inlineStyleExtractor.extract({ root: "/", file: "m.tsx", code });
+    const patch = inlineStyleExtractor.write(usage!, "var(--opacity-half)")!;
+    expect(code.slice(patch.start, patch.end)).toBe("0.5");
+  });
+
   it("복구 불가능한 문법 오류는 parseTsx와 마찬가지로 예외를 던진다", () => {
     const code = `const x = <div style={{ color: "red" }} />;\nconst = ;`;
     expect(() => parseTsx(code, "i.tsx")).toThrow();
@@ -105,7 +136,7 @@ describe("inlineStyleExtractor", () => {
   });
 
   it("단항 +/- 숫자 리터럴은 hardcoded length다", () => {
-    const code = "const x = <div style={{ margin: -4, top: +2, left: -x }} />;";
+    const code = "const x = <div style={{ margin: -4, padding: +2, left: -x }} />;";
     const usages = inlineStyleExtractor.extract({ root: "/", file: "j.tsx", code });
     expect(usages.map((u) => [u.raw, u.source, u.normalized])).toEqual([
       ["-4", "hardcoded", { kind: "length", px: -4 }],
