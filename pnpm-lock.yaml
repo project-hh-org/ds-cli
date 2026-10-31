@@ -18,6 +18,31 @@ importers:
         specifier: ^3.0.0
         version: 3.2.7(@types/node@22.20.5)
 
+  packages/cli:
+    dependencies:
+      '@ds-cli/core':
+        specifier: workspace:*
+        version: link:../core
+      '@ds-cli/detect':
+        specifier: workspace:*
+        version: link:../detect
+      '@ds-cli/extractor-api':
+        specifier: workspace:*
+        version: link:../extractor-api
+      '@ds-cli/extractor-inline-style':
+        specifier: workspace:*
+        version: link:../extractor-inline-style
+      '@ds-cli/extractor-tailwind':
+        specifier: workspace:*
+        version: link:../extractor-tailwind
+      commander:
+        specifier: ^12.1.0
+        version: 12.1.0
+    devDependencies:
+      vitest:
+        specifier: ^3.0.0
+        version: 3.2.7(@types/node@22.20.5)
+
   packages/core:
     dependencies:
       '@babel/parser':
@@ -528,6 +553,10 @@ packages:
   check-error@2.1.3:
     resolution: {integrity: sha512-PAJdDJusoxnwm1VwW07VWwUN1sl7smmC3OKggvndJFadxxDRyFJBX/ggnu/KE4kQAB7a3Dp8f/YXC1FlUprWmA==}
     engines: {node: '>= 16'}
+
+  commander@12.1.0:
+    resolution: {integrity: sha512-Vw8qHK3bZM9y/P10u3Vib8o/DdkvA2OtPtZvD871QKjy74Wj1WSKFILMPRPSdUSx5RFK1arlJzEtA4PkFgnbuA==}
+    engines: {node: '>=18'}
 
   culori@4.0.2:
     resolution: {integrity: sha512-1+BhOB8ahCn4O0cep0Sh2l9KCOfOdY+BXJnKMHFFzDEouSr/el18QwXEMRlOj9UY5nCeA8UN3a/82rUWRBeyBw==}
@@ -1112,6 +1141,8 @@ snapshots:
       pathval: 2.0.1
 
   check-error@2.1.3: {}
+
+  commander@12.1.0: {}
 
   culori@4.0.2: {}
 

@@ -1,0 +1,15 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "dist"
+  },
+  "include": ["src"],
+  "references": [
+    { "path": "../core" },
+    { "path": "../detect" },
+    { "path": "../extractor-api" },
+    { "path": "../extractor-inline-style" },
+    { "path": "../extractor-tailwind" }
+  ]
+}
