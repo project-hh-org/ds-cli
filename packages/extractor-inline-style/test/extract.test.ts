@@ -1,4 +1,4 @@
-import { runConformance, type ConformanceCase } from "@dsmith/extractor-api";
+import { JS_FILES, metaOf, runConformance, type ConformanceCase } from "@dsmith/extractor-api";
 import { parseTsx } from "@dsmith/core";
 import { describe, expect, it } from "vitest";
 import { cssPropertyToStyleProperty, inlineStyleExtractor } from "../src/index.js";
@@ -96,6 +96,14 @@ describe("inlineStyleExtractor", () => {
 
   it("name은 inline-style이다", () => {
     expect(inlineStyleExtractor.name).toBe("inline-style");
+  });
+
+  it("메타는 JS_FILES를 대상으로 하고 tsx를 파싱한다", () => {
+    expect(metaOf(inlineStyleExtractor)).toEqual({
+      name: "inline-style",
+      files: JS_FILES,
+      parses: "tsx",
+    });
   });
 
   it("style={styles.box}는 usage를 만들지 않는다", () => {

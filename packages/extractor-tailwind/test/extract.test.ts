@@ -1,5 +1,5 @@
 import { parseTsx } from "@dsmith/core";
-import { runConformance, type ConformanceCase } from "@dsmith/extractor-api";
+import { JS_FILES, metaOf, runConformance, type ConformanceCase } from "@dsmith/extractor-api";
 import { describe, expect, it } from "vitest";
 import { KNOWN_UTILITIES } from "../src/class-parser.js";
 import { RULES } from "../src/extract.js";
@@ -59,6 +59,14 @@ describe("tailwindExtractor", () => {
     const report = runConformance("tailwind", () => tailwindExtractor, cases);
     expect(report.failed).toEqual([]);
     expect(report.passed).toBe(cases.length);
+  });
+
+  it("메타는 JS_FILES를 대상으로 하고 tsx를 파싱한다", () => {
+    expect(metaOf(tailwindExtractor)).toEqual({
+      name: "tailwind",
+      files: JS_FILES,
+      parses: "tsx",
+    });
   });
 
   it("name은 tailwind이고 usage의 extractor도 tailwind다", () => {

@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { runConformance } from "../src/conformance.js";
 import type { ConformanceCase } from "../src/conformance.js";
-import type { Extractor, StyleUsage } from "../src/extractor.js";
+import { JS_FILES, metaOf } from "../src/extractor.js";
+import type { Extractor, ExtractorMeta, StyleUsage } from "../src/extractor.js";
 
 const usage = (over: Partial<StyleUsage> = {}): StyleUsage => ({
   file: "a.tsx",
@@ -15,11 +16,17 @@ const usage = (over: Partial<StyleUsage> = {}): StyleUsage => ({
   ...over,
 });
 
-const makeExtractor = (extract: Extractor["extract"]): Extractor => ({
+const makeExtractor = (
+  extract: Extractor["extract"],
+  meta: Partial<ExtractorMeta> = {},
+): Extractor => ({
   name: "dummy",
+  files: JS_FILES,
+  parses: "tsx",
   appliesTo: () => true,
   extract,
   write: () => null,
+  ...meta,
 });
 
 describe("runConformance", () => {
@@ -127,5 +134,55 @@ describe("runConformance", () => {
     );
     expect(report.passed).toBe(0);
     expect(report.failed[0]?.reason).toContain("boom");
+  });
+});
+
+describe("runConformance 메타 검사", () => {
+  const okCases: ConformanceCase[] = [{ code: "x", file: "a.tsx", expect: [] }];
+
+  it("files가 비어 있으면 case -1로 meta 실패를 기록하고 케이스는 계속 실행한다", () => {
+    const cases: ConformanceCase[] = [
+      { code: "x", file: "a.tsx", expect: [] },
+      { code: "y", file: "b.tsx", expect: [usage()] },
+    ];
+    const report = runConformance("dummy", () => makeExtractor(() => [], { files: [] }), cases);
+    expect(report.passed).toBe(1);
+    expect(report.failed[0]?.case).toBe(-1);
+    expect(report.failed[0]?.reason).toContain("meta");
+    expect(report.failed.map((f) => f.case)).toEqual([-1, 1]);
+  });
+
+  it("name이 소문자 kebab-case가 아니면 meta 실패다", () => {
+    for (const name of ["Bad_Name", "", "1abc", "has space", "UPPER"]) {
+      const report = runConformance("dummy", () => makeExtractor(() => [], { name }), okCases);
+      expect(report.failed[0]?.case).toBe(-1);
+      expect(report.failed[0]?.reason).toContain("meta");
+    }
+  });
+
+  it("parses가 tsx·none 외 값이면 meta 실패다", () => {
+    const bad = { parses: "babel" } as unknown as Partial<ExtractorMeta>;
+    const report = runConformance("dummy", () => makeExtractor(() => [], bad), okCases);
+    expect(report.failed[0]?.case).toBe(-1);
+    expect(report.failed[0]?.reason).toContain("meta");
+  });
+
+  it("정상 메타(parses none 포함)는 meta 실패 없이 통과한다", () => {
+    for (const parses of ["tsx", "none"] as const) {
+      const report = runConformance("dummy", () => makeExtractor(() => [], { parses }), okCases);
+      expect(report).toEqual({ passed: 1, failed: [] });
+    }
+  });
+
+  it("케이스가 없어도 메타는 검사한다", () => {
+    const report = runConformance("dummy", () => makeExtractor(() => [], { files: [] }), []);
+    expect(report.failed.map((f) => f.case)).toEqual([-1]);
+  });
+});
+
+describe("metaOf", () => {
+  it("name·files·parses만 추려 반환한다", () => {
+    const e = makeExtractor(() => [], { name: "dummy-x", parses: "none" });
+    expect(metaOf(e)).toEqual({ name: "dummy-x", files: JS_FILES, parses: "none" });
   });
 });

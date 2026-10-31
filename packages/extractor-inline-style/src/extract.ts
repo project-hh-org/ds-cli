@@ -1,4 +1,5 @@
 import { normalizeColor, normalizeLength, parseTsx, traverse } from "@dsmith/core";
+import { JS_FILES } from "@dsmith/extractor-api";
 import type {
   ExtractContext,
   Extractor,
@@ -194,6 +195,8 @@ function extract(ctx: ExtractContext): StyleUsage[] {
 
 export const inlineStyleExtractor: Extractor = {
   name: EXTRACTOR_NAME,
+  files: JS_FILES,
+  parses: "tsx",
   appliesTo: (ctx) => /\.[cm]?[jt]sx?$/.test(ctx.file) && ctx.code.includes("style="),
   extract,
   write,
