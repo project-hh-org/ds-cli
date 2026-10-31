@@ -1,4 +1,4 @@
-import type { Index } from "@ds-cli/core";
+import { isRatedUsage, type Index } from "@ds-cli/core";
 import { isDsSpecifier, type DsDetection } from "./detect-ds.js";
 import type { SourceFile } from "./fs-utils.js";
 
@@ -27,10 +27,10 @@ function ratio(n: number, d: number): number {
 
 /** 인덱스 기반의 정확한 비율. */
 export function sharesFromIndex(index: Index, ds: DsDetection): Shares {
-  const hardcoded = index.styles.filter((u) => u.source === "hardcoded").length;
-  const rated = index.styles.filter(
-    (u) => u.source === "hardcoded" || u.source === "tailwind-default" || u.source === "token",
-  ).length;
+  // 디자인 속성이 아니거나 정규화되지 않은 값은 분자·분모 모두에서 뺀다. dynamic은 분모에서 제외한다.
+  const ratedUsages = index.styles.filter((u) => u.source !== "dynamic" && isRatedUsage(u));
+  const hardcoded = ratedUsages.filter((u) => u.source === "hardcoded").length;
+  const rated = ratedUsages.length;
   const fromDs =
     ds.kind === "none"
       ? 0

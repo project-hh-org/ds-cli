@@ -4,6 +4,7 @@ import {
   clusterColors,
   clusterSpacing,
   indexRepo,
+  isRatedUsage,
   writeIndex,
   type ComponentUsage,
   type Index,
@@ -22,7 +23,7 @@ const BY_FILE_LIMIT = 20;
 function byFileOf(index: Index): AuditResult["hardcoded"]["byFile"] {
   const counts = new Map<string, number>();
   for (const u of index.styles) {
-    if (u.source === "hardcoded") counts.set(u.file, (counts.get(u.file) ?? 0) + 1);
+    if (u.source === "hardcoded" && isRatedUsage(u)) counts.set(u.file, (counts.get(u.file) ?? 0) + 1);
   }
   return [...counts.entries()]
     .map(([file, count]) => ({ file, count }))

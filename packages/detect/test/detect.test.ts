@@ -38,11 +38,16 @@ function style(extractor: string, source: StyleUsage["source"]): StyleUsage {
     line: 1,
     column: 1,
     property: "color",
-    raw: "x",
-    normalized: { kind: "unknown" },
+    raw: "#ff0000",
+    normalized: { kind: "color", hex: "#ff0000", l: 0.63, c: 0.26, h: 29 },
     source,
     extractor,
   };
+}
+
+/** 디자인 속성이 아닌 inline 값(`display: "flex"`, `opacity: 0.5`)과 같은 모양의 usage. */
+function layoutStyle(raw: string): StyleUsage {
+  return { ...style("inline-style", "hardcoded"), property: "other", raw, normalized: { kind: "unknown" } };
 }
 
 function comp(name: string, importedFrom: string | null): ComponentUsage {
@@ -473,6 +478,16 @@ describe("index와 함께 감지", () => {
     );
     const ds = { kind: "npm", packageName: "@acme/ui", tokenFiles: [] } as const;
     expect(sharesFromIndex(index, ds).hardcodedShare).toBe(0.25);
+  });
+
+  it("sharesFromIndex: property other(display·opacity)와 정규화 안 된 hardcoded 값은 비율을 움직이지 않는다", () => {
+    const ds = { kind: "none", tokenFiles: [] } as const;
+    const base = [style("inline-style", "hardcoded"), style("inline-style", "token")];
+    const unnormalized: StyleUsage = { ...style("tailwind", "hardcoded"), property: "height", normalized: { kind: "unknown" } };
+    expect(sharesFromIndex(indexOf(base, []), ds).hardcodedShare).toBe(0.5);
+    expect(
+      sharesFromIndex(indexOf([...base, layoutStyle("flex"), layoutStyle("0.5"), unnormalized], []), ds).hardcodedShare,
+    ).toBe(0.5);
   });
 
   it("sharesFromIndex: 분모가 0이면 0", () => {

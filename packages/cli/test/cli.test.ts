@@ -106,6 +106,18 @@ describe("runAudit", () => {
 });
 
 describe("건강 점수", () => {
+  it("레이아웃 값(display·position·opacity·fontWeight)과 var(--…) 참조만 있는 파일은 하드코딩으로 깎이지 않는다 (≥ 70)", async () => {
+    write("package.json", JSON.stringify({ name: "app", dependencies: { react: "^18" } }));
+    write(
+      "src/Layout.tsx",
+      `export const L = () => <div style={{ display: "flex", position: "relative", alignItems: "center", color: "var(--color-primary)", fontWeight: 700, opacity: 0.5 }} />;\n`,
+    );
+    const { result } = await runAudit(tmp);
+    expect(result.health.hardcodedShare).toBe(0);
+    expect(result.health.score).toBeGreaterThanOrEqual(70);
+    expect(result.hardcoded.byFile).toEqual([]);
+  });
+
   it("하드코딩 50%, DS 0%, 중복 0이면 45점이다 (100×(0.25+0+0.2))", async () => {
     write("package.json", JSON.stringify({ name: "app", dependencies: { react: "^18", tailwindcss: "^3" } }));
     write(
