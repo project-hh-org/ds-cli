@@ -2,6 +2,7 @@ import fs from "node:fs";
 import fsp from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { JS_FILES } from "@dsmith/extractor-api";
 import { inlineStyleExtractor } from "@dsmith/extractor-inline-style";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { indexRepo } from "../src/index/indexer.js";
@@ -39,7 +40,7 @@ describe("indexRepo", () => {
     expect(index.files.scanned).toBe(2);
     expect(index.files.skipped).toHaveLength(1);
     expect(index.files.skipped[0]?.file).toBe("src/Broken.tsx");
-    expect(index.files.skipped[0]?.reason).toMatch(/^parse: /);
+    expect(index.files.skipped[0]?.reason).toMatch(/^parse\(inline-style\): /);
 
     expect(index.styles.map((s) => [s.file, s.property, s.raw]).sort()).toEqual([
       ["src/App.tsx", "padding", "8"],
@@ -64,6 +65,8 @@ describe("indexRepo", () => {
     };
     const fake = {
       name: "fake",
+      files: JS_FILES,
+      parses: "none" as const,
       appliesTo: () => true,
       extract: () => [original],
       write: () => null,
@@ -79,6 +82,8 @@ describe("indexRepo", () => {
     let calls = 0;
     const never = {
       name: "never",
+      files: JS_FILES,
+      parses: "none" as const,
       appliesTo: () => false,
       extract: () => {
         calls += 1;
@@ -98,7 +103,7 @@ describe("indexRepo", () => {
     put("a.tsx", `const a = <p />;`);
     put("skip/b.tsx", `const b = <p />;`);
     put("node_modules/pkg/c.tsx", `const c = <p />;`);
-    const none = { name: "none", appliesTo: () => false, extract: () => [], write: () => null };
+    const none = { name: "none", files: JS_FILES, parses: "none" as const, appliesTo: () => false, extract: () => [], write: () => null };
     const index = await indexRepo(tmp, [none], { exclude: ["skip/**"] });
     expect(index.files.scanned).toBe(1);
     expect(index.files.skipped).toEqual([]);
@@ -117,6 +122,8 @@ describe("indexRepo", () => {
     const seen: string[] = [];
     const spy = {
       name: "spy",
+      files: JS_FILES,
+      parses: "none" as const,
       appliesTo: (ctx: { file: string }) => {
         seen.push(ctx.file);
         return false;
@@ -144,12 +151,16 @@ describe("indexRepo", () => {
     });
     const first = {
       name: "first",
+      files: JS_FILES,
+      parses: "none" as const,
       appliesTo: () => true,
       extract: (ctx: { file: string }) => [usage(ctx.file)],
       write: () => null,
     };
     const second = {
       name: "second",
+      files: JS_FILES,
+      parses: "none" as const,
       appliesTo: () => true,
       extract: (ctx: { file: string }) => {
         if (ctx.file === "bad.tsx") throw new Error("boom");
@@ -159,7 +170,7 @@ describe("indexRepo", () => {
     };
     const index = await indexRepo(tmp, [first, second]);
     expect(index.files.scanned).toBe(1);
-    expect(index.files.skipped).toEqual([{ file: "bad.tsx", reason: "parse: boom" }]);
+    expect(index.files.skipped).toEqual([{ file: "bad.tsx", reason: "parse(second): boom" }]);
     expect(index.styles.map((s) => s.file)).toEqual(["good.tsx"]);
     expect(index.components.map((c) => c.file)).toEqual(["good.tsx"]);
   });
@@ -173,12 +184,156 @@ describe("indexRepo", () => {
       return (original as (...args: unknown[]) => Promise<unknown>)(p, ...rest);
     }) as typeof fsp.readFile);
     try {
-      const none = { name: "none", appliesTo: () => false, extract: () => [], write: () => null };
+      const none = { name: "none", files: JS_FILES, parses: "none" as const, appliesTo: () => false, extract: () => [], write: () => null };
       const index = await indexRepo(tmp, [none]);
       expect(index.files.scanned).toBe(1);
       expect(index.files.skipped).toEqual([{ file: "a.tsx", reason: "read: EACCES: denied" }]);
     } finally {
       vi.restoreAllMocks();
     }
+  });
+});
+
+describe("indexRepo: Extractor 경계", () => {
+  const usage = (file: string, extractor: string) => ({
+    file,
+    line: 1,
+    column: 0,
+    property: "color" as const,
+    raw: "#fff",
+    normalized: { kind: "unknown" as const },
+    source: "hardcoded" as const,
+    extractor,
+  });
+
+  it("Extractor가 선언한 글롭 합집합으로 파일을 모으고, JS/TS가 아닌 파일은 컴포넌트 파싱 없이 처리한다", async () => {
+    put("notes.txt", `이것은 <div 문법이 깨진 텍스트`);
+    put("a.tsx", `const a = <p />;`);
+    const txt = {
+      name: "txt",
+      files: ["**/*.txt"],
+      parses: "none" as const,
+      appliesTo: () => true,
+      extract: (ctx: { file: string }) => [usage(ctx.file, "txt")],
+      write: () => null,
+    };
+    const index = await indexRepo(tmp, [txt]);
+    expect(index.files.scanned).toBe(2);
+    expect(index.files.skipped).toEqual([]);
+    expect(index.styles.map((s) => s.file)).toEqual(["notes.txt"]);
+    expect(index.components).toEqual([]);
+  });
+
+  it("prepare는 파일을 순회하기 전에 Extractor마다 정확히 1회 호출된다", async () => {
+    put("a.tsx", `const a = <p />;`);
+    put("b.tsx", `const b = <p />;`);
+    const calls: string[] = [];
+    const roots: string[] = [];
+    const ext = {
+      name: "prep",
+      files: JS_FILES,
+      parses: "none" as const,
+      prepare: (root: string) => {
+        calls.push("prepare");
+        roots.push(root);
+      },
+      appliesTo: () => true,
+      extract: () => {
+        calls.push("extract");
+        return [];
+      },
+      write: () => null,
+    };
+    await indexRepo(tmp, [ext]);
+    expect(calls[0]).toBe("prepare");
+    expect(calls.filter((c) => c === "prepare")).toHaveLength(1);
+    expect(calls.filter((c) => c === "extract")).toHaveLength(2);
+    expect(roots).toEqual([tmp]);
+  });
+
+  it("각 Extractor는 자기 files 글롭에 맞는 파일에만 호출된다", async () => {
+    put("a.tsx", `const a = <p />;`);
+    put("s.css", `.a { color: red; }`);
+    const seen = { js: [] as string[], css: [] as string[] };
+    const make = (name: "js" | "css", files: string[]) => ({
+      name,
+      files,
+      parses: "none" as const,
+      appliesTo: () => true,
+      extract: (ctx: { file: string }) => {
+        seen[name].push(ctx.file);
+        return [usage(ctx.file, name)];
+      },
+      write: () => null,
+    });
+    const index = await indexRepo(tmp, [make("js", JS_FILES), make("css", ["**/*.css"])]);
+    expect(seen.js).toEqual(["a.tsx"]);
+    expect(seen.css).toEqual(["s.css"]);
+    expect(index.files.scanned).toBe(2);
+    expect(index.styles.map((s) => [s.file, s.extractor]).sort()).toEqual([
+      ["a.tsx", "js"],
+      ["s.css", "css"],
+    ]);
+  });
+
+  it("같은 .tsx에 글롭이 겹치는 Extractor는 모두 적용된다", async () => {
+    put("a.tsx", `const a = <p />;`);
+    const make = (name: string) => ({
+      name,
+      files: JS_FILES,
+      parses: "none" as const,
+      appliesTo: () => true,
+      extract: (ctx: { file: string }) => [usage(ctx.file, name)],
+      write: () => null,
+    });
+    const index = await indexRepo(tmp, [make("one"), make("two")]);
+    expect(index.styles.map((s) => s.extractor)).toEqual(["one", "two"]);
+  });
+
+  it("Extractor가 던지면 skip reason이 parse(<name>): 로 시작한다", async () => {
+    put("a.tsx", `const a = <p />;`);
+    const bad = {
+      name: "bad",
+      files: JS_FILES,
+      parses: "none" as const,
+      appliesTo: () => true,
+      extract: () => {
+        throw new Error("boom");
+      },
+      write: () => null,
+    };
+    const index = await indexRepo(tmp, [bad]);
+    expect(index.files.scanned).toBe(0);
+    expect(index.files.skipped).toEqual([{ file: "a.tsx", reason: "parse(bad): boom" }]);
+  });
+
+  it("JS/TS 파일의 컴포넌트 파싱 실패는 parse(components): 로 기록한다", async () => {
+    put("Broken.tsx", `const a = <div>;`);
+    const none = {
+      name: "none",
+      files: JS_FILES,
+      parses: "none" as const,
+      appliesTo: () => false,
+      extract: () => [],
+      write: () => null,
+    };
+    const index = await indexRepo(tmp, [none]);
+    expect(index.files.skipped).toHaveLength(1);
+    expect(index.files.skipped[0]?.reason).toMatch(/^parse\(components\): /);
+  });
+
+  it(".mjs·.cjs 파일도 기본 대상이다", async () => {
+    put("a.mjs", `export const a = 1;`);
+    put("b.cjs", `module.exports = 1;`);
+    const none = {
+      name: "none",
+      files: JS_FILES,
+      parses: "none" as const,
+      appliesTo: () => false,
+      extract: () => [],
+      write: () => null,
+    };
+    const index = await indexRepo(tmp, [none]);
+    expect(index.files.scanned).toBe(2);
   });
 });

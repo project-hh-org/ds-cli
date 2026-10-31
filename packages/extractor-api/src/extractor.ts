@@ -62,7 +62,7 @@ export interface Extractor extends ExtractorMeta {
 }
 
 /** JS/TS 소스 파일 glob. 소스 파일을 읽는 Extractor의 공용 `files` 값. */
-export const JS_FILES: string[] = ["**/*.{tsx,jsx,ts,js}"];
+export const JS_FILES: string[] = ["**/*.{tsx,jsx,ts,js,mjs,cjs}"];
 
 /** Extractor에서 메타(`name`, `files`, `parses`)만 추려 반환한다. */
 export function metaOf(e: Extractor): ExtractorMeta {
