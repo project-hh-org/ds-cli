@@ -65,16 +65,24 @@ function round4(n: number): number {
 
 function healthOf(index: Index, ds: DetectResult["ds"], duplicateCount: number): AuditResult["health"] {
   const shares = sharesFromIndex(index, ds);
-  const hardcodedShare = round4(shares.hardcodedShare);
-  const dsImportShare = round4(shares.dsImportShare);
+  // 점수는 반올림 전 비율로 계산하고, 표시용 필드만 4자리로 반올림한다.
   // 분석할 파일이 없으면 점수는 0으로 고정한다.
   const score =
     index.files.scanned === 0
       ? 0
       : Math.round(
-          100 * (0.5 * (1 - hardcodedShare) + 0.3 * dsImportShare + 0.2 * Math.max(0, 1 - duplicateCount / 10)),
+          100 *
+            (0.5 * (1 - shares.hardcodedShare) +
+              0.3 * shares.dsImportShare +
+              0.2 * Math.max(0, 1 - duplicateCount / 10)),
         );
-  return { score, hardcodedShare, dsImportShare, duplicateCount, formula: HEALTH_FORMULA };
+  return {
+    score,
+    hardcodedShare: round4(shares.hardcodedShare),
+    dsImportShare: round4(shares.dsImportShare),
+    duplicateCount,
+    formula: HEALTH_FORMULA,
+  };
 }
 
 export function computeAudit(detectResult: DetectResult, index: Index): AuditResult {

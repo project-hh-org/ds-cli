@@ -3,7 +3,10 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { localDate } from "../src/report/audit-report.js";
-import { runAudit } from "../src/commands/audit.js";
+import type { Index } from "@ds-cli/core";
+import type { DetectResult } from "@ds-cli/detect";
+import type { StyleUsage } from "@ds-cli/extractor-api";
+import { computeAudit, runAudit } from "../src/commands/audit.js";
 import { runDetect } from "../src/commands/detect.js";
 
 let tmp: string;
@@ -99,5 +102,48 @@ describe("runAudit", () => {
     expect(result.health.score).toBe(0);
     expect(result.health.formula).toContain("hardcodedShare");
     expect(fs.readFileSync(reportPath, "utf-8")).toContain("분석할 파일 없음");
+  });
+});
+
+describe("건강 점수", () => {
+  it("하드코딩 50%, DS 0%, 중복 0이면 45점이다 (100×(0.25+0+0.2))", async () => {
+    write("package.json", JSON.stringify({ name: "app", dependencies: { react: "^18", tailwindcss: "^3" } }));
+    write(
+      "src/A.tsx",
+      `export const A = () => <div className="text-[#3B82F6] text-gray-900">a</div>;\n`,
+    );
+    const { result } = await runAudit(tmp);
+    expect(result.health).toMatchObject({ hardcodedShare: 0.5, dsImportShare: 0, duplicateCount: 0, score: 45 });
+  });
+
+  it("점수는 반올림 전 비율로 계산한다 (표시용 4자리 반올림이 점수 경계를 넘기지 않는다)", () => {
+    // hardcodedShare = 1003/100000 = 0.01003 → 표시값 0.01, 점수 원값 69.4985 → 69
+    // (반올림한 0.01로 계산하면 69.5 → 70)
+    const usage = (source: "hardcoded" | "token"): StyleUsage => ({
+      file: "src/A.tsx",
+      line: 1,
+      column: 0,
+      property: "padding",
+      raw: "4",
+      normalized: { kind: "length", px: 4 },
+      source,
+      extractor: "inline-style",
+    });
+    const styles = [
+      ...Array.from({ length: 1003 }, () => usage("hardcoded")),
+      ...Array.from({ length: 98997 }, () => usage("token")),
+    ];
+    const index: Index = {
+      root: "/x",
+      createdAt: "",
+      extractors: [],
+      files: { scanned: 1, skipped: [] },
+      styles,
+      components: [],
+    };
+    const detectResult = { ds: { kind: "none", tokenFiles: [] } } as unknown as DetectResult;
+    const { health } = computeAudit(detectResult, index);
+    expect(health.hardcodedShare).toBe(0.01);
+    expect(health.score).toBe(69);
   });
 });
