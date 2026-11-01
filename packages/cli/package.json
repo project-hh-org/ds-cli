@@ -16,7 +16,11 @@
     "@dsmith/core": "workspace:*",
     "@dsmith/detect": "workspace:*",
     "@dsmith/extractor-api": "workspace:*",
+    "@dsmith/extractor-css": "workspace:*",
+    "@dsmith/extractor-emotion": "workspace:*",
     "@dsmith/extractor-inline-style": "workspace:*",
+    "@dsmith/extractor-mui-sx": "workspace:*",
+    "@dsmith/extractor-styled": "workspace:*",
     "@dsmith/extractor-tailwind": "workspace:*",
     "commander": "^12.1.0"
   },

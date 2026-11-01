@@ -29,9 +29,21 @@ importers:
       '@dsmith/extractor-api':
         specifier: workspace:*
         version: link:../extractor-api
+      '@dsmith/extractor-css':
+        specifier: workspace:*
+        version: link:../extractor-css
+      '@dsmith/extractor-emotion':
+        specifier: workspace:*
+        version: link:../extractor-emotion
       '@dsmith/extractor-inline-style':
         specifier: workspace:*
         version: link:../extractor-inline-style
+      '@dsmith/extractor-mui-sx':
+        specifier: workspace:*
+        version: link:../extractor-mui-sx
+      '@dsmith/extractor-styled':
+        specifier: workspace:*
+        version: link:../extractor-styled
       '@dsmith/extractor-tailwind':
         specifier: workspace:*
         version: link:../extractor-tailwind

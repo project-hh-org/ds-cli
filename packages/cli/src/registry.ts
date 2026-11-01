@@ -1,11 +1,19 @@
 import { metaOf, type Extractor, type ExtractorMeta } from "@dsmith/extractor-api";
+import { cssExtractor } from "@dsmith/extractor-css";
+import { emotionExtractor } from "@dsmith/extractor-emotion";
 import { inlineStyleExtractor } from "@dsmith/extractor-inline-style";
+import { muiSxExtractor } from "@dsmith/extractor-mui-sx";
+import { styledExtractor } from "@dsmith/extractor-styled";
 import { tailwindExtractor } from "@dsmith/extractor-tailwind";
 
 /** detect.activeExtractors의 이름 → Extractor. 키는 Extractor.name과 같아야 한다. */
 export const registry: Record<string, () => Extractor> = {
   "inline-style": () => inlineStyleExtractor,
   tailwind: () => tailwindExtractor,
+  css: () => cssExtractor,
+  styled: () => styledExtractor,
+  emotion: () => emotionExtractor,
+  "mui-sx": () => muiSxExtractor,
 };
 
 /** 이름 목록으로 Extractor를 만든다. 레지스트리에 없는 이름은 stderr에 경고하고 건너뛴다. */

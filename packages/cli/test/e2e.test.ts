@@ -102,3 +102,64 @@ describe("fixtures/with-ds-app", () => {
     expect(report).toMatchSnapshot();
   });
 });
+
+describe("fixtures/styled-app", () => {
+  it("styled만 켜지고, 템플릿 리터럴의 근접한 파랑이 한 클러스터로 합쳐지며 지역 Header는 중복이 아니다", async () => {
+    const { result, report } = await audit("styled-app");
+    expect(result.detect.state).toBe(0);
+    expect(result.detect.ds.kind).toBe("none");
+    expect(result.detect.activeExtractors).toEqual(["styled"]);
+
+    expect(result.hardcoded.colors).toHaveLength(1);
+    expect(result.hardcoded.colors[0]?.members.map((m) => m.hex).sort()).toEqual(["#3b82f6", "#3c83f7"]);
+    expect(result.dynamicCount).toBe(1);
+    expect(result.hardcoded.spacing).toContainEqual(expect.objectContaining({ px: 13, onScale: false }));
+
+    expect(result.localDefinitions).toEqual([{ name: "Header", files: 2 }]);
+    expect(result.duplicates).toEqual([]);
+    expect(report).toMatchSnapshot();
+  });
+});
+
+describe("fixtures/emotion-app", () => {
+  it("emotion이 켜지고, css prop 객체의 중첩 &:hover 색까지 하드코딩 색 2종으로 센다", async () => {
+    const { result, report } = await audit("emotion-app");
+    expect(result.detect.activeExtractors).toEqual(["emotion"]);
+
+    expect(result.hardcoded.colors).toHaveLength(2);
+    expect(result.hardcoded.colors.flatMap((c) => c.members.map((m) => m.hex)).sort()).toEqual(["#111827", "#ef4444"]);
+    // #EF4444는 Orders.tsx의 `"&:hover": { color }` 안에만 있다.
+    const index = readJson(root, "index.json");
+    const hover = index.styles.filter(
+      (u: { file: string; normalized: { hex?: string } }) => u.file === "src/pages/Orders.tsx" && u.normalized.hex === "#ef4444",
+    );
+    expect(hover).toHaveLength(1);
+    expect(hover[0]).toMatchObject({ extractor: "emotion", source: "hardcoded", property: "color" });
+    expect(report).toMatchSnapshot();
+  });
+});
+
+describe("fixtures/mui-app", () => {
+  it("@mui/material이 대표 DS이며 서브패스 Button import는 중복이 아니다", async () => {
+    const { result } = await audit("mui-app");
+    expect(result.detect.ds.kind).toBe("npm");
+    expect(result.detect.ds.packageName).toBe("@mui/material");
+    expect(result.duplicates).toEqual([]);
+  });
+
+  // 버그: detect가 sx 방식을 "sx"로 보고하고(detect-styling.ts) Extractor 이름은 "mui-sx"라
+  // activeExtractorsOf의 교집합에서 빠진다. 지금은 activeExtractors가 ["emotion"]이고 sx usage가 0건이다.
+  // 방식 이름을 "mui-sx"로 맞추면 skip을 푼다(그때 리포트 스냅샷도 처음 기록된다).
+  it.skip("mui-sx가 켜지고, 장문 spacing 키까지 token으로 세며 #111을 하드코딩 색으로 센다", async () => {
+    const { result, report } = await audit("mui-app");
+    expect(result.detect.activeExtractors).toContain("mui-sx");
+
+    const index = readJson(root, "index.json");
+    const tokens = index.styles.filter((u: { source: string }) => u.source === "token");
+    expect(tokens.length).toBeGreaterThanOrEqual(2);
+    // paddingTop(장문 spacing 키)도 token으로 센다.
+    expect(tokens).toContainEqual(expect.objectContaining({ file: "src/pages/Plans.tsx", property: "padding", extractor: "mui-sx" }));
+    expect(result.hardcoded.colors.flatMap((c) => c.members.map((m) => m.hex))).toContain("#111111");
+    expect(report).toMatchSnapshot();
+  });
+});

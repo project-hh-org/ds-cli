@@ -1,5 +1,67 @@
 // Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
 
+exports[`fixtures/emotion-app > emotion이 켜지고, css prop 객체의 중첩 &:hover 색까지 하드코딩 색 2종으로 센다 1`] = `
+"# DS Audit
+
+- root: <root>
+- 날짜: <date>
+- state: 0
+- provisional: false
+- 분석한 파일: 3개 (스타일 사용 8, 컴포넌트 사용 2)
+- 동적 값: 0
+
+건강 점수: 20
+
+산식: 100 × (0.5×(1−hardcodedShare) + 0.3×dsImportShare + 0.2×max(0, 1−duplicateCount/10))
+
+- hardcodedShare: 1
+- dsImportShare: 0
+- duplicateCount: 0
+
+## 하드코딩 색 후보
+
+| 대표 hex | 사용 수 | 제안 이름 | 변종 |
+| --- | --- | --- | --- |
+| #111827 | 2 | blue-900 | #111827 ×2 |
+| #ef4444 | 1 | red-400 | #ef4444 ×1 |
+
+## 간격 후보
+
+| px | 사용 수 | 스케일 |
+| --- | --- | --- |
+| 8 | 2 | 4px 배수 |
+| 4 | 1 | 4px 배수 |
+| 16 | 1 | 4px 배수 |
+
+## 컴포넌트 사용량
+
+| 컴포넌트 | 출처 | 사용 수 |
+| --- | --- | --- |
+| Badge | src/components/Badge | 1 |
+| Panel | src/components/Panel | 1 |
+
+## 중복 컴포넌트
+
+없음
+
+## 지역 재정의 컴포넌트
+
+없음
+
+## 파일별 하드코딩 상위
+
+| 파일 | 하드코딩 수 |
+| --- | --- |
+| src/pages/Orders.tsx | 4 |
+| src/components/Badge.tsx | 2 |
+| src/components/Panel.tsx | 2 |
+
+## 건너뜀
+
+건너뜀 0개
+"
+`;
+
 exports[`fixtures/inline-app > inline-style만 켜지고 동적 값 1건을 센다. background 축약형 색도 색 클러스터에 들어간다 1`] = `
 "# DS Audit
 
@@ -103,6 +165,70 @@ exports[`fixtures/mixed-app > 두 extractor가 켜지고, 한 파일에서 양�
 | 파일 | 하드코딩 수 |
 | --- | --- |
 | src/Banner.tsx | 2 |
+
+## 건너뜀
+
+건너뜀 0개
+"
+`;
+
+exports[`fixtures/styled-app > styled만 켜지고, 템플릿 리터럴의 근접한 파랑이 한 클러스터로 합쳐지며 지역 Header는 중복이 아니다 1`] = `
+"# DS Audit
+
+- root: <root>
+- 날짜: <date>
+- state: 0
+- provisional: false
+- 분석한 파일: 4개 (스타일 사용 5, 컴포넌트 사용 6)
+- 동적 값: 1
+
+건강 점수: 20
+
+산식: 100 × (0.5×(1−hardcodedShare) + 0.3×dsImportShare + 0.2×max(0, 1−duplicateCount/10))
+
+- hardcodedShare: 1
+- dsImportShare: 0
+- duplicateCount: 0
+
+## 하드코딩 색 후보
+
+| 대표 hex | 사용 수 | 제안 이름 | 변종 |
+| --- | --- | --- | --- |
+| #3b82f6 | 2 | blue-400 | #3b82f6 ×1, #3c83f7 ×1 |
+
+## 간격 후보
+
+| px | 사용 수 | 스케일 |
+| --- | --- | --- |
+| 16 | 1 | 4px 배수 |
+| 13 | 1 | 벗어남 |
+
+## 컴포넌트 사용량
+
+| 컴포넌트 | 출처 | 사용 수 |
+| --- | --- | --- |
+| Button | src/components/Button | 2 |
+| Card | src/components/Card | 2 |
+| Header | (출처 없음) | 2 |
+
+## 중복 컴포넌트
+
+없음
+
+## 지역 재정의 컴포넌트
+
+같은 이름의 컴포넌트가 여러 파일에서 import 없이 쓰였습니다 — 파일마다 따로 정의됐을 가능성이 큽니다.
+
+| 컴포넌트 | 정의 파일 수 |
+| --- | --- |
+| Header | 2 |
+
+## 파일별 하드코딩 상위
+
+| 파일 | 하드코딩 수 |
+| --- | --- |
+| src/components/Button.tsx | 2 |
+| src/components/Card.tsx | 2 |
 
 ## 건너뜀
 
