@@ -69,6 +69,8 @@ export { collectCssVariables, readCssVariableTokens } from "./tokens/css-variabl
 export { proposalTokens } from "./tokens/proposal.js";
 export type { LoadedToken, LoadedTokens, TokenSourceKind } from "./tokens/load.js";
 export { loadTokens, tokenCategoryOf, tokensFromCatalog } from "./tokens/load.js";
+export type { ReplacementTokens } from "./tokens/replacement-tokens.js";
+export { loadReplacementTokens } from "./tokens/replacement-tokens.js";
 export type {
   Confidence,
   DecisionCard,

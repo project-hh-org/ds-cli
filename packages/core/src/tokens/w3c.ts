@@ -188,7 +188,7 @@ export function readW3cTokens(text: string, file: string): W3cReadResult {
         warnings.push(`색 값을 읽을 수 없음: ${label} (${file})`);
         continue;
       }
-      tokens.push({ name, value: normalized.hex, normalized, category: categoryOf(entry, "color") });
+      tokens.push({ name, value: normalized.hex, normalized, category: categoryOf(entry, "color"), path: label });
       continue;
     }
     let raw: string | null = null;
@@ -201,7 +201,7 @@ export function readW3cTokens(text: string, file: string): W3cReadResult {
       warnings.push(`길이 값을 읽을 수 없음: ${label} (${file})`);
       continue;
     }
-    tokens.push({ name, value: raw, normalized: { kind: "length", px }, category: categoryOf(entry, "length") });
+    tokens.push({ name, value: raw, normalized: { kind: "length", px }, category: categoryOf(entry, "length"), path: label });
   }
   return { tokens, warnings };
 }
