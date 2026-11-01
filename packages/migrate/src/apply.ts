@@ -18,7 +18,8 @@ import { checkComponents, checkEdit } from "./verify.js";
 
 export interface ApplyFileResult {
   file: string;
-  status: "applied" | "rolled-back" | "changed-since-plan";
+  /** write-failed: 검증은 통과했지만 쓰는 중 fs 오류가 남(그 파일은 원본 그대로, 나머지 파일은 계속 적용) */
+  status: "applied" | "rolled-back" | "changed-since-plan" | "write-failed";
   replacements: number;
   /** 옮긴 컴포넌트 import 수((파일, 항목) 단위) */
   components: number;
@@ -62,7 +63,14 @@ interface Prepared {
 export async function applyMigration(
   root: string,
   plan: MigratePlan,
-  opts: { extractors: Extractor[]; version: string; now?: Date; branch?: MigrationRecord["branch"] },
+  opts: {
+    extractors: Extractor[];
+    version: string;
+    now?: Date;
+    branch?: MigrationRecord["branch"];
+    /** 쓰기 함수(기본 `writePatchedFile`). 쓰기 오류 격리를 시험할 때 주입한다 */
+    writeFile?: typeof writePatchedFile;
+  },
 ): Promise<ApplyResult> {
   for (const extractor of opts.extractors) await extractor.prepare?.(root);
   const matchers = extractorMatchers(opts.extractors);
@@ -98,7 +106,7 @@ export async function applyMigration(
       prepared.push(reject("rolled-back", `패치 적용 실패: ${(err as Error).message}`));
       continue;
     }
-    const mismatch = checkEdit(root, fp.file, current, after, n, matchers) ?? checkComponents(fp.file, after, fp.componentChecks, env);
+    const mismatch = checkEdit(root, fp.file, current, after, fp.replacements.map((r) => r.property), matchers) ?? checkComponents(fp.file, after, fp.componentChecks, env);
     if (mismatch !== null) {
       prepared.push(reject("rolled-back", mismatch));
       continue;
@@ -119,22 +127,36 @@ export async function applyMigration(
     createdAt: (opts.now ?? new Date()).toISOString(),
     status: "applying",
     summary: { tokens: 0, components: 0, files: 0 },
+    close: plan.includeClose,
     ...(opts.branch === undefined ? {} : { branch: opts.branch }),
     files: prepared.map((p) => p.entry),
   };
   const recordPath = await writeMigration(root, record);
 
+  const write = opts.writeFile ?? writePatchedFile;
+  const summaryOf = (): MigrationRecord["summary"] => {
+    const done = prepared.filter((p) => p.entry.status === "applied");
+    return { tokens: done.reduce((n, p) => n + p.result.replacements, 0), components: done.reduce((n, p) => n + p.result.components, 0), files: done.length };
+  };
   for (const p of prepared) {
     if (p.entry.status !== "pending" || p.after === undefined) continue;
-    const written = await writePatchedFile(root, p.fp.file, p.fp.sha256, p.after);
+    // 한 파일의 쓰기 오류(EIO·ENOSPC·EACCES …)가 나머지 파일을 막지 않게 파일마다 잡는다. atomicWrite라 그 파일은 원본 그대로다
+    let written: { written: boolean; reason?: string };
+    try {
+      written = await write(root, p.fp.file, p.fp.sha256, p.after);
+    } catch (err) {
+      written = { written: false, reason: `쓰기 실패: ${err instanceof Error ? err.message : String(err)}` };
+      p.result.status = "write-failed";
+    }
     if (written.written) {
       p.entry.status = "applied";
     } else {
       p.entry.status = "rolled-back";
       p.entry.reason = written.reason ?? "쓰지 못함";
-      p.result.status = written.reason === "계획 뒤 파일이 바뀜" ? "changed-since-plan" : "rolled-back";
+      if (p.result.status !== "write-failed") p.result.status = written.reason === "계획 뒤 파일이 바뀜" ? "changed-since-plan" : "rolled-back";
       p.result.reason = p.entry.reason;
     }
+    record.summary = summaryOf(); // 중간에 끊겨도 --list가 지금까지 쓴 만큼을 보여 준다
     await writeMigration(root, record);
   }
 

@@ -1,10 +1,10 @@
 import fs from "node:fs";
 import path from "node:path";
-import { readMigration } from "@dsmith-dev/core";
+import { readMigration, writePatchedFile } from "@dsmith-dev/core";
 import type { Extractor } from "@dsmith-dev/extractor-api";
 import { cssExtractor } from "@dsmith-dev/extractor-css";
 import { describe, expect, it } from "vitest";
-import { applyMigration, planMigration, type MigratePlan } from "../src/index.js";
+import { applyMigration, planMigration, revertMigration, type MigratePlan } from "../src/index.js";
 import { auditFixture, listFiles, loadState, read, syntheticRepo, treeHash } from "./helpers.js";
 
 /** 계획된 파일의 첫 패치 치환문을 바꾼다 — 깨진 패치를 흉내 낸다. 원문 조각은 파일에서 읽어 넘긴다 */
@@ -123,5 +123,76 @@ describe("applyMigration", () => {
     const plan = await planMigration({ root, ...state, extractors: [cssExtractor], files: ["src/a.css"] });
     const result = await applyMigration(root, plan, { extractors: [cssExtractor], version: "t" });
     expect(result.files).toHaveLength(1);
+  });
+});
+
+describe("applyMigration — 쓰기 오류 격리 (I2)", () => {
+  it("N번째 파일의 쓰기가 던져도 나머지는 계속 적용하고 기록·결과에 사유를 남긴다", async () => {
+    const root = syntheticRepo();
+    await auditFixture(root);
+    const { plan, extractors } = await planned(root);
+    expect(plan.files.map((f) => f.file)).toEqual(["src/B.tsx", "src/C.tsx", "src/a.css"]);
+    const originalC = read(root, "src/C.tsx");
+    const calls: string[] = [];
+    const flaky: typeof writePatchedFile = async (r, file, sha, content) => {
+      calls.push(file);
+      if (file === "src/C.tsx") throw new Error("EIO: i/o error, write");
+      return writePatchedFile(r, file, sha, content);
+    };
+
+    const result = await applyMigration(root, plan, { extractors, version: "t", writeFile: flaky });
+    expect(calls).toEqual(["src/B.tsx", "src/C.tsx", "src/a.css"]); // 실패 뒤에도 다음 파일을 쓴다
+    expect(result.files.map((f) => [f.file, f.status])).toEqual([
+      ["src/B.tsx", "applied"],
+      ["src/C.tsx", "write-failed"],
+      ["src/a.css", "applied"],
+    ]);
+    expect(result.files[1]?.reason).toBe("쓰기 실패: EIO: i/o error, write");
+    expect(read(root, "src/C.tsx")).toBe(originalC);
+    expect(read(root, "src/B.tsx")).toContain("var(--color-brand)");
+    expect(read(root, "src/a.css")).toContain("var(--color-brand)");
+    const lostC = plan.files[1]!.replacements.length;
+    expect(result.skipped["rolled-back"]).toBe(lostC);
+    expect(result.replaced).toBe(plan.planned - lostC);
+
+    const rec = (await readMigration(root, result.id))!;
+    expect(rec.status).toBe("applied");
+    expect(rec.summary).toEqual({ tokens: plan.planned - lostC, components: 0, files: 2 });
+    expect(rec.files.map((f) => f.status)).toEqual(["applied", "rolled-back", "applied"]);
+    expect(rec.files[1]?.reason).toBe("쓰기 실패: EIO: i/o error, write");
+
+    // 되돌리기는 적용된 두 파일만 되돌리고 실패한 파일은 건드리지 않는다
+    const reverted = await revertMigration(root, result.id);
+    expect(reverted.files.map((f) => f.file)).toEqual(["src/B.tsx", "src/a.css"]);
+    expect(reverted.files.every((f) => f.status === "reverted")).toBe(true);
+  });
+
+  it("기록의 summary는 파일마다 갱신된다 (중간에 끊겨도 --list가 지금까지 쓴 만큼을 보인다)", async () => {
+    const root = syntheticRepo();
+    await auditFixture(root);
+    const { plan, extractors } = await planned(root);
+    const seen: { tokens: number; files: number }[] = [];
+    const spy: typeof writePatchedFile = async (r, file, sha, content) => {
+      const id = fs.readdirSync(path.join(root, ".dsmith/migrations"))[0]!.replace(/\.json$/, "");
+      const rec = await readMigration(root, id);
+      seen.push({ tokens: rec!.summary.tokens, files: rec!.summary.files });
+      return writePatchedFile(r, file, sha, content);
+    };
+    await applyMigration(root, plan, { extractors, version: "t", writeFile: spy });
+    expect(seen[0]).toEqual({ tokens: 0, files: 0 });
+    expect(seen[1]!.files).toBe(1);
+    expect(seen[1]!.tokens).toBe(plan.files[0]!.replacements.length);
+    expect(seen[2]!.files).toBe(2);
+  });
+
+  it("기록은 close 사용 여부를 저장한다", async () => {
+    const root = syntheticRepo();
+    await auditFixture(root);
+    const state = await loadState(root);
+    const base = await applyMigration(root, await planMigration({ root, ...state }), { extractors: state.extractors, version: "t", now: new Date(2026, 10, 1, 1, 0, 0) });
+    expect((await readMigration(root, base.id))!.close).toBe(false);
+    const withClose = await applyMigration(root, await planMigration({ root, ...state, close: true }), { extractors: state.extractors, version: "t", now: new Date(2026, 10, 1, 1, 0, 1) });
+    // 같은 파일이 이미 바뀌어 계획 뒤 변경이 되지만 기록의 close 값은 계획의 값이다
+    expect((await readMigration(root, withClose.id))!.close).toBe(true);
   });
 });

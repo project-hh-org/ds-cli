@@ -9,7 +9,7 @@ import { ALL, TOKENS_CSS, auditFixture, loadState, makeRepo, syntheticRepo } fro
 const skippedSum = (p: MigratePlan): number => Object.values(p.skipped).reduce((n, v) => n + (v ?? 0), 0);
 
 function expectInvariants(p: MigratePlan): void {
-  expect(p.planned + skippedSum(p) + p.scope.outOfRange).toBe(p.scope.candidates);
+  expect(p.planned + skippedSum(p) + p.scope.outOfRange + p.close.length).toBe(p.scope.candidates);
   expect(p.scope.candidates + p.scope.far).toBe(p.scope.total);
   expect(p.planned).toBe(p.files.reduce((n, f) => n + f.replacements.length, 0));
 }
@@ -32,7 +32,7 @@ function fakeExtractor(
       if (start < 0 && tokenAt < 0) return [];
       if (start < 0) {
         // 치환 뒤: 토큰 참조로 읽는다
-        return [{ file: ctx.file, line: 1, column: tokenAt, property: "color", raw: "var(--color-brand)", normalized: { kind: "unknown" }, source: "token", extractor: name }];
+        return [{ file: ctx.file, line: 1, column: tokenAt, property: opts.property ?? "color", raw: "var(--color-brand)", normalized: { kind: "unknown" }, source: "token", extractor: name }];
       }
       const u: StyleUsage = {
         file: ctx.file,
@@ -85,18 +85,27 @@ describe("planMigration", () => {
     expect(new Set(plan.files.flatMap((f) => f.replacements.map((r) => r.category)))).toEqual(new Set(["color"]));
   });
 
-  it("minConfidence exact는 close 후보를 low-confidence로 건너뛴다", async () => {
+  it("close 매칭은 기본 계획에서 빠지고 plan.close에 남으며, close: true면 계획에 포함된다 (I4)", async () => {
     const root = syntheticRepo();
     await auditFixture(root);
     const state = await loadState(root);
-    const all = await planMigration({ root, ...state });
-    const exact = await planMigration({ root, ...state, minConfidence: "exact" });
-    expectInvariants(exact);
-    expect(all.confidence.close).toBeGreaterThan(0); // margin: 7px → --space-2(8px)
-    expect(exact.skipped["low-confidence"]).toBe(all.confidence.close);
-    expect(exact.planned).toBe(all.planned - all.confidence.close);
-    expect(exact.skippedItems.find((i) => i.reason === "low-confidence")?.raw).toBe("7px");
-    expect(exact.confidence.close).toBe(0);
+    const base = await planMigration({ root, ...state });
+    expectInvariants(base);
+    expect(base.includeClose).toBe(false);
+    expect(base.confidence.close).toBe(0);
+    expect(base.close).toHaveLength(1); // margin: 7px → --space-2(8px)
+    expect(base.close[0]).toMatchObject({ file: "src/a.css", raw: "7px", property: "margin", token: "--space-2", category: "spacing" });
+    expect(base.close[0]!.distance).toBeGreaterThan(0);
+    expect(base.files.flatMap((f) => f.replacements).some((r) => r.raw === "7px")).toBe(false);
+    expect(base.skipped).toEqual({});
+
+    const withClose = await planMigration({ root, ...state, close: true });
+    expectInvariants(withClose);
+    expect(withClose.includeClose).toBe(true);
+    expect(withClose.close).toEqual([]);
+    expect(withClose.confidence.close).toBe(1);
+    expect(withClose.planned).toBe(base.planned + 1);
+    expect(withClose.scope.candidates).toBe(base.scope.candidates);
   });
 
   it("files glob과 maxFiles", async () => {

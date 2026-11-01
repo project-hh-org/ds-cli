@@ -21,7 +21,8 @@ const SKIP_EXPLAIN: Record<TokenSkipReason, string> = {
   "no-token-ref": "이 방식에는 토큰을 참조하는 문자열이 없음(토큰 이름이 CSS 변수가 아니거나 방식이 지원하지 않음)",
   "no-patch": "치환할 소스 구간을 정하지 못함",
   overlap: "다른 치환과 소스 구간이 겹쳐 보류",
-  "low-confidence": "`--min-confidence exact`라 close 후보는 건너뜀",
+  "translucent-color": "반투명 색(alpha < 1)은 토큰이 불투명이라 바꾸면 투명도가 사라져 건너뜀",
+  "binary-or-non-utf8": "UTF-8이 아닌 파일은 다시 인코딩하면 바이트가 달라져 건너뜀",
   "negative-value": "음수 값은 토큰 참조로 바꾸면 부호가 사라져 건너뜀(Tailwind 제외)",
   "zero-value": "0 값은 토큰으로 바꾸지 않음",
   "scss-variable": "SCSS·Less 변수가 섞인 값은 건너뜀",
@@ -32,7 +33,8 @@ const SKIP_ORDER: TokenSkipReason[] = [
   "no-token-ref",
   "no-patch",
   "overlap",
-  "low-confidence",
+  "translucent-color",
+  "binary-or-non-utf8",
   "negative-value",
   "zero-value",
   "scss-variable",
@@ -105,7 +107,13 @@ export function formatPlanSummary(
   projected: { before: AuditNumbers; after: AuditNumbers } | null,
   opts: { hint?: boolean } = {},
 ): string {
-  const lines: string[] = [tokenLine(plan)];
+  const lines: string[] = [];
+  const staleCount = plan.stale.changed.length + plan.stale.added.length;
+  if (staleCount > 0) {
+    const added = plan.stale.added.length > 0 ? `(인덱스에 없던 새 파일 ${plan.stale.added.length}개 포함)` : "";
+    lines.push(`인덱스가 오래됨: ${staleCount}개 파일이 audit 이후 바뀜${added} — dsmith audit을 다시 실행하세요`);
+  }
+  lines.push(tokenLine(plan));
   const planned = plan.planned === 0 ? "치환할 것이 없음" : `파일 ${plan.files.filter((f) => f.replacements.length > 0).length} · 치환 ${plan.planned} (${categorySummary(plan.byCategory)})`;
   lines.push(`계획: ${planned}`);
   if (plan.planned > 0) {
@@ -115,9 +123,11 @@ export function formatPlanSummary(
   const skipTotal = skippedTotal(plan.skipped);
   const skipPart = skipTotal === 0 ? "건너뜀 0" : `건너뜀 ${skipTotal} (${skipSummary(plan.skipped)})`;
   const range = plan.scope.outOfRange > 0 ? ` + 범위 제한 ${plan.scope.outOfRange}` : "";
+  const closePart = plan.close.length > 0 ? ` + close 제외 ${plan.close.length}` : "";
   lines.push(
-    `후보 ${plan.scope.candidates} = 계획 ${plan.planned} + ${skipPart}${range}   |   범위 밖: 먼 값 ${plan.scope.far} · 동적 ${plan.scope.dynamic}`,
+    `후보 ${plan.scope.candidates} = 계획 ${plan.planned} + ${skipPart}${range}${closePart}   |   범위 밖: 먼 값 ${plan.scope.far} · 동적 ${plan.scope.dynamic}`,
   );
+  if (plan.close.length > 0) lines.push(`close 후보 ${plan.close.length}건 — --close로 포함`);
   if (projected !== null && plan.planned > 0) {
     lines.push(`예상: 하드코딩 비율 ${pct(projected.before.hardcodedShare)} → ${pct(projected.after.hardcodedShare)}, 점수 ${projected.before.score} → ${projected.after.score}`);
   }
@@ -149,7 +159,13 @@ export function renderMigrateReport(input: { plan: MigratePlan; applied: ApplyRe
   for (const c of CATEGORIES) lines.push(`| ${CATEGORY_LABEL[c]} | ${plan.byCategory[c]} |`);
   lines.push("");
   const conf = plan.confidence;
-  lines.push(`신뢰도: 값이 정확히 같음 ${conf.identical} · exact(거리 > 0) ${conf.exact} · close ${conf.close}`, "");
+  lines.push(`신뢰도: 값이 정확히 같음 ${conf.identical} · exact(거리 > 0) ${conf.exact} · close ${conf.close}`);
+  lines.push(
+    plan.includeClose
+      ? "`--close`로 근사(close) 매칭을 포함함 — 렌더링되는 값이 바뀔 수 있음"
+      : `close 후보 ${plan.close.length}건은 계획에서 제외(\`--close\`로 포함)`,
+    "",
+  );
   const top = [...appliedFiles].sort((a, b) => b.replacements - a.replacements || (a.file < b.file ? -1 : 1)).slice(0, 20);
   if (top.length > 0) {
     lines.push("| 파일 | 치환 |", "| --- | --- |");

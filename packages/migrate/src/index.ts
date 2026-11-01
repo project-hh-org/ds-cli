@@ -1,5 +1,7 @@
 export type {
+  CloseCandidate,
   FilePlan,
+  FreshState,
   MigrateOptions,
   MigratePlan,
   PlannedReplacement,
@@ -7,7 +9,7 @@ export type {
   TokenSkipReason,
   UsageRef,
 } from "./plan.js";
-export { planMigration } from "./plan.js";
+export { analyzeMigration, planMigration, withFreshStyles } from "./plan.js";
 export type {
   ChosenTarget,
   ComponentPlanSummary,
