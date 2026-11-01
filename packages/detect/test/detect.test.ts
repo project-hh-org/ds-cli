@@ -150,6 +150,18 @@ describe("styling 감지", () => {
     expect(r.activeExtractors).toEqual(["inline-style"]);
   });
 
+  it("@emotion/css만 의존성에 있어도 emotion 방식을 감지하고 emotion Extractor를 활성화한다", async () => {
+    repo({
+      "package.json": pkg({ "@emotion/css": "^11" }),
+      "src/A.tsx": 'import { css } from "@emotion/css";\nexport const A = () => <div className={css`color: red;`} />;',
+    });
+    const r = await detect(tmp, undefined, { available: [...AVAILABLE, meta("emotion")] });
+    const emotion = r.styling.methods.find((m) => m.name === "emotion");
+    expect(emotion?.evidence).toEqual(["package.json: @emotion/css"]);
+    expect(emotion?.share).toBe(1);
+    expect(r.activeExtractors).toContain("emotion");
+  });
+
   it("css-modules·styled·emotion 근거만 있어도 activeExtractors는 inline-style로 폴백한다", async () => {
     repo({ "package.json": pkg({ "styled-components": "^6" }), "src/A.tsx": "export const A = 1;" });
     const r = await detect(tmp, undefined, { available: AVAILABLE });

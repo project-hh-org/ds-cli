@@ -118,7 +118,7 @@ export async function detectStyling(root: string, input: StylingInput): Promise<
     });
   }
 
-  const emotionDeps = ["@emotion/react", "@emotion/styled"].filter((d) => deps.includes(d));
+  const emotionDeps = ["@emotion/react", "@emotion/styled", "@emotion/css"].filter((d) => deps.includes(d));
   if (emotionDeps.length > 0) {
     methods.push({
       name: "emotion",
