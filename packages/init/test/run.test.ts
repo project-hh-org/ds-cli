@@ -453,3 +453,54 @@ describe("runInit: 카탈로그 갱신", () => {
     expect(read(root, ".dsmith/catalog.json")).toBe(stale);
   });
 });
+
+describe("runInit: 보류 이유 문구", () => {
+  it("깨진 심볼릭 링크 토큰 파일은 '사용자 수정'이 아니라 '심볼릭 링크가 깨짐'으로 보류한다", async () => {
+    const root = await legacyDemo(true);
+    fs.mkdirSync(path.join(root, "design-system"), { recursive: true });
+    fs.symlinkSync(path.join(root, "nowhere.css"), path.join(root, "design-system/tokens.css"));
+    const r = await run(root);
+    expect(r.tokenHold).toBe("invalid");
+    expect(r.outcomes[1]).toMatchObject({ status: "skipped-invalid", reason: "심볼릭 링크가 깨짐" });
+    expect(r.outcomes[0]?.reason).toContain("tokens.css 심볼릭 링크가 깨짐으로 함께 보류");
+    expect(r.outcomes[0]?.reason).not.toContain("--force");
+    const text = formatInitSummary(r);
+    expect(text).not.toContain("사람이 고친");
+    expect(text).not.toContain("사용자 수정");
+    expect(text).toContain("tokens.css — 심볼릭 링크가 깨짐");
+    expect(text).toContain("--force로도 쓸 수 없음");
+    const report = read(root, r.report as string);
+    expect(report).toContain("보류 이유: 쓸 수 없는 경로(design-system/tokens.css: 심볼릭 링크가 깨짐)");
+    expect(report).not.toContain("사용자 수정");
+  });
+
+  it("사람이 고친 토큰 파일은 modified로 보류하고 --force를 안내한다", async () => {
+    const root = await legacyDemo(true);
+    await run(root);
+    fs.appendFileSync(path.join(root, "design-system/tokens.css"), "/* mine */\n");
+    const r = await run(root);
+    expect(r.tokenHold).toBe("modified");
+    expect(formatInitSummary(r)).toContain("사람이 고친 토큰 파일");
+    expect((await run(root, { force: true })).tokenHold).toBeNull();
+  });
+
+  it("결정할 것이 없으면 요약에 pending 힌트를 붙이지 않는다", async () => {
+    const root = copyFixture("fixtures/mixed-app");
+    roots.push(root);
+    await auditFixture(root);
+    const r = await run(root);
+    expect(r.decisions.pending).toBe(0);
+    expect(formatInitSummary(r)).toContain("결정: pending 0건\n");
+    expect(formatInitSummary(r)).not.toContain("/ds-decide");
+  });
+
+  it("리포트의 색 토큰 표는 결정 항목 키와 CSS 변수를 따로 적는다", async () => {
+    const root = await legacyDemo(true);
+    const r = await run(root);
+    const report = read(root, r.report as string);
+    const item = (await readDecisions(root)).items.find((i) => i.kind === "token-cluster")?.item as string;
+    expect(report).toContain("| 결정 항목 | CSS 변수 | 값 | 사용 수 | members | 결정 |");
+    expect(report).toContain(`| ${item} | \`--color-${item}\` |`);
+    expect(report).toContain("추론 토큰의 members");
+  });
+});

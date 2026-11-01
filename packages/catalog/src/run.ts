@@ -117,10 +117,17 @@ export async function runAi(opts: AiOptions): Promise<AiResult> {
   const dryRun = opts.dryRun === true;
   const notes: string[] = [];
 
-  // `--from init`인데 init 컴포넌트가 하나도 없으면 비어 있는 카탈로그·섹션으로 기존 것을 덮어쓰지 않는다.
-  if (opts.from === "init" && catalog.components.length === 0) {
-    warnings.push("init 컴포넌트가 없음 — 카탈로그와 AGENTS.md DS 섹션을 갱신하지 않음");
-    notes.push("`dsmith init --all`(또는 /ds-decide로 결정 후 `dsmith init`)으로 스캐폴드를 만든 뒤 다시 실행");
+  // 컴포넌트가 하나도 없으면 비어 있는 카탈로그·섹션으로 기존 것을 덮어쓰지 않는다:
+  // `--from init`인데 init 컴포넌트가 없을 때, npm DS의 타입을 못 읽었을 때(node_modules 없음 등).
+  const npmEmpty = catalog.components.length === 0 && catalog.sources.some((s) => s.origin === "ds-npm");
+  if ((opts.from === "init" && catalog.components.length === 0) || npmEmpty) {
+    if (npmEmpty) {
+      warnings.push("npm DS의 컴포넌트를 읽지 못함 — 카탈로그와 AGENTS.md DS 섹션을 갱신하지 않음");
+      notes.push("의존성을 설치(node_modules에 DS 패키지가 있게)한 뒤 다시 실행");
+    } else {
+      warnings.push("init 컴포넌트가 없음 — 카탈로그와 AGENTS.md DS 섹션을 갱신하지 않음");
+      notes.push("`dsmith init --all`(또는 /ds-decide로 결정 후 `dsmith init`)으로 스캐폴드를 만든 뒤 다시 실행");
+    }
     return {
       sources: catalog.sources,
       components: 0,
@@ -197,8 +204,9 @@ const STATUS_LABEL: Record<WriteOutcome["status"], string> = {
 export function formatAiSummary(r: AiResult): string {
   const rate = r.propsExtracted.rate === null ? "-" : `${Math.round(r.propsExtracted.rate * 100)}%`;
   const lines: string[] = [];
-  const target = r.dryRun ? `${CATALOG_FILE} (dry-run: 쓰지 않음)` : CATALOG_FILE;
-  lines.push(`카탈로그: 컴포넌트 ${r.components} (props 추출 ${rate}) · deprecated ${r.deprecated} · 토큰 ${r.tokens} → ${target}`);
+  // 쓰지 않은 실행(dry-run, 컴포넌트가 없어 거절한 경우)은 '→ 파일'로 적지 않는다.
+  const dest = r.dryRun ? ` → ${CATALOG_FILE} (dry-run: 쓰지 않음)` : r.catalogFile === null ? " (쓰지 않음)" : ` → ${CATALOG_FILE}`;
+  lines.push(`카탈로그: 컴포넌트 ${r.components} (props 추출 ${rate}) · deprecated ${r.deprecated} · 토큰 ${r.tokens}${dest}`);
   for (const o of r.outcomes) {
     const label = STATUS_LABEL[o.status];
     const reason = o.reason === undefined ? "" : `(${o.reason})`;

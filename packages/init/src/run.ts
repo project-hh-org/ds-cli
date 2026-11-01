@@ -96,6 +96,8 @@ export interface InitResult {
   dryRun: boolean;
   /** 사람이 알아야 할 것(예: 수정된 스캐폴드가 다른 옵션 기준이라 갱신하지 않음) */
   warnings: string[];
+  /** 토큰 3파일을 함께 보류한 이유: modified = 사람이 고침(--force로 덮어씀), invalid = 쓸 수 없는 경로(깨진 심볼릭 링크 등 — --force로도 못 씀), 보류 없음 = null */
+  tokenHold: "modified" | "invalid" | null;
   /**
    * `.dsmith/catalog.json`과의 관계. refreshed = 카탈로그의 토큰·토큰 파일 해시를 이번 산출로 갱신함, current = 이미 같음,
    * needs-ai = 카탈로그가 없거나 이 산출 디렉터리를 담고 있지 않음(`dsmith ai` 필요), null = dry-run이라 보지 않음
@@ -458,10 +460,15 @@ export async function runInit(opts: InitOptions): Promise<InitResult> {
   const blockers = tokenWrites.filter((_, i) => (preflight.outcomes[i] as WriteOutcome).status.startsWith("skipped"));
   const blocked = blockers.length > 0;
   const held = new Map<string, WriteOutcome>();
+  let tokenHold: InitResult["tokenHold"] = null;
   if (blocked) {
     const names = blockers.map((w) => path.basename(w.file));
-    const blockerStatuses = blockers.map((w) => (preflight.outcomes[tokenWrites.indexOf(w)] as WriteOutcome).status);
-    const cause = blockerStatuses.every((s) => s === "skipped-invalid") ? "쓸 수 없음" : "사용자 수정";
+    const blockerOutcomes = blockers.map((w) => preflight.outcomes[tokenWrites.indexOf(w)] as WriteOutcome);
+    // safeWrite의 '끊어진 심볼릭 링크'는 사용자 수정이 아니라 경로 문제다 — --force로도 쓸 수 없다.
+    const brokenLink = (o: WriteOutcome): boolean => o.status === "skipped-invalid" && o.reason === "끊어진 심볼릭 링크";
+    const allInvalid = blockerOutcomes.every((o) => o.status === "skipped-invalid");
+    tokenHold = allInvalid ? "invalid" : "modified";
+    const cause = blockerOutcomes.every(brokenLink) ? "심볼릭 링크가 깨짐" : allInvalid ? "쓸 수 없음" : "사용자 수정";
     tokenWrites.forEach((w, i) => {
       const o = preflight.outcomes[i] as WriteOutcome;
       if (o.status === "created" || o.status === "updated") {
@@ -470,10 +477,10 @@ export async function runInit(opts: InitOptions): Promise<InitResult> {
           key: o.key,
           region: o.region,
           status: "skipped-modified",
-          reason: `${names.join("·")} ${cause}으로 함께 보류 (이 파일은 수정되지 않음) — 세 토큰 파일은 함께 써야 함, 덮어쓰려면 --force`,
+          reason: `${names.join("·")} ${cause}으로 함께 보류 (이 파일은 수정되지 않음) — 세 토큰 파일은 함께 써야 함${allInvalid ? "" : ", 덮어쓰려면 --force"}`,
         });
       } else {
-        held.set(w.file, o);
+        held.set(w.file, brokenLink(o) ? { ...o, reason: "심볼릭 링크가 깨짐" } : o);
       }
     });
   }
@@ -527,6 +534,7 @@ export async function runInit(opts: InitOptions): Promise<InitResult> {
     manifest: MANIFEST,
     dryRun,
     warnings,
+    tokenHold,
     catalog: null,
   };
 
@@ -584,13 +592,18 @@ export function formatInitSummary(r: InitResult): string {
   lines.push(`스캐폴드: 생성 ${created}${updated > 0 ? ` · 갱신 ${updated}` : ""} · 유지 ${kept} · 건너뜀 ${skipped}${skippedDetail}`);
   for (const w of r.warnings) lines.push(`경고: ${w}`);
   const stale = r.decisions.stale > 0 ? `, stale ${r.decisions.stale}건` : "";
-  lines.push(
-    r.all
-      ? `결정: pending ${r.decisions.pending}건${stale} — 스캐폴드는 추천안 기준, /ds-decide 로 확정한 뒤 다시 실행`
-      : `결정: pending ${r.decisions.pending}건${stale} — /ds-decide 로 고르거나 --all 로 추천안 사용`,
-  );
-  if (tokenOutcomes.some((o) => o.status === "skipped-modified" || o.status === "skipped-unowned")) {
+  // 힌트는 고를 것이 있을 때만(pending·stale)
+  const open = r.decisions.pending > 0 || r.decisions.stale > 0;
+  const hint = !open
+    ? ""
+    : r.all
+      ? " — 스캐폴드는 추천안 기준, /ds-decide 로 확정한 뒤 다시 실행"
+      : " — /ds-decide 로 고르거나 --all 로 추천안 사용";
+  lines.push(`결정: pending ${r.decisions.pending}건${stale}${hint}`);
+  if (r.tokenHold === "modified") {
     lines.push("사람이 고친 토큰 파일 — 세 파일을 함께 보류했습니다. 덮어쓰려면 --force");
+  } else if (r.tokenHold === "invalid") {
+    lines.push("토큰 파일을 쓸 수 없는 경로가 있어 세 파일을 함께 보류했습니다 (--force로도 쓸 수 없음)");
   }
   for (const [i, o] of tokenOutcomes.entries()) {
     if (o.status === "skipped-invalid") {

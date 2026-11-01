@@ -11,8 +11,8 @@ uses: ["cli:detect"]
 
 `state`로 순서를 고른다:
 - 0 (DS 없음): `/ds-audit` → `/ds-decide` → `/ds-init` → `/ds-ai`
-- 1 (DS는 있으나 도입이 약함): `/ds-audit` → `/ds-decide` → `/ds-migrate`
-- 2 (DS 사용 중): `/ds-check`
+- 1 (DS는 있으나 도입이 약함): `/ds-audit` → `/ds-decide` → `/ds-ai` → (`/ds-migrate`는 이후 릴리스)
+- 2 (DS 사용 중): `/ds-ai` → `/ds-check`
 
 규칙:
 - 각 단계는 해당 `/ds-*` 명령과 같은 절차로 진행한다. 단계가 끝날 때마다 결과를 요약하고 사람에게 다음 단계로 갈지 확인받는다.

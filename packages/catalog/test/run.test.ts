@@ -135,6 +135,36 @@ describe("runAi: npm DS (fixtures/mui-app)", () => {
     expect(button.props.find((p: { name: string }) => p.name === "variant")?.values).toContain("contained");
     expect(read(root, "AGENTS.md")).toContain("@mui/material@6.5.0");
   });
+
+  it("node_modules가 없으면 카탈로그·AGENTS.md를 쓰지 않고 요약에 '→ catalog.json'을 적지 않는다", async () => {
+    const root = fs.realpathSync(copyFixture("mui-app"));
+    await writeAudit(root);
+    const r = await runAi({ root, version: VERSION });
+    expect(r.components).toBe(0);
+    expect(r.catalogFile).toBeNull();
+    expect(r.outcomes).toEqual([]);
+    expect(fs.existsSync(path.join(root, ".dsmith", "catalog.json"))).toBe(false);
+    expect(fs.existsSync(path.join(root, "AGENTS.md"))).toBe(false);
+    expect(r.warnings.join("\n")).toContain("node_modules/@mui/material 없음");
+    expect(r.notes.join("\n")).toContain("의존성을 설치");
+    const text = formatAiSummary(r);
+    expect(text).not.toContain("→");
+    expect(text).toContain("(쓰지 않음)");
+  });
+
+  it("node_modules가 없어도 이미 있는 카탈로그·섹션은 덮어쓰지 않는다", async () => {
+    const root = fs.realpathSync(copyFixture("mui-app"));
+    installMui(root, "mui-material-6");
+    await writeAudit(root);
+    await runAi({ root, version: VERSION });
+    const agents = read(root, "AGENTS.md");
+    const catalog = read(root, ".dsmith/catalog.json");
+    fs.rmSync(path.join(root, "node_modules"), { recursive: true, force: true });
+    const r = await runAi({ root, version: VERSION });
+    expect(r.catalogFile).toBeNull();
+    expect(read(root, "AGENTS.md")).toBe(agents);
+    expect(read(root, ".dsmith/catalog.json")).toBe(catalog);
+  });
 });
 
 describe("runAi: 상태 0 (examples/legacy-demo) → init → ai", () => {

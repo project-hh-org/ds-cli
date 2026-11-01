@@ -24,7 +24,11 @@ export interface DraftToken {
   normalized: StyleUsage["normalized"];
   /** 병합된 원값들의 사용 수 합 */
   usageCount: number;
-  /** 병합된 원값("#3c83f7", "13px"), 사용 수 desc */
+  /**
+   * 병합된 원값("#3c83f7", "13px"), 사용 수 desc.
+   * 추론 토큰(`inferred`)의 members는 값이 토큰 값(스텝)과 다른 오프스케일 원값을 가장 가까운 스텝으로 모은 목록일 뿐이다 —
+   * 이것이 `draftCoverage`의 "바꿀 수 있음"이나 migrate의 치환 대상과 같다는 뜻이 아니다(치환 가능 여부는 `rankTokens`의 exact/close로만 정한다).
+   */
   members: string[];
   /** token-cluster 결정으로 값을 정했으면 그 hex */
   chosen?: string;
@@ -34,6 +38,10 @@ export interface DraftToken {
   inferred?: true;
 }
 
+/**
+ * 토큰이 되지 못한 관측값과 가장 가까운 토큰. 거리(`distancePx`)가 커서 "close"에 못 드는 값은 가까운 토큰이 있어도
+ * `draftCoverage`의 "바꿀 수 있음"으로 세지 않는다(매핑은 참고용, 치환 가능 여부는 매처가 정한다).
+ */
 export interface ScaleMapping {
   category: "spacing" | "radius" | "font-size";
   px: number;
@@ -350,6 +358,8 @@ export interface Coverage {
  * 그래서 이 숫자는 사실상 간격(4px 스케일에 걸리지 않는 값) 커버리지를 반영한다.
  * 대상 = hardcoded 사용 중 0 이하 간격은 제외하고 `zeroOrNegative`로 따로 센다.
  * 999px 이상 모서리는 `radius-full`이 있으면 바꿀 수 있는 것으로 센다.
+ * 바꿀 수 있음 = 매처가 exact·close로 판정한 값. 스케일 밖 값을 `ScaleMapping`이 먼 토큰에 대응시켰더라도 세지 않고,
+ * 추론 토큰의 `members`가 전부 바뀐다는 뜻도 아니다.
  */
 export function draftCoverage(
   styles: StyleUsage[],

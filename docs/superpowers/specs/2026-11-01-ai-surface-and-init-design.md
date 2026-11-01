@@ -28,7 +28,7 @@
 
 - CLI를 `--json`으로 실행하고 결과를 **읽어서 설명**한다. 숫자는 지어내지 않는다 — JSON에 없는 숫자는 말하지 않는다.
 - 판단이 필요하면 MCP 도구를 부른다 (`ds-decide` → `explain_decision`, `ds-check` → `lint_snippet`).
-- `/ds` 는 `detect.state` 에 따라 순서를 고른다: 0 → audit → decide → init → ai, 1 → audit → decide → (migrate), 2 → check/usage. 각 단계 끝에 사람에게 확인을 받는다.
+- `/ds` 는 `detect.state` 에 따라 순서를 고른다: 0 → audit → decide → init → ai, 1 → audit → decide → ai → (migrate는 Plan 4 이후), 2 → ai → check. 카탈로그(`ai`)가 있어야 AI가 레포의 DS 컴포넌트·토큰을 알고 쓰므로 상태 1·2도 `ai`를 거친다. 각 단계 끝에 사람에게 확인을 받는다.
 - 길이 상한: 명령당 40줄. 로직은 CLI/Core에 있고 명령은 호출·설명·확인만.
 
 ### 1.3 `dsmith mcp` — MCP 서버 (`packages/mcp-server`, CLI 서브커맨드로 노출)

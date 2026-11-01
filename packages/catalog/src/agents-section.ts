@@ -27,7 +27,18 @@ const DEPRECATED_NOTE_MAX = 80;
 /** 마커 모양·줄바꿈이 본문에 섞이지 않게 한 줄로 만든다 */
 function oneLine(text: string, max?: number): string {
   let s = text.replace(/<!--|-->/g, "").replace(/\s+/g, " ").trim();
-  if (max !== undefined && s.length > max) s = `${s.slice(0, max - 1)}…`;
+  if (max !== undefined && s.length > max) {
+    // 마크다운 링크 `[글](주소)` 한가운데서 자르면 깨진 링크가 남는다 — 링크 앞에서 자른다.
+    let cut = max - 1;
+    for (const m of s.matchAll(/!?\[[^\]]*\]\([^)]*\)/g)) {
+      const start = m.index ?? 0;
+      if (start < cut && start + m[0].length > cut) {
+        cut = start;
+        break;
+      }
+    }
+    s = `${s.slice(0, cut).trimEnd()}…`;
+  }
   return s;
 }
 
@@ -63,10 +74,14 @@ function tokenLine(catalog: Catalog): string | null {
   const shown = files.slice(0, MAX_TOKEN_FILES).map(tick).join(", ");
   const more = files.length > MAX_TOKEN_FILES ? ` 외 ${files.length - MAX_TOKEN_FILES}개` : "";
   // init 산출은 같은 디렉터리에 CSS 변수 파일(tokens.css)도 있다 — 코드에서는 이쪽을 쓴다.
-  const css = initSources.map((s) => {
-    const dir = initDirOf(s);
-    return tick(dir === "components" || dir === "." ? "tokens.css" : `${dir}/tokens.css`);
-  });
+  // 이미 '토큰 파일'로 적힌 tokens.css(재 audit 뒤 감지된 경우)는 CSS 변수로 한 번 더 적지 않는다.
+  const css = initSources
+    .map((s) => {
+      const dir = initDirOf(s);
+      return dir === "components" || dir === "." ? "tokens.css" : `${dir}/tokens.css`;
+    })
+    .filter((f) => !files.slice(0, MAX_TOKEN_FILES).includes(f))
+    .map(tick);
   const cssNote = css.length > 0 ? ` · CSS 변수: ${[...new Set(css)].join(", ")}` : "";
   return `- 토큰 파일: ${shown}${more} (토큰 ${catalog.tokens.length}개)${cssNote}`;
 }

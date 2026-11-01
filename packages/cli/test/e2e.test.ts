@@ -382,3 +382,37 @@ describe("fixtures/mui-app + npm 타입(node_modules)", () => {
     expect(values("color")).toEqual(expect.arrayContaining(["primary", "secondary", "error"]));
   });
 });
+
+describe("fixtures/mixed-app 자연 상태 0 (overrides 없음): audit → init → audit → ai", () => {
+  it("DS 없음으로 감지되고, init 뒤 다시 audit해도 ai의 AGENTS.md 토큰 파일 줄에 같은 파일이 두 번 나오지 않는다", async () => {
+    const root = tmpCopy("mixed-app", "fixtures");
+    const { result: audited } = await runAudit(root);
+    expect(audited.detect.state).toBe(0);
+    expect(audited.detect.ds.kind).toBe("none");
+    expect(audited.detect.overrides).toBeUndefined();
+
+    const { result: init, text } = await runInitCommand({ root });
+    expect(init.tokens.total).toBeGreaterThan(0);
+    expect(init.catalog).toBe("needs-ai");
+    expect(text).toContain("다음: dsmith ai");
+    // 결정할 것이 없으면 pending 힌트를 붙이지 않는다
+    expect(init.decisions.pending).toBe(0);
+    expect(text).toContain("결정: pending 0건\n");
+    expect(text).not.toContain("/ds-decide");
+
+    // init이 만든 토큰 파일이 이제 DS로 감지된다
+    const { result: again } = await runAudit(root);
+    expect(again.detect.ds.tokenFiles).toContain("design-system/tokens.css");
+
+    await runAiCommand({ root });
+    const agents = fs.readFileSync(path.join(root, "AGENTS.md"), "utf-8");
+    const tokenLine = agents.split("\n").find((l) => l.startsWith("- 토큰 파일")) ?? "";
+    expect(tokenLine).toContain("`design-system/tokens.css`");
+    expect(tokenLine.match(/design-system\/tokens\.css/g)).toHaveLength(1);
+    const catalog = await readCatalog(root);
+    expect(catalog?.tokens).toHaveLength(init.tokens.total);
+
+    // 이제 카탈로그가 있으니 init은 안내 대신 카탈로그와 맞는지 확인한다
+    expect((await runInitCommand({ root })).result.catalog).toBe("current");
+  });
+});

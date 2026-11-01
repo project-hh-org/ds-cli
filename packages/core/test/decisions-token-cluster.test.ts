@@ -138,3 +138,22 @@ describe("stale: 결정이 적용된 경우는 stale이 아니다", () => {
     await expect(chooseDecision(tmp, index, "blue-400", "#000000", { kind: "token-cluster" })).rejects.toThrow('--choose "#3b82f6"');
   });
 });
+
+describe("token-cluster 항목 키 안내", () => {
+  it("CSS 변수 이름(color-blue-400, --color-blue-400)으로 찾으면 결정 항목 키(blue-400)를 안내한다", async () => {
+    for (const name of ["color-blue-400", "--color-blue-400"]) {
+      const res = await explainDecision(tmp, index, name, { isDsModule: () => false, decisions, git: false });
+      expect(res).toMatchObject({ error: "not-found", candidates: ["blue-400"] });
+      if (!("message" in res)) throw new Error("not-found가 아님");
+      expect(res.message).toContain("결정 항목 키는 'blue-400'");
+      expect(res.message).toContain("--color-blue-400");
+    }
+  });
+
+  it("그런 클러스터 결정이 없으면 일반 안내", async () => {
+    const res = await explainDecision(tmp, index, "color-red-400", { isDsModule: () => false, decisions, git: false });
+    expect(res).toMatchObject({ error: "not-found", candidates: [] });
+    if (!("message" in res)) throw new Error("not-found가 아님");
+    expect(res.message).not.toContain("결정 항목 키");
+  });
+});

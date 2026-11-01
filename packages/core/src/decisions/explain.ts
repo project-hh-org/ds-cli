@@ -96,6 +96,15 @@ function notFound(index: Index, item: string, kind: DecisionKind | undefined, de
       availableKinds: available,
     };
   }
+  // 색 토큰의 CSS 변수 이름(`--color-blue-400`)은 결정 항목 키(`blue-400`)가 아니다 — 키를 알려 준다.
+  const key = /^(?:--)?color-(.+)$/.exec(item)?.[1];
+  if (key !== undefined && decisions?.items.some((r) => r.kind === "token-cluster" && r.item === key) === true) {
+    return {
+      error: "not-found",
+      message: `결정할 항목이 아님: ${item} — 색 토큰의 결정 항목 키는 '${key}'입니다 (CSS 변수 --color-${key}). decide --explain ${key}`,
+      candidates: [key],
+    };
+  }
   return { error: "not-found", message: `결정할 항목이 아님: ${item}. ${CHECK_LIST}`, candidates: similarItems(index, item) };
 }
 

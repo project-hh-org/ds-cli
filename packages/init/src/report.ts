@@ -22,7 +22,22 @@ export function renderInitReport(r: InitResult, draft: TokenDraft): string {
   const present = names.filter((_, i) => ["created", "updated", "unchanged"].includes(r.outcomes[i]?.status ?? ""));
   lines.push(`- 토큰 파일: ${present.length === 0 ? "없음(쓰지 못함)" : present.map((n) => `\`${n}\``).join(" · ")}`);
   const held = names.filter((n) => !present.includes(n));
-  if (present.length > 0 && held.length > 0) lines.push(`- 보류·쓰지 못함: ${held.map((n) => `\`${n}\``).join(" · ")} (사용자 수정 등 — \`--force\`로 덮어씀)`);
+  if (present.length > 0 && held.length > 0) {
+    lines.push(
+      `- 보류·쓰지 못함: ${held.map((n) => `\`${n}\``).join(" · ")} (${r.tokenHold === "invalid" ? "쓸 수 없는 경로 — 경로를 고친 뒤 다시 실행" : "사용자 수정 — `--force`로 덮어씀"})`,
+    );
+  }
+  if (present.length === 0 && r.tokenHold !== null) {
+    const why = r.outcomes
+      .slice(0, 3)
+      .filter((o) => o.status === "skipped-invalid")
+      .map((o) => `${o.file}: ${o.reason ?? "경로가 안전하지 않음"}`);
+    lines.push(
+      r.tokenHold === "invalid"
+        ? `- 보류 이유: 쓸 수 없는 경로(${why.join("; ")}) — 경로를 고친 뒤 다시 실행. \`--force\`로도 쓸 수 없음`
+        : "- 보류 이유: 사람이 고친 토큰 파일 — `--force`로 덮어씀",
+    );
+  }
   lines.push("");
 
   lines.push("## 토큰", "");
@@ -36,10 +51,11 @@ export function renderInitReport(r: InitResult, draft: TokenDraft): string {
   const colors = draft.tokens.filter((t) => t.category === "color");
   if (colors.length > 0) {
     lines.push("### 색 토큰", "");
-    lines.push("| 이름 | 값 | 사용 수 | members | 결정 |", "| --- | --- | --- | --- | --- |");
+    lines.push("결정 항목은 `decide --explain <결정 항목>`에 쓰는 키이고, CSS 변수는 코드에서 쓰는 이름입니다.", "");
+    lines.push("| 결정 항목 | CSS 변수 | 값 | 사용 수 | members | 결정 |", "| --- | --- | --- | --- | --- | --- |");
     for (const t of colors) {
       const decision = t.chosen !== undefined ? `선택: ${t.chosen}` : t.members.length > 1 ? "pending" : "-";
-      lines.push(`| ${t.name} | ${t.value} | ${t.usageCount} | ${cell(t.members.join(", "))} | ${decision} |`);
+      lines.push(`| ${t.key} | \`--${t.name}\` | ${t.value} | ${t.usageCount} | ${cell(t.members.join(", "))} | ${decision} |`);
     }
     lines.push("");
   }
@@ -47,7 +63,9 @@ export function renderInitReport(r: InitResult, draft: TokenDraft): string {
   const inferred = draft.tokens.filter((t) => t.inferred === true);
   if (inferred.length > 0) {
     lines.push(
-      `간격 토큰 중 ${inferred.map((t) => t.name).join(", ")}은(는) 4px 스케일에 걸리지 않는 값을 가장 가까운 스텝으로 모아 추론한 토큰입니다.`,
+      `간격 토큰 중 ${inferred.map((t) => t.name).join(", ")}은(는) 4px 스케일에 걸리지 않는 값을 가장 가까운 스텝으로 모아 추론한 토큰입니다. ` +
+        "추론 토큰의 members는 토큰 값(스텝)과 같지 않은 원값을 묶은 목록일 뿐 치환 대상 목록이 아닙니다 — " +
+        "바꿀 수 있는 값은 아래 커버리지의 기준(토큰과 같거나 가까운 값)으로만 셉니다.",
       "",
     );
   }
@@ -92,6 +110,10 @@ export function renderInitReport(r: InitResult, draft: TokenDraft): string {
   if (r.mappings.length === 0) {
     lines.push("없음", "");
   } else {
+    lines.push(
+      "토큰이 되지 못한 값과 가장 가까운 토큰입니다. 거리가 먼 토큰에 대응된 값은 위 커버리지의 '바꿀 수 있음'에 세지 않습니다.",
+      "",
+    );
     lines.push("| 카테고리 | 값 | 사용 수 | 가까운 토큰 | 거리 | 4px 스텝 |", "| --- | --- | --- | --- | --- | --- |");
     for (const m of r.mappings) {
       lines.push(
