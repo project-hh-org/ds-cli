@@ -87,7 +87,6 @@ export function lintSnippet(ws: Workspace, extractors: Extractor[], input: LintS
   for (const u of styles.filter(isRatedUsage)) {
     if (u.source === "token") summary.token += 1;
     else if (u.source === "dynamic") summary.dynamic += 1;
-    else if (u.source === "hardcoded") summary.hardcoded += 1;
   }
   // 위반은 core 규칙 엔진이 낸다(ESLint 플러그인·guard --ci와 같은 함수). 토큰 제안은 suggestionFor가 따로 붙인다.
   const findings = evaluateFile({
@@ -99,6 +98,8 @@ export function lintSnippet(ws: Workspace, extractors: Extractor[], input: LintS
     preferred: [],
     policy: DEFAULT_GUARD_POLICY,
   });
+  // hardcoded 개수는 규칙 엔진의 finding 수에서 낸다 — 위반 목록과 같은 출처라 어긋날 수 없다(DEFAULT 정책은 아무것도 허용하지 않는다).
+  summary.hardcoded = findings.filter((f) => f.rule === "no-hardcoded-style").length;
   for (const f of findings) {
     const u = f.usageIndex === undefined ? undefined : styles[f.usageIndex];
     if (f.rule !== "no-hardcoded-style" || u === undefined) continue;

@@ -76,6 +76,23 @@ describe("guard snapshot", () => {
       failOn: { newHardcoded: 0, deprecated: 0 },
     });
   });
+  it("배열·enum 검증은 경로를 담은 Error", () => {
+    const file = path.join(root, GUARD_FILE);
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    const put = (o: unknown): void => fs.writeFileSync(file, JSON.stringify(o));
+    put({ ...snap(), tokens: "x" });
+    expect(() => readGuardSnapshotSync(file)).toThrow(file);
+    put({ ...snap(), ds: { modules: [], components: "x" } });
+    expect(() => readGuardSnapshotSync(file)).toThrow(/ds/);
+    put({ ...snap(), policy: { minConfidence: "far" } });
+    expect(() => readGuardSnapshotSync(file)).toThrow(/minConfidence/);
+    put({ ...snap(), policy: { allow: { properties: ["colors"] } } });
+    expect(() => readGuardSnapshotSync(file)).toThrow(/allow.properties/);
+    put({ ...snap(), policy: { allow: { files: "a" } } });
+    expect(() => readGuardSnapshotSync(file)).toThrow(/allow.files/);
+    put({ ...snap(), version: 2 });
+    expect(() => readGuardSnapshotSync(file)).toThrow(/dsmith guard init/);
+  });
   it("ruleContextOf / moduleContextOf", () => {
     const s = snap();
     expect(ruleContextOf(s).tokens[0]).toMatchObject({ name: "--space-4", path: "space.4" });
@@ -91,7 +108,7 @@ describe("guard snapshot", () => {
   });
   it("동기 모듈(snapshot·rules)에 async 구문이 없다", () => {
     const src = path.resolve(import.meta.dirname, "../src");
-    const files = ["guard/snapshot.ts", "rules/model.ts", "rules/evaluate.ts"];
+    const files = ["guard/snapshot.ts", ...fs.readdirSync(path.join(src, "rules")).filter((n) => n.endsWith(".ts")).map((n) => `rules/${n}`)];
     for (const f of files) {
       const text = fs.readFileSync(path.join(src, f), "utf-8").replace(/\/\/.*$/gm, "");
       expect(text, f).not.toMatch(/\basync\b|\bawait\b|\bPromise\b|fs\/promises/);

@@ -6,7 +6,7 @@ import { clusterSpacing } from "../cluster/spacing-cluster.js";
 import { rankTokens } from "../match/token-matcher.js";
 import type { Token } from "../model/token.js";
 import { isRatedUsage } from "../model/style-usage.js";
-import { tokenCategoryOf } from "./load.js";
+import { tokenCategoryOf } from "./category.js";
 
 export type DraftCategory = Token["category"];
 export type DraftGroup = "color" | "space" | "radius" | "text";

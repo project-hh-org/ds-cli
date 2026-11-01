@@ -4,7 +4,7 @@ import type { ComponentUsage } from "../src/model/component-usage.js";
 import type { Token } from "../src/model/token.js";
 import { normalizeColor } from "../src/normalize/color.js";
 import { DEFAULT_GUARD_POLICY, type GuardPolicy, type RuleContext } from "../src/rules/model.js";
-import { evaluateFile, findingKey, summarizeFindings } from "../src/rules/evaluate.js";
+import { eligibleFindings, evaluateFile, findingKey, summarizeFindings } from "../src/rules/evaluate.js";
 
 const color = (raw: string): StyleUsage["normalized"] => {
   const n = normalizeColor(raw);
@@ -41,7 +41,7 @@ describe("no-hardcoded-style", () => {
   it("exact 제안", () => {
     const [f] = run([usage({})]);
     expect(f?.rule).toBe("no-hardcoded-style");
-    expect(f?.style?.replacement).toEqual({ token: "--color-blue", value: "#3b82f6", confidence: "exact" });
+    expect(f?.style?.replacement).toEqual({ token: "--color-blue", value: "#3b82f6", confidence: "exact", tokenIndex: 0 });
     expect(f?.message).toBe("하드코딩 color #3b82f6 — 토큰 --color-blue(#3b82f6) 사용");
     expect(f?.usageIndex).toBe(0);
     expect(f?.style?.category).toBe("color");
@@ -91,6 +91,14 @@ describe("components", () => {
     ]);
     expect(fs[0]?.message).toBe("Button은 DS 컴포넌트(src/components/ui/button)를 쓰세요");
   });
+  it("골격(scaffold) 항목은 권하지 않는다", () => {
+    const scaffold = { modules: ["design-system/components/Btn"], components: [{ name: "Btn", module: "design-system/components/Btn", status: "scaffold" as const }] };
+    expect(run([], [comp({ name: "Btn", module: "src/legacy/Btn" })], { ds: scaffold })).toEqual([]);
+    expect(run([], [comp({ name: "Btn", module: "design-system/components/Btn" })], { ds: scaffold })).toEqual([]);
+  });
+  it("import 없고 지역 선언도 아닌 <Icon />은 무시", () => {
+    expect(run([], [comp({ module: "" })], { ds })).toEqual([]);
+  });
   it("DS에 없는 이름은 무시", () => {
     expect(run([], [comp({ name: "Card", module: "x" })], { ds })).toEqual([]);
   });
@@ -104,6 +112,33 @@ describe("components", () => {
     expect(f?.rule).toBe("no-deprecated-component");
     expect(f?.message).toBe("Old은 deprecated: 쓰지 마세요");
     expect(f?.component?.deprecated).toContain("자세히");
+  });
+});
+
+describe("치환 대상 플래그", () => {
+  const px = (n: number): StyleUsage["normalized"] => ({ kind: "length", px: n });
+  const t8: Token = { name: "--space-2", value: "8px", normalized: px(8), category: "spacing" };
+  it("padding 0은 eligible false, 메시지 치환 대상 아님", () => {
+    const [f] = run([usage({ property: "padding", raw: "0", normalized: px(0) })], [], { tokens: [{ ...t8, name: "--space-0", value: "0px", normalized: px(0) }] });
+    expect(f?.style?.eligible).toBe(false);
+    expect(f?.style?.replacement).toBeNull();
+    expect(f?.message).toBe("하드코딩 padding 0 — 토큰 치환 대상 아님");
+  });
+  it("width 8은 8px 토큰이 있어도 eligible false", () => {
+    const [f] = run([usage({ property: "width", raw: "8px", normalized: px(8) })], [], { tokens: [t8] });
+    expect(f?.style?.eligible).toBe(false);
+    expect(f?.style?.replacement).toBeNull();
+    expect(f?.message).toContain("토큰 치환 대상 아님");
+  });
+  it("padding 8은 eligible, tokenIndex가 입력 위치", () => {
+    const [f] = run([usage({ property: "padding", raw: "8px", normalized: px(8) })], [], { tokens: [tokens[0] as Token, t8] });
+    expect(f?.style?.eligible).toBe(true);
+    expect(f?.style?.replacement?.tokenIndex).toBe(1);
+  });
+  it("eligibleFindings는 대상 아닌 style만 뺀다", () => {
+    const fs = run([usage({}), usage({ property: "width", raw: "8px", normalized: px(8), line: 2 })], [comp({ declaredLocally: true, line: 3 })], { ds: { modules: [], components: [{ name: "Button", module: "m" }] } });
+    expect(fs).toHaveLength(3);
+    expect(eligibleFindings(fs).map((f) => f.rule)).toEqual(["no-hardcoded-style", "prefer-ds-component"]);
   });
 });
 

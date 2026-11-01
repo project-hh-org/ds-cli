@@ -1,6 +1,5 @@
-import { createHash } from "node:crypto";
-import fs from "node:fs/promises";
 import path from "node:path";
+import { hashOf } from "../catalog/tokens.js";
 import { atomicWrite } from "../fs/safe-write.js";
 import { GUARD_FILE, type GuardSnapshot } from "./snapshot.js";
 
@@ -21,13 +20,7 @@ export async function writeGuardSnapshot(root: string, s: GuardSnapshot): Promis
 export async function staleGuardTokenFiles(root: string, s: GuardSnapshot): Promise<string[]> {
   const stale: string[] = [];
   for (const rec of s.tokenFiles) {
-    let sha: string | null = null;
-    try {
-      sha = createHash("sha256").update(await fs.readFile(path.resolve(root, rec.file))).digest("hex");
-    } catch {
-      sha = null;
-    }
-    if (sha !== rec.sha256) stale.push(rec.file);
+    if ((await hashOf(root, rec.file)) !== rec.sha256) stale.push(rec.file);
   }
   return stale;
 }

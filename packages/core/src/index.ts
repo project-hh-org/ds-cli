@@ -145,7 +145,7 @@ export type { SeedLimits, TokenClusterSeed } from "./decisions/seed.js";
 export { seedDecisions } from "./decisions/seed.js";
 export type { DsComponentRef, Finding, GuardPolicy, RuleContext, RuleId } from "./rules/model.js";
 export { DEFAULT_GUARD_POLICY } from "./rules/model.js";
-export { evaluateFile, findingKey, summarizeFindings } from "./rules/evaluate.js";
+export { eligibleFindings, evaluateFile, findingKey, summarizeFindings } from "./rules/evaluate.js";
 export type { GuardPreset, GuardSnapshot } from "./guard/snapshot.js";
 export { GUARD_FILE, findGuardSnapshotSync, moduleContextOf, readGuardSnapshotSync, ruleContextOf } from "./guard/snapshot.js";
 export { staleGuardTokenFiles, writeGuardSnapshot } from "./guard/write.js";

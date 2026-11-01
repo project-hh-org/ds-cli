@@ -6,7 +6,7 @@ import type { Catalog, CatalogSource, CatalogToken, CatalogTokenFile } from "./m
 
 const compareCodeUnits = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
 
-async function hashOf(root: string, file: string): Promise<string | null> {
+export async function hashOf(root: string, file: string): Promise<string | null> {
   try {
     return createHash("sha256").update(await fs.readFile(path.resolve(root, file))).digest("hex");
   } catch {

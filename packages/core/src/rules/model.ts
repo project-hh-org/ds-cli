@@ -12,17 +12,19 @@ export interface GuardPolicy {
   failOn: { newHardcoded: number; deprecated: number };
 }
 
-export const DEFAULT_GUARD_POLICY: GuardPolicy = {
-  allow: { files: [], properties: [] },
+export const DEFAULT_GUARD_POLICY: GuardPolicy = Object.freeze({
+  allow: Object.freeze({ files: Object.freeze([]) as unknown as string[], properties: Object.freeze([]) as unknown as StyleProperty[] }),
   minConfidence: "close",
-  failOn: { newHardcoded: 0, deprecated: 0 },
-};
+  failOn: Object.freeze({ newHardcoded: 0, deprecated: 0 }),
+});
 
 export interface DsComponentRef {
   name: string;
   module: string;
   modules?: string[];
   deprecated?: string;
+  /** dsmith init이 만든 골격 — 구현 전이라 prefer-ds-component가 권하지 않는다(module은 DS module로는 센다) */
+  status?: "scaffold";
 }
 
 export interface RuleContext {
@@ -48,7 +50,10 @@ export interface Finding {
     raw: string;
     extractor: string;
     category: Token["category"] | null;
-    replacement: { token: string; value: string; confidence: "exact" | "close" } | null;
+    /** 토큰 치환 대상인가: 속성이 COVERAGE_PROPERTIES이고 간격 0이 아님. 아니면 message는 "토큰 치환 대상 아님" */
+    eligible: boolean;
+    /** tokenIndex: 입력 tokens 배열에서의 위치(O(1) 조회용) */
+    replacement: { token: string; value: string; confidence: "exact" | "close"; tokenIndex: number } | null;
   };
   component?: { name: string; module: string; preferModule?: string; deprecated?: string };
 }
