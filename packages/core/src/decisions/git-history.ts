@@ -23,7 +23,9 @@ export async function readGitHistory(
   const last = lines[0];
   if (first === undefined || last === undefined) return null;
   const parse = (line: string): { sha: string; date: string; email: string } => {
-    const [sha = "", date = "", email = ""] = line.split("\t");
+    const [sha = "", raw = "", email = ""] = line.split("\t");
+    // git 버전에 따라 UTC 오프셋을 "+00:00" 또는 "Z"로 찍는다 → "+00:00"으로 통일
+    const date = raw.endsWith("Z") ? `${raw.slice(0, -1)}+00:00` : raw;
     return { sha: sha.slice(0, SHA_LENGTH), date, email };
   };
   const emails = new Set(lines.map((l) => parse(l).email));
