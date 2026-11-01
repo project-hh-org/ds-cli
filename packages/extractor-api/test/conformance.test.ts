@@ -323,6 +323,25 @@ describe("runConformance write+tokenRef 왕복", () => {
     });
     const report = runConformance("dummy", () => greedy, [writeCase()]);
     expect(report.failed[0]?.reason).toContain("바뀜");
+    // 사라진 키·새로 생긴 키를 메시지에 싣는다
+    expect(report.failed[0]?.reason).toContain("#00f");
+  });
+
+  it("같은 줄에 기대와 일치하는 기존 usage가 먼저 나와도 새로 생긴 usage를 치환 결과로 본다", () => {
+    const withExisting = fake({
+      extract: (ctx) =>
+        [...ctx.code.matchAll(/(#[0-9a-f]{3}|var\(--[cd]\))/g)].map((m) =>
+          usage({ line: 1, column: m.index ?? 0, raw: m[0], source: m[0].startsWith("var") ? "token" : "hardcoded" }),
+        ),
+      write: (u) => {
+        const column = u.column;
+        return { file: "a.css", start: column, end: column + u.raw.length, replacement: "var(--c)" };
+      },
+    });
+    const report = runConformance("dummy", () => withExisting, [
+      { code: "a:var(--d);b:#f00;", file: "a.css", expect: [], writes: [{ target: { raw: "#f00" }, token, ref: "var(--c)", reextract: { source: "token" } }] },
+    ]);
+    expect(report).toEqual({ passed: 1, failed: [] });
   });
 });
 

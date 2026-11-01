@@ -96,11 +96,27 @@ function signalsProblems(signals: unknown): string[] {
   return problems;
 }
 
+function usageKey(u: StyleUsage): string {
+  return `${u.property}|${u.raw}|${u.source}`;
+}
+
+/** `after`에서 늘어난 키(added)와 `before`보다 줄어든 키(removed). */
+function multisetDiff(before: Map<string, number>, after: Map<string, number>): { added: string[]; removed: string[] } {
+  const added: string[] = [];
+  const removed: string[] = [];
+  for (const key of new Set([...before.keys(), ...after.keys()])) {
+    const delta = (after.get(key) ?? 0) - (before.get(key) ?? 0);
+    if (delta > 0) added.push(key);
+    else if (delta < 0) removed.push(key);
+  }
+  return { added, removed };
+}
+
 /** 다중집합 비교용 키. */
 function multiset(usages: StyleUsage[]): Map<string, number> {
   const counts = new Map<string, number>();
   for (const u of usages) {
-    const key = `${u.property}|${u.raw}|${u.source}`;
+    const key = usageKey(u);
     counts.set(key, (counts.get(key) ?? 0) + 1);
   }
   return counts;
@@ -140,17 +156,23 @@ function checkWrite(extractor: Extractor, testCase: ConformanceCase, wc: WriteCa
   } catch (error) {
     return `${label}: 치환 뒤 재추출이 예외를 던짐: ${error instanceof Error ? error.message : String(error)}`;
   }
-  const replaced = reextracted.find((u) => u.line === target.line && matchesPartial(u, wc.reextract));
+  const beforeCounts = multiset(before);
+  const candidates = reextracted.filter((u) => u.line === target.line && matchesPartial(u, wc.reextract));
+  // 같은 줄에 기대와 일치하는 usage가 여럿이면, 치환 전에 없던 키(= 치환으로 생긴 usage)를 우선한다.
+  const replaced = candidates.find((u) => !beforeCounts.has(usageKey(u))) ?? candidates[0];
   if (replaced === undefined) {
     return `${label}: 재추출에서 ${target.line}번 줄에 reextract와 일치하는 usage가 없음: ${JSON.stringify(wc.reextract)}`;
   }
 
   const rest = multiset(before);
-  const key = `${target.property}|${target.raw}|${target.source}`;
+  const key = usageKey(target);
   rest.set(key, (rest.get(key) ?? 1) - 1);
   if (rest.get(key) === 0) rest.delete(key);
   const restAfter = multiset(reextracted.filter((u) => u !== replaced));
-  if (!sameMultiset(rest, restAfter)) return `${label}: 치환 대상 외의 usage가 바뀜`;
+  if (!sameMultiset(rest, restAfter)) {
+    const { added, removed } = multisetDiff(rest, restAfter);
+    return `${label}: 치환 대상 외의 usage가 바뀜 (추가: ${JSON.stringify(added)}, 제거: ${JSON.stringify(removed)})`;
+  }
   return null;
 }
 
