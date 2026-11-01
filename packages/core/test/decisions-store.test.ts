@@ -51,6 +51,62 @@ describe("readDecisions / writeDecisions", () => {
   });
 });
 
+describe("readDecisions 기록 검증", () => {
+  const put = (items: unknown[]): void => {
+    fs.mkdirSync(path.join(tmp, ".dsmith"), { recursive: true });
+    fs.writeFileSync(path.join(tmp, ".dsmith", "decisions.json"), JSON.stringify({ version: 1, items }));
+  };
+  const ok = { item: "Button", kind: "duplicate", status: "pending", options: ["a"] };
+
+  it("올바른 기록은 그대로 읽힌다", async () => {
+    put([ok, { ...ok, kind: "token-cluster", status: "decided", chosen: "a", note: "n", decidedAt: "t" }]);
+    expect((await readDecisions(tmp)).items).toHaveLength(2);
+  });
+
+  it.each([
+    ["item이 문자열이 아님", { ...ok, item: 3 }],
+    ["kind가 열거값이 아님", { ...ok, kind: "other" }],
+    ["status가 열거값이 아님", { ...ok, status: "done" }],
+    ["options가 문자열 배열이 아님", { ...ok, options: [1] }],
+    ["chosen이 문자열이 아님", { ...ok, chosen: 1 }],
+    ["객체가 아님", "x"],
+  ])("%s → 파일명과 items 인덱스를 담은 에러", async (_label, bad) => {
+    put([ok, bad]);
+    await expect(readDecisions(tmp)).rejects.toThrow(/\.dsmith\/decisions\.json.*items\[1\]/);
+  });
+});
+
+describe("writeDecisions 원자성", () => {
+  it("임시 파일을 남기지 않고, 쓰는 동안 읽어도 항상 온전한 JSON이다", async () => {
+    const big = (tag: string): DecisionsFile => ({
+      version: 1,
+      items: Array.from({ length: 3000 }, (_, i) => record({ item: `${tag}-${i}`, options: ["a".repeat(50), "b".repeat(50)] })),
+    });
+    await writeDecisions(tmp, big("x"));
+    const target = path.join(tmp, ".dsmith", "decisions.json");
+    let writing = true;
+    let torn = 0;
+    let reads = 0;
+    const reader = (async () => {
+      while (writing) {
+        try {
+          JSON.parse(fs.readFileSync(target, "utf-8"));
+        } catch {
+          torn++;
+        }
+        reads++;
+        await new Promise((r) => setImmediate(r));
+      }
+    })();
+    for (let i = 0; i < 25; i++) await writeDecisions(tmp, big(i % 2 === 0 ? "y" : "z"));
+    writing = false;
+    await reader;
+    expect(reads).toBeGreaterThan(0);
+    expect(torn).toBe(0);
+    expect(fs.readdirSync(path.join(tmp, ".dsmith"))).toEqual(["decisions.json"]);
+  });
+});
+
 describe("recordDecision", () => {
   it("(item, kind) 기준으로 upsert한다 — 두 번 기록해도 1건", () => {
     const empty: DecisionsFile = { version: 1, items: [] };

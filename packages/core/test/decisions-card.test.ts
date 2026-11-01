@@ -58,7 +58,12 @@ describe("buildDecisionCard 추천 규칙", () => {
       index: indexOf([...use("ui/A", 1), ...use("ui/B", 2), ...use("x/C", 9)]),
       isDsModule: (m) => m.startsWith("ui/"),
     });
-    expect(card.recommendation).toMatchObject({ optionId: "ui/B", rule: "usage", confidence: "medium" });
+    expect(card.recommendation).toEqual({
+      optionId: "ui/B",
+      reason: "DS 옵션 2개 중 사용 수 2회로 가장 많음",
+      rule: "usage",
+      confidence: "medium",
+    });
   });
 
   it("DS 없음 · 사용 3 vs 1 → usage/medium", () => {
@@ -80,10 +85,10 @@ describe("buildDecisionCard 추천 규칙", () => {
       ),
       definitionFiles: { A: "a.tsx", B: "b.tsx" },
     });
-    expect(card.ruleCheck.tokenMatchRate).toEqual({ A: 0.5, B: null });
+    expect(card.ruleCheck.tokenUsageRate).toEqual({ A: 0.5, B: null });
     expect(card.recommendation).toEqual({
       optionId: "A",
-      reason: "토큰 일치율 50%로 가장 높음",
+      reason: "토큰 사용 비율 50%로 가장 높음",
       confidence: "low",
       rule: "token-rate",
     });
@@ -183,7 +188,7 @@ describe("buildDecisionCard 구성", () => {
     const card = build({ candidate: candidate(["A", "B"]), index: indexOf([...use("A", 1), ...use("B", 1)]) });
     expect(card.options[0]).not.toHaveProperty("file");
     expect(card.options[0]?.styleValues).toEqual({ color: [], spacing: [] });
-    expect(card.ruleCheck.tokenMatchRate).toEqual({ A: null, B: null });
+    expect(card.ruleCheck.tokenUsageRate).toEqual({ A: null, B: null });
   });
 
   it("history가 빈 맵이면 필드가 없다", () => {
@@ -238,5 +243,82 @@ describe("buildDecisionCard local-definition", () => {
     ]);
     expect(card.options[0]).not.toHaveProperty("module");
     expect(card.recommendation).toMatchObject({ optionId: "src/ui/x.tsx", rule: "ds-module", confidence: "high" });
+  });
+});
+
+describe("buildDecisionCard styleScope·tokenUsageRate", () => {
+  it("styleScope는 file이다", () => {
+    const card = build({ candidate: candidate(["A", "B"]), index: indexOf([...use("A", 1), ...use("B", 1)]) });
+    expect(card.styleScope).toBe("file");
+  });
+
+  it("tailwind-default는 tokenUsageRate 분모에서 뺀다", () => {
+    const def = (raw: string): StyleUsage => ({ ...hardcoded("a.tsx", raw), source: "tailwind-default" });
+    const card = build({
+      candidate: candidate(["A", "B"]),
+      index: indexOf(
+        [...use("A", 1), ...use("B", 1)],
+        [tokenUsage("a.tsx", "#111111"), def("#222222"), def("#333333"), hardcoded("b.tsx", "#444444"), def("#555555")],
+      ),
+      definitionFiles: { A: "a.tsx", B: "b.tsx" },
+    });
+    expect(card.ruleCheck.tokenUsageRate).toEqual({ A: 1, B: 0 });
+  });
+
+  it("분모가 tailwind-default뿐이면 null", () => {
+    const card = build({
+      candidate: candidate(["A", "B"]),
+      index: indexOf([...use("A", 1), ...use("B", 1)], [{ ...hardcoded("a.tsx", "#222222"), source: "tailwind-default" }]),
+      definitionFiles: { A: "a.tsx", B: "b.tsx" },
+    });
+    expect(card.ruleCheck.tokenUsageRate.A).toBeNull();
+  });
+});
+
+describe("buildDecisionCard maxOptions", () => {
+  // M00(40회) … M29(11회): 사용 수 내림차순이 곧 id 오름차순이다. M29가 DS라 추천 옵션이지만 상위 N 밖이다.
+  const ids = Array.from({ length: 30 }, (_, i) => `M${String(i).padStart(2, "0")}`);
+  const components = ids.flatMap((id, i) => use(id, 40 - i, { props: [`p-${id}`] }));
+  const capped = (maxOptions?: number) =>
+    build({
+      candidate: candidate(ids),
+      index: indexOf(components),
+      isDsModule: (m) => m === "M29",
+      ...(maxOptions === undefined ? {} : { maxOptions }),
+    });
+
+  it("상한이 없으면 자르지 않는다", () => {
+    const card = capped();
+    expect(card.options).toHaveLength(30);
+    expect(card).not.toHaveProperty("omittedOptions");
+  });
+
+  it("사용 수 상위 N + 추천 옵션만 싣고 모든 맵을 그 id로 줄인다", () => {
+    const card = capped(5);
+    expect(card.recommendation.optionId).toBe("M29");
+    expect(card.options.map((o) => o.id)).toEqual(["M00", "M01", "M02", "M03", "M04", "M29"]);
+    const kept = new Set(card.options.map((o) => o.id));
+    for (const map of [
+      card.impact.byOption,
+      card.ruleCheck.tokenUsageRate,
+      ...card.differences.map((d) => d.byOption),
+    ]) {
+      expect(Object.keys(map).every((k) => kept.has(k))).toBe(true);
+    }
+    expect(Object.keys(card.impact.byOption)).toHaveLength(6);
+  });
+
+  it("omittedOptions는 빠진 옵션의 개수·호출 수·파일 수 합계다", () => {
+    const card = capped(5);
+    // 빠진 것: M05…M28(24개) — 사용 수 35…12
+    let calls = 0;
+    for (let i = 5; i <= 28; i++) calls += 40 - i;
+    expect(card.omittedOptions).toEqual({ count: 24, callSites: calls, files: 35 });
+  });
+
+  it("impact는 카드에서 뺀 옵션도 센다", () => {
+    const total = components.length;
+    const card = capped(5);
+    expect(card.impact.byOption.M00).toEqual({ callSites: total - 40, files: 39 });
   });
 });

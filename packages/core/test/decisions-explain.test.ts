@@ -89,3 +89,79 @@ describe("explainDecision", () => {
     });
   });
 });
+
+describe("explainDecision 같은 이름이 duplicate이면서 local-definition", () => {
+  const both: Index = {
+    ...index,
+    components: [
+      ...index.components,
+      cu({ name: "Button", file: "src/x.tsx", declaredLocally: true }),
+      cu({ name: "Button", file: "src/y.tsx", declaredLocally: true }),
+    ],
+  };
+
+  it("kind가 없으면 가능한 kind를 담은 ambiguous-kind", async () => {
+    expect(await explainDecision(tmp, both, "Button", { isDsModule, git: false })).toEqual({
+      error: "ambiguous-kind",
+      kinds: ["duplicate", "local-definition"],
+    });
+  });
+
+  it("kind로 각각 열 수 있다", async () => {
+    const dup = await explainDecision(tmp, both, "Button", { isDsModule, git: false, kind: "duplicate" });
+    const local = await explainDecision(tmp, both, "Button", { isDsModule, git: false, kind: "local-definition" });
+    if (!("card" in dup) || !("card" in local)) throw new Error("card 아님");
+    expect(dup.card.options.map((o) => o.id).sort()).toEqual(["legacy/Button", "ui/Button"]);
+    expect(local.card.options.map((o) => o.id)).toEqual(["src/x.tsx", "src/y.tsx"]);
+  });
+
+  it("그 kind에 없으면 not-found", async () => {
+    const r = await explainDecision(tmp, index, "Button", { isDsModule, git: false, kind: "local-definition" });
+    expect(r).toMatchObject({ error: "not-found" });
+  });
+});
+
+describe("explainDecision 옵션 상한", () => {
+  const many = (n: number): Index => ({
+    ...index,
+    components: Array.from({ length: n }, (_, i) =>
+      cu({ name: "Container", module: `src/c${i}/Container`, importedFrom: `src/c${i}/Container`, file: `src/p${i}.tsx`, props: ["children", `prop${i}`] }),
+    ),
+  });
+
+  it("옵션 120개여도 카드는 ~8KB 이내이고 omittedOptions를 싣는다", async () => {
+    const result = await explainDecision(tmp, many(120), "Container", { isDsModule: () => false, git: false });
+    if (!("card" in result)) throw new Error("not-found");
+    expect(result.card.options.length).toBeLessThanOrEqual(21);
+    expect(result.card.omittedOptions).toMatchObject({ count: 120 - result.card.options.length });
+    expect(JSON.stringify(result.card).length).toBeLessThan(8 * 1024);
+  });
+
+  it("maxOptions로 조절하고, 추천 옵션은 상한 밖이어도 싣는다", async () => {
+    const result = await explainDecision(tmp, many(30), "Container", {
+      isDsModule: (m) => m === "src/c29/Container",
+      git: false,
+      maxOptions: 3,
+    });
+    if (!("card" in result)) throw new Error("not-found");
+    expect(result.card.options).toHaveLength(4);
+    expect(result.card.options.map((o) => o.id)).toContain("src/c29/Container");
+    expect(result.card.recommendation.optionId).toBe("src/c29/Container");
+  });
+
+  it("git 이력은 카드에 실리는 옵션만 읽는다", async () => {
+    const run = (...args: string[]) => execFileSync("git", args, { cwd: tmp, stdio: "ignore" });
+    for (let i = 0; i < 30; i++) {
+      const rel = `src/c${i}/Container.tsx`;
+      fs.mkdirSync(path.dirname(path.join(tmp, rel)), { recursive: true });
+      fs.writeFileSync(path.join(tmp, rel), "x");
+    }
+    run("init", "-q");
+    run("add", ".");
+    run("-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "all");
+    const result = await explainDecision(tmp, many(30), "Container", { isDsModule: () => false, maxOptions: 4 });
+    if (!("card" in result)) throw new Error("not-found");
+    expect(result.card.options).toHaveLength(4);
+    expect(Object.keys(result.card.history?.byOption ?? {}).sort()).toEqual(result.card.options.map((o) => o.id).sort());
+  });
+});

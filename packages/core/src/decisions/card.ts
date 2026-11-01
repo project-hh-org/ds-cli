@@ -1,6 +1,7 @@
 import type { StyleUsage } from "@dsmith-dev/extractor-api";
 import { summarizeComponents, type ComponentSummary } from "../component/summary.js";
 import type { Index } from "../index/indexer.js";
+import type { ComponentUsage } from "../model/component-usage.js";
 import { isRatedUsage } from "../model/style-usage.js";
 import { tokenCategoryOf } from "../tokens/load.js";
 import type { DecisionCandidate } from "./candidates.js";
@@ -21,6 +22,8 @@ export interface CardInput {
   /** 정의 파일 → 이력 (없는 키는 생략) */
   history: Record<string, GitHistory>;
   record?: DecisionRecord;
+  /** 카드에 싣는 옵션 상한(사용 수 상위 N + 추천 옵션). 없으면 자르지 않는다. 추천·impact는 항상 전체 옵션 기준이다. */
+  maxOptions?: number;
 }
 
 const TOP_FILES = 5;
@@ -70,13 +73,23 @@ function styleValuesOf(rated: StyleUsage[]): DecisionOption["styleValues"] {
   };
 }
 
-function tokenRateOf(rated: StyleUsage[]): number | null {
-  if (rated.length === 0) return null;
-  return round4(rated.filter((u) => u.source === "token").length / rated.length);
+/** 토큰 소스 사용 비율. 분모는 rated 중 tailwind-default(기본 스케일)를 뺀 것이다. */
+function tokenUsageRateOf(rated: StyleUsage[]): number | null {
+  const eligible = rated.filter((u) => u.source !== "tailwind-default");
+  if (eligible.length === 0) return null;
+  return round4(eligible.filter((u) => u.source === "token").length / eligible.length);
 }
 
-function buildOption(input: CardInput, id: string, summaries: ComponentSummary[], rated: Map<string, StyleUsage[]>): Built {
-  const { candidate, index } = input;
+/** 옵션 하나를 만들 때 쓰는, 후보 전체에 공통인 조회 표 */
+interface Lookup {
+  summaries: ComponentSummary[];
+  /** local-definition: 정의 파일 → 그 파일 안의 import 없는 같은 이름 사용 */
+  localUses: Map<string, ComponentUsage[]>;
+  rated: Map<string, StyleUsage[]>;
+}
+
+function buildOption(input: CardInput, id: string, lookup: Lookup): Built {
+  const { candidate } = input;
   const isLocal = candidate.kind === "local-definition";
 
   let usageCount: number;
@@ -85,14 +98,14 @@ function buildOption(input: CardInput, id: string, summaries: ComponentSummary[]
   let file: string | null;
   let isDs: boolean;
   if (isLocal) {
-    const uses = index.components.filter((c) => c.name === candidate.item && c.file === id && c.importedFrom === null);
+    const uses = lookup.localUses.get(id) ?? [];
     usageCount = uses.length;
     allFiles = usageCount > 0 ? [id] : [];
     props = [...new Set(uses.flatMap((c) => c.props))].sort(byCodeUnit);
     file = id;
     isDs = input.isDsModule(stripExtension(id));
   } else {
-    const summary = summaries.find((s) => s.module === id);
+    const summary = lookup.summaries.find((s) => s.module === id);
     usageCount = summary?.count ?? 0;
     allFiles = summary?.files.map((f) => f.file) ?? [];
     props = summary?.props ?? [];
@@ -100,7 +113,7 @@ function buildOption(input: CardInput, id: string, summaries: ComponentSummary[]
     isDs = input.isDsModule(id);
   }
 
-  const definitionStyles = file === null ? [] : (rated.get(file) ?? []);
+  const definitionStyles = file === null ? [] : (lookup.rated.get(file) ?? []);
   const option: DecisionOption = {
     id,
     label: id,
@@ -112,19 +125,19 @@ function buildOption(input: CardInput, id: string, summaries: ComponentSummary[]
   };
   if (!isLocal) option.module = id;
   if (file !== null) option.file = file;
-  return { option, allFiles, tokenRate: tokenRateOf(definitionStyles) };
+  return { option, allFiles, tokenRate: tokenUsageRateOf(definitionStyles) };
 }
 
-/** 각 옵션에만 있는 값. 어느 옵션에도 단독 값이 없으면 null(그 aspect는 차이가 아니다). */
+/** 값이 정확히 한 옵션에만 있는 것만 옵션별로 모은다. 하나도 없으면 null(그 aspect는 차이가 아니다). */
 function exclusiveValues(byOption: Map<string, string[]>): Record<string, string[]> | null {
+  const holders = new Map<string, number>();
+  for (const values of byOption.values()) {
+    for (const v of new Set(values)) holders.set(v, (holders.get(v) ?? 0) + 1);
+  }
   const result: Record<string, string[]> = {};
   let any = false;
   for (const [id, values] of byOption) {
-    const others = new Set<string>();
-    for (const [otherId, otherValues] of byOption) {
-      if (otherId !== id) for (const v of otherValues) others.add(v);
-    }
-    const only = values.filter((v) => !others.has(v));
+    const only = values.filter((v) => holders.get(v) === 1);
     if (only.length > 0) {
       result[id] = only;
       any = true;
@@ -146,14 +159,16 @@ function differencesOf(kind: DecisionCard["kind"], built: Built[]): DecisionCard
   return differences;
 }
 
-function impactOf(built: Built[]): DecisionCard["impact"] {
+/** 옵션 X를 고르면 바꿔야 하는 것 = X를 뺀 나머지 전체 옵션의 호출 수와 파일 수(상한으로 잘린 옵션도 센다). */
+function impactOf(built: Built[], kept: Built[]): DecisionCard["impact"] {
+  const totalCalls = built.reduce((n, b) => n + b.option.usageCount, 0);
+  const fileHolders = new Map<string, number>();
+  for (const b of built) for (const f of new Set(b.allFiles)) fileHolders.set(f, (fileHolders.get(f) ?? 0) + 1);
   const byOption: DecisionCard["impact"]["byOption"] = {};
-  for (const b of built) {
-    const others = built.filter((o) => o !== b);
-    byOption[b.option.id] = {
-      callSites: others.reduce((n, o) => n + o.option.usageCount, 0),
-      files: new Set(others.flatMap((o) => o.allFiles)).size,
-    };
+  for (const b of kept) {
+    // 다른 옵션 중 하나라도 쓰는 파일 = 전체 합집합 − 이 옵션만 쓰는 파일
+    const onlyHere = [...new Set(b.allFiles)].filter((f) => fileHolders.get(f) === 1).length;
+    byOption[b.option.id] = { callSites: totalCalls - b.option.usageCount, files: fileHolders.size - onlyHere };
   }
   return { byOption };
 }
@@ -172,13 +187,20 @@ function recommend(built: Built[]): DecisionCard["recommendation"] {
     };
   }
   // DS 옵션이 2개 이상이면 그 옵션들로 좁혀 다음 규칙을 적용한다.
-  const pool = ds.length >= 2 ? ds : options;
+  const narrowed = ds.length >= 2;
+  const pool = narrowed ? ds : options;
+  const scope = narrowed ? `DS 옵션 ${ds.length}개 중 ` : "";
 
   const maxUsage = Math.max(...pool.map((o) => o.usageCount));
   const mostUsed = pool.filter((o) => o.usageCount === maxUsage);
   const topUsage = mostUsed.length === 1 ? mostUsed[0] : undefined;
   if (topUsage) {
-    return { optionId: topUsage.id, reason: `사용 수 ${topUsage.usageCount}회로 가장 많음`, confidence: "medium", rule: "usage" };
+    return {
+      optionId: topUsage.id,
+      reason: `${scope}사용 수 ${topUsage.usageCount}회로 가장 많음`,
+      confidence: "medium",
+      rule: "usage",
+    };
   }
 
   const rated = pool.flatMap((o) => {
@@ -191,7 +213,7 @@ function recommend(built: Built[]): DecisionCard["recommendation"] {
   if (topRate) {
     return {
       optionId: topRate.option.id,
-      reason: `토큰 일치율 ${Math.round(topRate.rate * 1000) / 10}%로 가장 높음`,
+      reason: `${scope}토큰 사용 비율 ${Math.round(topRate.rate * 1000) / 10}%로 가장 높음`,
       confidence: "low",
       rule: "token-rate",
     };
@@ -201,28 +223,73 @@ function recommend(built: Built[]): DecisionCard["recommendation"] {
   return { optionId: first?.id ?? "", reason: "근거가 동률 — 사람이 판단", confidence: "low", rule: "tie" };
 }
 
-/** 후보 하나를 결정 카드로 조립한다. 파일·git을 읽지 않는 순수 함수. */
+/** 사용 수 상위 maxOptions개 + 추천 옵션. built는 이미 정렬돼 있다. */
+function keptOf(built: Built[], recommendedId: string, maxOptions: number | undefined): Built[] {
+  if (maxOptions === undefined || built.length <= maxOptions) return built;
+  const top = built.slice(0, Math.max(0, maxOptions));
+  const rec = built.find((b) => b.option.id === recommendedId);
+  if (rec && !top.includes(rec)) top.push(rec);
+  return built.filter((b) => top.includes(b));
+}
+
+/**
+ * 후보 하나를 결정 카드로 조립한다. 파일·git을 읽지 않는 순수 함수.
+ * 추천·differences·impact는 전체 옵션 기준으로 계산하고, `maxOptions`가 있으면 옵션 목록과 옵션별 맵만 잘라 싣는다.
+ */
 export function buildDecisionCard(input: CardInput): DecisionCard {
   const { candidate, index, record } = input;
-  const summaries = summarizeComponents(index.components.filter((c) => c.name === candidate.item));
-  const rated = ratedStylesByFile(index.styles);
+  const localUses = new Map<string, ComponentUsage[]>();
+  if (candidate.kind === "local-definition") {
+    for (const c of index.components) {
+      if (c.name !== candidate.item || c.importedFrom !== null) continue;
+      const list = localUses.get(c.file) ?? [];
+      list.push(c);
+      localUses.set(c.file, list);
+    }
+  }
+  const lookup: Lookup = {
+    summaries: summarizeComponents(index.components.filter((c) => c.name === candidate.item)),
+    localUses,
+    rated: ratedStylesByFile(index.styles),
+  };
 
   const built = candidate.optionIds
-    .map((id) => buildOption(input, id, summaries, rated))
+    .map((id) => buildOption(input, id, lookup))
     .sort((a, b) => b.option.usageCount - a.option.usageCount || byCodeUnit(a.option.id, b.option.id));
+
+  const recommendation = recommend(built);
+  const kept = keptOf(built, recommendation.optionId, input.maxOptions);
+  const keptIds = new Set(kept.map((b) => b.option.id));
+
+  const differences = differencesOf(candidate.kind, built)
+    .map((d) => ({
+      aspect: d.aspect,
+      byOption: Object.fromEntries(Object.entries(d.byOption).filter(([id]) => keptIds.has(id))),
+    }))
+    .filter((d) => Object.keys(d.byOption).length > 0);
 
   const card: DecisionCard = {
     item: candidate.item,
     kind: candidate.kind,
-    options: built.map((b) => b.option),
-    differences: differencesOf(candidate.kind, built),
-    impact: impactOf(built),
-    ruleCheck: { tokenMatchRate: Object.fromEntries(built.map((b) => [b.option.id, b.tokenRate])) },
-    recommendation: recommend(built),
+    styleScope: "file",
+    options: kept.map((b) => b.option),
+    differences,
+    impact: impactOf(built, kept),
+    ruleCheck: { tokenUsageRate: Object.fromEntries(kept.map((b) => [b.option.id, b.tokenRate])) },
+    recommendation,
   };
 
+  if (kept.length < built.length) {
+    const dropped = built.filter((b) => !keptIds.has(b.option.id));
+    card.omittedOptions = {
+      count: dropped.length,
+      callSites: dropped.reduce((n, b) => n + b.option.usageCount, 0),
+      files: new Set(dropped.flatMap((b) => b.allFiles)).size,
+    };
+  }
+
   const byOption: Record<string, GitHistory> = {};
-  for (const b of built) {
+  for (const b of kept) {
     const h = b.option.file === undefined ? undefined : input.history[b.option.file];
     if (h) byOption[b.option.id] = h;
   }

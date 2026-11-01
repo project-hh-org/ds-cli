@@ -1,11 +1,11 @@
 import path from "node:path";
 import {
+  chooseDecision,
   explainDecision,
   listDecisions,
   readDecisions,
   readIndex,
-  recordDecision,
-  writeDecisions,
+  type DecisionKind,
   type DecisionListItem,
   type DecisionRecord,
   type ExplainResult,
@@ -37,7 +37,7 @@ export async function runDecideList(rootArg: string, status?: "pending" | "decid
 export async function runDecideExplain(
   rootArg: string,
   item: string,
-  opts: { git?: boolean } = {},
+  opts: { git?: boolean; kind?: DecisionKind } = {},
 ): Promise<ExplainResult> {
   const { root, index, isDsModule } = await loadAudited(rootArg);
   const decisions = await readDecisions(root);
@@ -45,6 +45,7 @@ export async function runDecideExplain(
     isDsModule,
     decisions,
     ...(opts.git === undefined ? {} : { git: opts.git }),
+    ...(opts.kind === undefined ? {} : { kind: opts.kind }),
   });
 }
 
@@ -53,27 +54,13 @@ export async function runDecideChoose(
   item: string,
   optionId: string,
   note?: string,
+  opts: { kind?: DecisionKind } = {},
 ): Promise<DecisionRecord> {
-  const { root, index, isDsModule } = await loadAudited(rootArg);
-  const result = await explainDecision(root, index, item, { isDsModule, git: false });
-  if ("error" in result) {
-    const hint = result.candidates.length > 0 ? ` 비슷한 항목: ${result.candidates.join(", ")}` : "";
-    throw new Error(`결정할 항목이 아님: ${item}.${hint}`);
-  }
-  const ids = result.card.options.map((o) => o.id);
-  if (!ids.includes(optionId)) throw new Error(`선택지 아님: ${optionId}. 가능: ${ids.join(", ")}`);
-
-  const record: DecisionRecord = {
-    item: result.card.item,
-    kind: result.card.kind,
-    status: "decided",
-    options: ids,
-    chosen: optionId,
-    decidedAt: new Date().toISOString(),
-  };
-  if (note !== undefined) record.note = note;
-  await writeDecisions(root, recordDecision(await readDecisions(root), record));
-  return record;
+  const { root, index } = await loadAudited(rootArg);
+  return chooseDecision(root, index, item, optionId, {
+    ...(note === undefined ? {} : { note }),
+    ...(opts.kind === undefined ? {} : { kind: opts.kind }),
+  });
 }
 
 /** `pending N건 / decided M건` + 항목 한 줄씩 */
@@ -90,6 +77,7 @@ export function formatDecideList(items: DecisionListItem[]): string {
 /** 옵션·추천을 한 줄씩 */
 export function formatDecideExplain(result: ExplainResult): string {
   if ("error" in result) {
+    if (result.error === "ambiguous-kind") return `종류가 둘 이상입니다: ${result.kinds.join(", ")}. --kind로 지정하세요`;
     const hint = result.candidates.length > 0 ? ` 비슷한 항목: ${result.candidates.join(", ")}` : "";
     return `결정할 항목이 아님.${hint}`;
   }

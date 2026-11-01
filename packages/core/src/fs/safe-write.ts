@@ -410,7 +410,7 @@ async function readState(real: string): Promise<FileState> {
 }
 
 /** 같은 디렉터리의 임시 파일에 쓰고 rename한다. 기존 파일의 권한을 유지한다. */
-async function atomicWrite(real: string, content: string): Promise<void> {
+export async function atomicWrite(real: string, content: string): Promise<void> {
   await fs.mkdir(path.dirname(real), { recursive: true });
   const tmp = `${real}.tmp-${process.pid}`;
   try {
