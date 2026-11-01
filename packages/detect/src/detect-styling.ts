@@ -4,7 +4,7 @@ import type { Index } from "@dsmith/core";
 import type { ExtractorMeta } from "@dsmith/extractor-api";
 import { isMonorepoRoot, listFiles, type SourceFile } from "./fs-utils.js";
 
-export type StylingMethodName = "tailwind" | "inline-style" | "css" | "css-modules" | "styled" | "emotion" | "sx";
+export type StylingMethodName = "tailwind" | "inline-style" | "css" | "css-modules" | "styled" | "emotion" | "mui-sx";
 
 export interface StylingDetection {
   methods: { name: StylingMethodName; evidence: string[]; share: number }[];
@@ -132,13 +132,21 @@ export async function detectStyling(root: string, input: StylingInput): Promise<
   const sxFiles = muiDeps.length > 0 ? sources.filter((s) => SX_PROP.test(s.content)).map((s) => s.file) : [];
   if (sxFiles.length > 0) {
     methods.push({
-      name: "sx",
+      name: "mui-sx",
       evidence: [...muiDeps.map((d) => `package.json: ${d}`), ...cap(sxFiles, (f) => `sx={{ in ${f}`)],
       share: fileShare(sources, (s) => SX_PROP.test(s.content)),
     });
   }
 
   return { methods };
+}
+
+/** 예전 이름 → 현재 Extractor 이름. MUI sx 방식은 한때 `"sx"`로 보고됐다. */
+const LEGACY_EXTRACTOR_NAMES: Record<string, string> = { sx: "mui-sx" };
+
+/** 사용자가 쓴 Extractor 이름 목록(overrides.activeExtractors)의 예전 이름을 현재 이름으로 바꾸고 중복을 뺀다. */
+export function normalizeExtractorNames(names: string[]): string[] {
+  return [...new Set(names.map((n) => (Object.hasOwn(LEGACY_EXTRACTOR_NAMES, n) ? LEGACY_EXTRACTOR_NAMES[n]! : n)))];
 }
 
 /** 이번 실행에서 쓴 Extractor(`index.extractors`)가 있는 방식의 share를 index의 usage 비율로 덮어쓴다. 나머지는 파일 스캔 기반 share를 유지한다. */

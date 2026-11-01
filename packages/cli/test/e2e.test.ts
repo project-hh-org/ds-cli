@@ -140,19 +140,12 @@ describe("fixtures/emotion-app", () => {
 });
 
 describe("fixtures/mui-app", () => {
-  it("@mui/material이 대표 DS이며 서브패스 Button import는 중복이 아니다", async () => {
-    const { result } = await audit("mui-app");
+  it("mui-sx가 켜지고, @mui/material이 대표 DS이며 서브패스 Button import는 중복이 아니다", async () => {
+    const { result, report } = await audit("mui-app");
+    expect(result.detect.activeExtractors).toContain("mui-sx");
     expect(result.detect.ds.kind).toBe("npm");
     expect(result.detect.ds.packageName).toBe("@mui/material");
     expect(result.duplicates).toEqual([]);
-  });
-
-  // 버그: detect가 sx 방식을 "sx"로 보고하고(detect-styling.ts) Extractor 이름은 "mui-sx"라
-  // activeExtractorsOf의 교집합에서 빠진다. 지금은 activeExtractors가 ["emotion"]이고 sx usage가 0건이다.
-  // 방식 이름을 "mui-sx"로 맞추면 skip을 푼다(그때 리포트 스냅샷도 처음 기록된다).
-  it.skip("mui-sx가 켜지고, 장문 spacing 키까지 token으로 세며 #111을 하드코딩 색으로 센다", async () => {
-    const { result, report } = await audit("mui-app");
-    expect(result.detect.activeExtractors).toContain("mui-sx");
 
     const index = readJson(root, "index.json");
     const tokens = index.styles.filter((u: { source: string }) => u.source === "token");

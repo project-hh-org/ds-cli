@@ -203,32 +203,32 @@ describe("styling 감지", () => {
     expect(r.styling.methods.find((m) => m.name === "inline-style")?.evidence).toEqual(["fallback"]);
   });
 
-  it("(c) @mui/material 의존성과 sx={{ 가 있는 파일이 있으면 sx 방식", async () => {
+  it("(c) @mui/material 의존성과 sx={{ 가 있는 파일이 있으면 mui-sx 방식", async () => {
     repo({
       "package.json": pkg({ "@mui/material": "^6" }),
       "src/x.tsx": "export const X = () => <Box sx={{ p: 2 }} />;",
       "src/y.tsx": "export const Y = () => <Box />;",
     });
     const r = await detect(tmp);
-    const sx = r.styling.methods.find((m) => m.name === "sx");
+    const sx = r.styling.methods.find((m) => m.name === "mui-sx");
     expect(sx?.evidence).toEqual(["package.json: @mui/material", "sx={{ in src/x.tsx"]);
     expect(sx?.share).toBe(0.5);
   });
 
-  it("sx는 @mui/joy 의존성도 인정하고, 의존성만 있고 sx={{ 가 없으면 감지하지 않는다", async () => {
+  it("mui-sx는 @mui/joy 의존성도 인정하고, 의존성만 있고 sx={{ 가 없으면 감지하지 않는다", async () => {
     repo({ "package.json": pkg({ "@mui/joy": "^5" }), "src/x.tsx": "export const X = () => <Box sx={{ p: 2 }} />;" });
-    expect((await detect(tmp)).styling.methods.find((m) => m.name === "sx")?.evidence).toEqual([
+    expect((await detect(tmp)).styling.methods.find((m) => m.name === "mui-sx")?.evidence).toEqual([
       "package.json: @mui/joy",
       "sx={{ in src/x.tsx",
     ]);
     fs.rmSync(path.join(tmp, "src"), { recursive: true });
     repo({ "src/x.tsx": "export const X = () => <Box />;" });
-    expect((await detect(tmp)).styling.methods.some((m) => m.name === "sx")).toBe(false);
+    expect((await detect(tmp)).styling.methods.some((m) => m.name === "mui-sx")).toBe(false);
   });
 
-  it("MUI 의존성 없이 sx={{ 만 있으면 sx가 아니다", async () => {
+  it("MUI 의존성 없이 sx={{ 만 있으면 mui-sx가 아니다", async () => {
     repo({ "package.json": pkg(), "src/x.tsx": "export const X = () => <Box sx={{ p: 2 }} />;" });
-    expect((await detect(tmp)).styling.methods.some((m) => m.name === "sx")).toBe(false);
+    expect((await detect(tmp)).styling.methods.some((m) => m.name === "mui-sx")).toBe(false);
   });
 
   it("(d) .module.이 아닌 css/scss 파일이 있으면 css 방식이고 근거는 파일 경로(최대 3개)", async () => {
@@ -255,20 +255,20 @@ describe("styling 감지", () => {
     expect(names).not.toContain("css");
   });
 
-  it("index.extractors에 이름이 있는 모든 방식의 share는 index의 usage 비율 (css·sx 포함)", async () => {
+  it("index.extractors에 이름이 있는 모든 방식의 share는 index의 usage 비율 (css·mui-sx 포함)", async () => {
     repo({
       "package.json": pkg({ "@mui/material": "^6" }),
       "src/x.tsx": "export const X = () => <Box sx={{ p: 2 }} />;",
       "styles/app.css": "a{}",
     });
     const index: Index = {
-      ...indexOf([style("css", "hardcoded"), style("css", "hardcoded"), style("sx", "hardcoded"), style("inline-style", "hardcoded")], []),
-      extractors: ["css", "sx", "inline-style"],
+      ...indexOf([style("css", "hardcoded"), style("css", "hardcoded"), style("mui-sx", "hardcoded"), style("inline-style", "hardcoded")], []),
+      extractors: ["css", "mui-sx", "inline-style"],
     };
     const r = await detect(tmp, index);
     const share = (n: string) => r.styling.methods.find((m) => m.name === n)?.share;
     expect(share("css")).toBe(0.5);
-    expect(share("sx")).toBe(0.25);
+    expect(share("mui-sx")).toBe(0.25);
   });
 
   it("폴백으로 만들어진 inline-style 항목의 share도 index에서 계산한다", async () => {
@@ -485,6 +485,15 @@ describe("overrides", () => {
     expect(again.ds.packageName).toBe("acme-ui-kit");
     // provisional 추정: DS import 0% → 1
     expect(again.state).toBe(1);
+  });
+
+  it("overrides.activeExtractors의 예전 이름 sx는 mui-sx로 바꿔 적용하고, 파일의 overrides는 그대로 보존한다", async () => {
+    repo({ "package.json": pkg(), "src/A.tsx": "export const A = () => <div />;" });
+    const first = await detect(tmp);
+    await writeDetect(tmp, { ...first, overrides: { activeExtractors: ["emotion", "sx", "mui-sx"] } });
+    const again = await detect(tmp);
+    expect(again.activeExtractors).toEqual(["emotion", "mui-sx"]);
+    expect(again.overrides).toEqual({ activeExtractors: ["emotion", "sx", "mui-sx"] });
   });
 
   it("overrides가 없으면 기존 파일과 무관하게 새로 감지한다", async () => {

@@ -11,6 +11,7 @@ import {
   applyIndexShares,
   detectStyling,
   markMonorepoRoot,
+  normalizeExtractorNames,
   type StylingDetection,
 } from "./detect-styling.js";
 import { loadSources, readDependencyNames } from "./fs-utils.js";
@@ -20,7 +21,7 @@ export type { DsDetection } from "./detect-ds.js";
 export type { FrameworkDetection } from "./detect-framework.js";
 export type { LintDetection } from "./detect-lint.js";
 export type { StylingDetection, StylingMethodName } from "./detect-styling.js";
-export { activeExtractorsOf, MONOREPO_ROOT_EVIDENCE } from "./detect-styling.js";
+export { activeExtractorsOf, MONOREPO_ROOT_EVIDENCE, normalizeExtractorNames } from "./detect-styling.js";
 export { decideState, sharesFromIndex } from "./detect-state.js";
 export type { IndexShares, Shares } from "./detect-state.js";
 export { readDetect, writeDetect } from "./store.js";
@@ -88,7 +89,7 @@ export async function detect(rootArg: string, index?: Index, opts: DetectOptions
     storybook,
     lint,
     state,
-    activeExtractors: overrides?.activeExtractors ?? resolvedExtractors,
+    activeExtractors: overrides?.activeExtractors ? normalizeExtractorNames(overrides.activeExtractors) : resolvedExtractors,
     extractorsResolved: opts.available !== undefined,
     provisional: index === undefined,
   };

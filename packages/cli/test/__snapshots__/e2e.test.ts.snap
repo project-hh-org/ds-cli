@@ -172,6 +172,66 @@ exports[`fixtures/mixed-app > 두 extractor가 켜지고, 한 파일에서 양�
 "
 `;
 
+exports[`fixtures/mui-app > mui-sx가 켜지고, @mui/material이 대표 DS이며 서브패스 Button import는 중복이 아니다 1`] = `
+"# DS Audit
+
+- root: <root>
+- 날짜: <date>
+- state: 1
+- provisional: false
+- 분석한 파일: 3개 (스타일 사용 6, 컴포넌트 사용 8)
+- 동적 값: 0
+
+건강 점수: 76
+
+산식: 100 × (0.5×(1−hardcodedShare) + 0.3×dsImportShare + 0.2×max(0, 1−duplicateCount/10))
+
+- hardcodedShare: 0.3333
+- dsImportShare: 0.75
+- duplicateCount: 0
+
+## 하드코딩 색 후보
+
+| 대표 hex | 사용 수 | 제안 이름 | 변종 |
+| --- | --- | --- | --- |
+| #111111 | 1 | gray-900 | #111111 ×1 |
+
+## 간격 후보
+
+없음
+
+## 컴포넌트 사용량
+
+| 컴포넌트 | 출처 | 사용 수 |
+| --- | --- | --- |
+| Button | @mui/material | 2 |
+| AddIcon | @mui/icons-material/Add | 1 |
+| Box | @mui/material | 1 |
+| Members | src/pages/Members | 1 |
+| Plans | src/pages/Plans | 1 |
+| Stack | @mui/material/Stack | 1 |
+| Typography | @mui/material | 1 |
+
+## 중복 컴포넌트
+
+없음
+
+## 지역 재정의 컴포넌트
+
+없음
+
+## 파일별 하드코딩 상위
+
+| 파일 | 하드코딩 수 |
+| --- | --- |
+| src/pages/Members.tsx | 2 |
+
+## 건너뜀
+
+건너뜀 0개
+"
+`;
+
 exports[`fixtures/styled-app > styled만 켜지고, 템플릿 리터럴의 근접한 파랑이 한 클러스터로 합쳐지며 지역 Header는 중복이 아니다 1`] = `
 "# DS Audit
 
