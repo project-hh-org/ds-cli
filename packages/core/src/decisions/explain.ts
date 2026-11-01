@@ -1,5 +1,9 @@
 import type { Index } from "../index/indexer.js";
 import { resolveDefinitionFile } from "../component/definition.js";
+import fs from "node:fs/promises";
+import path from "node:path";
+import { componentDeclarations } from "../component/declarations.js";
+import type { Token } from "../model/token.js";
 import { buildDecisionCard } from "./card.js";
 import { candidatesOf, similarItems } from "./candidates.js";
 import { readGitHistory } from "./git-history.js";
@@ -14,6 +18,8 @@ export interface ExplainOptions {
   kind?: DecisionKind;
   /** 카드에 싣는 옵션 상한(사용 수 상위 N + 추천 옵션). 기본 20. */
   maxOptions?: number;
+  /** 매칭할 토큰(proposal 제외). 비어 있지 않으면 카드에 tokenMatchRate가 실리고 추천 규칙 3이 그것을 쓴다. */
+  tokens?: Token[];
 }
 
 export type ExplainResult =
@@ -44,6 +50,25 @@ async function mapLimit<T, R>(items: T[], limit: number, fn: (item: T) => Promis
   };
   await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
   return results;
+}
+
+/**
+ * 정의 파일에서 item이 아닌 다른 최상위 컴포넌트 선언의 줄 범위. 읽기·파싱 실패, item 선언을 못 찾음, 다른 선언 없음이면 범위 없음(파일 전체).
+ */
+async function otherDeclarationRanges(
+  root: string,
+  file: string,
+  item: string,
+): Promise<{ startLine: number; endLine: number }[]> {
+  let code: string;
+  try {
+    code = await fs.readFile(path.join(root, file), "utf-8");
+  } catch {
+    return [];
+  }
+  const declarations = componentDeclarations(code, file);
+  if (!declarations.some((d) => d.name === item)) return [];
+  return declarations.filter((d) => d.name !== item).map((d) => ({ startLine: d.startLine, endLine: d.endLine }));
 }
 
 const CHECK_LIST = "list_decisions(또는 decide --list)로 항목을 확인하세요";
@@ -83,8 +108,17 @@ export async function explainDecision(
     definitionFiles[id] = candidate.kind === "local-definition" ? id : await resolveDefinitionFile(root, id);
   }
 
+  const excludeRanges: Record<string, { startLine: number; endLine: number }[]> = {};
+  for (const file of new Set(Object.values(definitionFiles))) {
+    if (file === null) continue;
+    const ranges = await otherDeclarationRanges(root, file, candidate.item);
+    if (ranges.length > 0) excludeRanges[file] = ranges;
+  }
+
   const record = opts.decisions?.items.find((r) => r.item === candidate.item && r.kind === candidate.kind);
   const base = {
+    excludeRanges,
+    ...(opts.tokens && opts.tokens.length > 0 ? { tokens: opts.tokens } : {}),
     candidate,
     index,
     isDsModule: opts.isDsModule,
