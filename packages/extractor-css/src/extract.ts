@@ -46,7 +46,10 @@ interface Token {
   text: string;
 }
 
-/** 괄호 밖 공백으로 값을 나눈다. `calc(1px + 2px) 3px` → `calc(1px + 2px)`, `3px`. */
+/** scss 산술 연산자 토큰(`$a + $b`). 값의 내용이 아니므로 판정에서 건너뛴다. */
+const OPERATOR = /^[+\-*/]$/;
+
+/** 괄호 밖 공백·쉼표로 값을 나눈다. `calc(1px + 2px) 3px` → `calc(1px + 2px)`, `3px`. 괄호 안의 쉼표는 토큰에 남는다. */
 function tokenize(value: string): Token[] {
   const tokens: Token[] = [];
   let depth = 0;
@@ -57,7 +60,7 @@ function tokenize(value: string): Token[] {
   };
   for (let i = 0; i < value.length; i++) {
     const ch = value[i]!;
-    if (depth === 0 && /\s/.test(ch)) {
+    if (depth === 0 && (ch === "," || /\s/.test(ch))) {
       close(i);
       continue;
     }
@@ -85,7 +88,8 @@ function classify(prop: string, value: string, dynamic: boolean): Classified {
   if (dynamic) return { property, ...whole, normalized: UNKNOWN, source: "dynamic" };
   // 값 전체가 토큰 참조뿐일 때만 token. 하드코딩이 섞이면 아래에서 그 부분을 보고한다.
   const tokens = tokenize(value);
-  if (tokens.every((t) => TOKEN_REF.test(t.text))) {
+  const operands = tokens.filter((t) => !OPERATOR.test(t.text));
+  if (operands.length > 0 && operands.every((t) => TOKEN_REF.test(t.text))) {
     return { property, ...whole, normalized: UNKNOWN, source: "token" };
   }
 
@@ -104,7 +108,8 @@ function classify(prop: string, value: string, dynamic: boolean): Classified {
   }
   if (isLengthProperty(property)) {
     // 토큰 참조는 건너뛰고 처음 나오는 하드코딩 토큰을 정규화한다(`var(--x) 13px` → 13px).
-    const target = tokens.find((t) => !TOKEN_REF.test(t.text)) ?? tokens[0]!;
+    const target = operands.find((t) => !TOKEN_REF.test(t.text)) ?? tokens[0];
+    if (target === undefined) return { property, ...whole, normalized: UNKNOWN, source: "hardcoded" };
     const px = normalizeLength(target.text);
     return {
       property,

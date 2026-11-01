@@ -184,3 +184,40 @@ describe("cssExtractor scss", () => {
     expect(usages.map((u) => u.property)).toEqual(["other", "margin"]);
   });
 });
+
+describe("cssExtractor 쉼표 목록·scss 연산자", () => {
+  it("쉼표로 구분된 토큰 참조 목록은 token", () => {
+    const usages = extractAll("a{transition: var(--a), var(--b); box-shadow: $s1, $s2; margin: var(--a),var(--b)}");
+    expect(usages.map((u) => [u.property, u.source])).toEqual([
+      ["other", "token"],
+      ["other", "token"],
+      ["margin", "token"],
+    ]);
+  });
+
+  it("괄호 안의 쉼표는 토큰을 쪼개지 않는다", () => {
+    const [usage] = extractAll("a{width: var(--w, 3px)}");
+    expect(usage).toMatchObject({ source: "token", raw: "var(--w, 3px)" });
+  });
+
+  it("쉼표 목록에 하드코딩이 섞이면 token이 아니다", () => {
+    const [usage] = extractAll("a{transition: var(--a), 200ms}");
+    expect(usage).toMatchObject({ property: "other", source: "hardcoded", normalized: { kind: "unknown" } });
+  });
+
+  it("scss 연산자는 중립이다: 토큰끼리의 연산은 token", () => {
+    const [usage] = extractAll("a{padding: $a + $b}", "a.scss");
+    expect(usage).toMatchObject({ property: "padding", source: "token" });
+    expect(extractAll("a{margin: $a * 2 - $b}", "a.scss")[0]?.source).toBe("hardcoded");
+  });
+
+  it("연산자는 하드코딩 대상으로 고르지 않는다", () => {
+    const usage = find("a{padding: $a + 4px}", "4px", "a.scss");
+    expect(usage).toMatchObject({ source: "hardcoded", normalized: { kind: "length", px: 4 } });
+  });
+});
+
+it("토큰이 하나도 없는 값(쉼표뿐)은 예외 없이 hardcoded unknown", () => {
+  const [usage] = extractAll("a{padding: ,}");
+  expect(usage).toMatchObject({ property: "padding", source: "hardcoded", normalized: { kind: "unknown" } });
+});
