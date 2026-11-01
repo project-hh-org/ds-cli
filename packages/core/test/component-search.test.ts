@@ -64,4 +64,37 @@ describe("searchComponents", () => {
     expect(COMPONENT_SYNONYMS["card"]).toEqual(["Card", "Panel", "KpiCard"]);
     expect(Object.keys(COMPONENT_SYNONYMS)).toHaveLength(12);
   });
+
+  it("정확한 컴포넌트 이름(camelCase)을 의도로 주면 그 컴포넌트가 첫 번째다", () => {
+    const list = [s("Button", 9), s("PrimaryButton", 1), s("Badge", 5, [], "a/Badge"), s("Badge", 4, [], "b/Badge"), s("StatusBadge", 1), s("StatusChip", 1)];
+    const primary = searchComponents(list, "PrimaryButton");
+    expect(primary[0]?.name).toBe("PrimaryButton");
+    expect(primary[0]?.why).toContain("이름 전체 일치");
+    expect(searchComponents(list, "StatusBadge")[0]?.name).toBe("StatusBadge");
+    expect(searchComponents(list, "StatusChip")[0]?.name).toBe("StatusChip");
+  });
+
+  it("동점이면 module 순으로 안정 정렬한다", () => {
+    const list = [s("Badge", 1, [], "z/Badge"), s("Badge", 1, [], "a/Badge")];
+    expect(searchComponents(list, "badge").map((r) => r.module)).toEqual(["a/Badge", "z/Badge"]);
+  });
+
+  it("한국어는 조사까지만 허용한다", () => {
+    const list = [s("Table", 1), s("Tabs", 1), s("Checkbox", 1), s("Select", 1)];
+    expect(searchComponents(list, "표를 그리는")[0]?.name).toBe("Table");
+    expect(searchComponents(list, "탭을 바꾸는")[0]?.name).toBe("Tabs");
+    expect(searchComponents(list, "체크아웃").map((r) => r.name)).not.toContain("Checkbox");
+    expect(searchComponents(list, "선택적 라벨").map((r) => r.name)).not.toContain("Select");
+    expect(searchComponents(list, "표시").map((r) => r.name)).not.toContain("Table");
+  });
+
+  it("props는 camelCase 조각으로만 맞춘다(date는 updatedAt에 안 맞고 onDateChange에 맞는다)", () => {
+    expect(searchComponents([s("Foo", 1, ["updatedAt"])], "date")).toEqual([]);
+    expect(searchComponents([s("Foo", 1, ["onDateChange"])], "date")[0]?.why).toBe("props 'onDateChange'");
+  });
+
+  it("영어 복수형은 단수형으로도 찾는다", () => {
+    expect(searchComponents([s("Button", 1)], "buttons")[0]?.name).toBe("Button");
+    expect(searchComponents([s("Badge", 1)], "badges")[0]?.name).toBe("Badge");
+  });
 });

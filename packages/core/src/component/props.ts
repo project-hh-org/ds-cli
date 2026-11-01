@@ -4,6 +4,7 @@ import type {
   Statement,
   TSType,
   TSTypeElement,
+  VariableDeclarator,
 } from "@babel/types";
 import { parseTsx } from "../parse/tsx.js";
 
@@ -40,10 +41,11 @@ function stringLiteralValues(t: TSType): string[] | null {
   if (t.type !== "TSUnionType") return null;
   const values: string[] = [];
   for (const part of t.types) {
+    if (part.type === "TSUndefinedKeyword" || part.type === "TSNullKeyword") continue;
     if (part.type !== "TSLiteralType" || part.literal.type !== "StringLiteral") return null;
     values.push(part.literal.value);
   }
-  return values;
+  return values.length > 0 ? values : null;
 }
 
 function membersOf(code: string, elements: TSTypeElement[]): PropInfo[] {
@@ -182,28 +184,97 @@ function targetOf(expr: Expression | Node, depth = 0): Target | null {
   }
 }
 
-function findTarget(body: Statement[], name: string): Target | null {
+const FC_TYPE_NAMES = new Set(["FC", "FunctionComponent", "VFC", "VoidFunctionComponent"]);
+
+/** `const X: React.FC<P>`의 P */
+function fcTypeArg(d: VariableDeclarator): TSType | undefined {
+  if (d.id.type !== "Identifier") return undefined;
+  const ann = d.id.typeAnnotation;
+  if (!ann || ann.type !== "TSTypeAnnotation" || ann.typeAnnotation.type !== "TSTypeReference") return undefined;
+  const ref = ann.typeAnnotation;
+  const n = ref.typeName;
+  const base =
+    n.type === "Identifier"
+      ? n.name
+      : n.left.type === "Identifier" && n.left.name === "React"
+        ? n.right.name
+        : null;
+  if (base === null || !FC_TYPE_NAMES.has(base)) return undefined;
+  return ref.typeParameters?.params[0];
+}
+
+function targetOfDeclarator(d: VariableDeclarator): Target | null {
+  const inner = d.init ? targetOf(d.init) : null;
+  const typeArg = fcTypeArg(d);
+  return typeArg ? { ...(inner ?? {}), typeArg } : inner;
+}
+
+/** 이름으로 찾는다. 선언이 없으면 undefined, 있으나 컴포넌트로 못 읽으면 null */
+function findTarget(body: Statement[], name: string): Target | null | undefined {
   for (const raw of body) {
     const stmt = unwrapExport(raw);
     if (!stmt) continue;
     if (stmt.type === "FunctionDeclaration" && stmt.id?.name === name) return targetOf(stmt);
     if (stmt.type === "VariableDeclaration") {
       for (const d of stmt.declarations) {
-        if (d.id.type === "Identifier" && d.id.name === name && d.init) return targetOf(d.init);
+        if (d.id.type === "Identifier" && d.id.name === name) return targetOfDeclarator(d);
       }
     }
   }
-  return null;
+  return undefined;
+}
+
+/** export default 선언: `export default function (p: P)`, `export default Name`, `export default memo(...)` */
+function findDefaultTarget(body: Statement[]): Target | null | undefined {
+  for (const stmt of body) {
+    if (stmt.type !== "ExportDefaultDeclaration") continue;
+    const d = stmt.declaration;
+    if (d.type === "Identifier") return findTarget(body, d.name);
+    if (d.type === "FunctionDeclaration") return targetOf(d);
+    if (d.type === "ClassDeclaration" || d.type === "TSDeclareFunction") return null;
+    return targetOf(d);
+  }
+  return undefined;
+}
+
+/** 이름 있는 export 중 대문자로 시작하고 컴포넌트로 읽히는 선언이 정확히 하나면 그것 */
+function findSoleExportedTarget(body: Statement[]): Target | null {
+  const found: Target[] = [];
+  for (const stmt of body) {
+    if (stmt.type !== "ExportNamedDeclaration" || !stmt.declaration) continue;
+    const d = stmt.declaration;
+    if (d.type === "FunctionDeclaration" && d.id && /^[A-Z]/.test(d.id.name)) {
+      const t = targetOf(d);
+      if (t) found.push(t);
+    } else if (d.type === "VariableDeclaration") {
+      for (const decl of d.declarations) {
+        if (decl.id.type === "Identifier" && /^[A-Z]/.test(decl.id.name)) {
+          const t = targetOfDeclarator(decl);
+          if (t) found.push(t);
+        }
+      }
+    }
+  }
+  return found.length === 1 ? (found[0] ?? null) : null;
 }
 
 /**
  * 파일 최상위의 `name` 컴포넌트 선언에서 첫 매개변수 타입을 읽는다.
- * 같은 파일의 interface·type 별칭만 따라가고(다른 파일·제네릭은 따라가지 않는다) 못 찾으면 null.
+ * 같은 파일의 interface·type 별칭만 따라가고(다른 파일·제네릭은 따라가지 않는다) 못 찾거나 파싱할 수 없으면 null.
+ * `name`이 선언돼 있지 않으면 export default, 그다음 유일한 대문자 named export를 대신 읽는다.
  */
 export function readComponentProps(code: string, file: string, name: string): ComponentProps | null {
-  const ast = parseTsx(code, file);
-  const body = ast.program.body;
-  const target = findTarget(body, name);
+  let body: Statement[];
+  try {
+    body = parseTsx(code, file).program.body;
+  } catch {
+    return null;
+  }
+  // 이름이 선언돼 있지 않으면(`import { Badge as StatusBadge }`·다른 이름으로 default import) default export → 유일한 대문자 export 순으로 본다.
+  // 선언은 있으나 읽을 수 없는 경우(null)는 대체하지 않는다.
+  let target = findTarget(body, name);
+  if (target === undefined) target = findDefaultTarget(body);
+  if (target === undefined) target = findSoleExportedTarget(body);
   if (!target) return null;
   const typeNode = target.typeArg ?? target.paramType;
   if (!typeNode) return null;

@@ -54,7 +54,7 @@ export function summarizeComponents(usages: ComponentUsage[]): ComponentSummary[
         count: g.count,
         files: [...g.files.entries()]
           .map(([file, count]) => ({ file, count }))
-          .sort((a, b) => b.count - a.count || a.file.localeCompare(b.file)),
+          .sort((a, b) => b.count - a.count || byCodeUnit(a.file, b.file)),
         props: [...g.props].sort(byCodeUnit),
       }),
     )

@@ -82,8 +82,9 @@ describe("readComponentProps", () => {
     expect(readComponentProps(`export function X(props) { return <b />; }`, F, "X")).toBeNull();
   });
 
-  it("이름이 다른 선언만 있으면 null", () => {
-    expect(readComponentProps(`export function Other(p: { a: number }) { return <b />; }`, F, "Button")).toBeNull();
+  it("이름이 다른 선언이 둘 이상이고 default도 없으면 null", () => {
+    const code = `export function Other(p: { a: number }) { return <b />; }\nexport function Another(p: { b: number }) { return <b />; }`;
+    expect(readComponentProps(code, F, "Button")).toBeNull();
   });
 
   it("같은 파일에서 못 찾는 타입(다른 파일·제네릭)은 null", () => {
@@ -94,5 +95,48 @@ describe("readComponentProps", () => {
     expect(readComponentProps(`export const X = (p: { a?: string }) => null;`, "src/x.ts", "X")?.props).toEqual([
       { name: "a", type: "string", required: false },
     ]);
+  });
+
+  it("파싱할 수 없는 파일은 throw 없이 null", () => {
+    expect(readComponentProps(`export function Button( { return`, F, "Button")).toBeNull();
+    expect(readComponentProps(`@@@ <<<`, F, "Button")).toBeNull();
+  });
+
+  it("const X: FC<P> 타입 주석의 타입 인자를 쓴다(React. 유무, FunctionComponent, VFC)", () => {
+    const expected = { props: [{ name: "tone", type: "string", required: true }], inherits: [] };
+    for (const ann of ["React.FC<P>", "FC<P>", "FunctionComponent<P>", "React.FunctionComponent<P>", "VFC<P>"]) {
+      const code = `interface P { tone: string }\nexport const Button: ${ann} = ({ tone }) => <b />;`;
+      expect(readComponentProps(code, F, "Button"), ann).toEqual(expected);
+    }
+  });
+
+  it("문자열 리터럴 유니온의 undefined·null은 values에서 뺀다", () => {
+    const code = `export const X = (p: { a?: "x" | "y" | undefined; b: "z" | null; c: undefined }) => null;`;
+    expect(readComponentProps(code, "src/x.ts", "X")?.props).toEqual([
+      { name: "a", type: `"x" | "y" | undefined`, required: false, values: ["x", "y"] },
+      { name: "b", type: `"z" | null`, required: true, values: ["z"] },
+      { name: "c", type: "undefined", required: true },
+    ]);
+  });
+
+  it("name이 선언돼 있지 않으면 export default를 읽는다(다른 이름으로 default import한 경우)", () => {
+    const inline = `export default function Badge(p: { tone: string }) { return <b />; }`;
+    const viaIdent = `const Badge = memo((p: { tone: string }) => <b />);\nexport default Badge;`;
+    const anon = `export default function (p: { tone: string }) { return <b />; }`;
+    for (const code of [inline, viaIdent, anon]) {
+      expect(readComponentProps(code, F, "StatusBadge")?.props).toEqual([{ name: "tone", type: "string", required: true }]);
+    }
+  });
+
+  it("default도 없으면 유일한 대문자 named export를 읽는다(import { Badge as StatusBadge })", () => {
+    const code = `export const helper = 1;\nexport function Badge(p: { tone: string }) { return <b />; }`;
+    expect(readComponentProps(code, F, "StatusBadge")?.props).toEqual([{ name: "tone", type: "string", required: true }]);
+    const two = code + `\nexport function Chip(p: { a: string }) { return <b />; }`;
+    expect(readComponentProps(two, F, "StatusBadge")).toBeNull();
+  });
+
+  it("name이 선언돼 있으나 타입을 못 읽으면 default로 대체하지 않는다", () => {
+    const code = `export function Badge(p) { return <b />; }\nexport default function Other(p: { a: string }) { return <b />; }`;
+    expect(readComponentProps(code, F, "Badge")).toBeNull();
   });
 });
