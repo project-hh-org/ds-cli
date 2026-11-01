@@ -44,7 +44,7 @@ export interface ModuleContext {
  * 패키지 → 서브패스를 뗀 패키지명.
  * 경로는 확장자와 끝의 `/`·`/index`를 뗀다.
  */
-function moduleOf(file: string, specifier: string, tsPaths: TsPaths | null, ctx: ModuleContext): string {
+export function moduleKeyOf(file: string, specifier: string, tsPaths: TsPaths | null, ctx: ModuleContext): string {
   if (specifier.startsWith(".")) return stripModulePath(resolveSource(file, specifier));
   const viaPaths = resolveWithPaths(specifier, file, tsPaths);
   if (viaPaths !== null) {
@@ -125,7 +125,7 @@ export function extractComponentUsage(
     if (stmt.type !== "ImportDeclaration") continue;
     const source = {
       importedFrom: resolveSource(file, stmt.source.value),
-      module: moduleOf(file, stmt.source.value, tsPaths, ctx),
+      module: moduleKeyOf(file, stmt.source.value, tsPaths, ctx),
     };
     for (const spec of stmt.specifiers) imports.set(spec.local.name, source);
   }

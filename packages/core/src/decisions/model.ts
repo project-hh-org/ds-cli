@@ -76,6 +76,11 @@ export interface DecisionRecord {
   chosen?: string;
   note?: string;
   decidedAt?: string;
+  /**
+   * 컴포넌트 치환 때 props 대응. 키·값 모두 "prop"(이름만 바꿈) 또는 "prop=value"(문자열 리터럴 값까지). 예
+   * { "kind": "variant", "variant=primary": "variant=default" }. /ds-decide·`decide --map`이 채운다
+   */
+  mapping?: Record<string, string>;
 }
 
 export interface DecisionsFile {

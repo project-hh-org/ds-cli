@@ -68,13 +68,32 @@ export async function runDecideChoose(
   item: string,
   optionId: string,
   note?: string,
-  opts: { kind?: DecisionKind } = {},
+  opts: { kind?: DecisionKind; mapping?: Record<string, string> } = {},
 ): Promise<DecisionRecord> {
   const { root, index } = await loadAudited(rootArg);
   return chooseDecision(root, index, item, optionId, {
     ...(note === undefined ? {} : { note }),
     ...(opts.kind === undefined ? {} : { kind: opts.kind }),
+    ...(opts.mapping === undefined ? {} : { mapping: opts.mapping }),
   });
+}
+
+/**
+ * `--map <from>:<to>` 반복 값을 mapping 객체로. 첫 `:`가 구분자(prop 이름에는 `:`를 쓰지 않는다 — 값 쪽 `=`는 그대로 둔다).
+ * 같은 from이 두 번이면 에러. 형식(`prop` / `prop=value`) 검사는 chooseDecision이 한다.
+ */
+export function parseMapFlags(flags: string[]): Record<string, string> {
+  const mapping: Record<string, string> = {};
+  for (const flag of flags) {
+    const at = flag.indexOf(":");
+    if (at === -1) throw new Error(`--map은 <from>:<to> 형식이어야 합니다: ${flag}`);
+    const from = flag.slice(0, at);
+    const to = flag.slice(at + 1);
+    if (from === "" || to === "") throw new Error(`--map의 from·to는 비어 있을 수 없습니다: ${flag}`);
+    if (Object.hasOwn(mapping, from)) throw new Error(`--map에 같은 from이 두 번 있습니다: ${from}`);
+    mapping[from] = to;
+  }
+  return mapping;
 }
 
 /** `pending N건 / decided M건`(전체 기준) + 항목 한 줄씩. `limit`이 있으면 앞의 limit개만 보이고 나머지는 건수로 알린다. */

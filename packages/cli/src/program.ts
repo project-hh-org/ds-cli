@@ -7,6 +7,7 @@ import {
   explainJson,
   formatDecideExplain,
   formatDecideList,
+  parseMapFlags,
   runDecideChoose,
   runDecideExplain,
   runDecideList,
@@ -45,6 +46,7 @@ interface DecideOptions {
   item?: string;
   choose?: string;
   note?: string;
+  map?: string[];
   git: boolean;
 }
 
@@ -143,6 +145,11 @@ export function buildProgram(): Command {
     .option("--item <name>", "--choose로 결정할 항목")
     .option("--choose <id>", "--item의 선택지 id를 결정으로 기록")
     .option("--note <text>", "--choose에 남길 메모")
+    .option(
+      "--map <from:to>",
+      '--choose의 컴포넌트 치환 props 대응(반복 가능). prop 이름 또는 prop=value 문자열 값. 예: --map kind:variant --map "variant=primary:variant=default"',
+      (value: string, previous: string[] = []) => [...previous, value],
+    )
     .action(async (opts: DecideOptions) => {
       const modes = [opts.list === true, opts.explain !== undefined, opts.choose !== undefined].filter(Boolean).length;
       if (modes !== 1) throw new Error("--list, --explain <item>, --item <name> --choose <id> 중 정확히 하나를 지정하세요");
@@ -160,6 +167,8 @@ export function buildProgram(): Command {
         throw new Error(`--kind는 ${DECIDE_KINDS.join(" | ")} 중 하나여야 합니다: ${opts.kind}`);
       }
       if (kind !== undefined && opts.list === true) throw new Error("--kind는 --explain·--choose와 함께 씁니다");
+      if (opts.map !== undefined && opts.choose === undefined) throw new Error("--map은 --item과 --choose와 함께 씁니다");
+      const mapping = opts.map === undefined ? undefined : parseMapFlags(opts.map);
       // 사람용 문자열은 --json이 아닐 때만 만든다.
       const out = (json: unknown, human: () => string): void => {
         process.stdout.write(opts.json ? `${JSON.stringify(json, null, 2)}\n` : `${human()}\n`);
@@ -174,7 +183,10 @@ export function buildProgram(): Command {
         if ("error" in result) process.exitCode = 1;
       } else if (opts.choose !== undefined) {
         if (opts.item === undefined) throw new Error("--choose에는 --item <name>이 필요합니다");
-        const record = await runDecideChoose(opts.root, opts.item, opts.choose, opts.note, kind ? { kind } : {});
+        const record = await runDecideChoose(opts.root, opts.item, opts.choose, opts.note, {
+          ...(kind ? { kind } : {}),
+          ...(mapping === undefined ? {} : { mapping }),
+        });
         out(record, () => `결정 기록: ${record.item} → ${opts.choose} (.dsmith/decisions.json)`);
       }
     });

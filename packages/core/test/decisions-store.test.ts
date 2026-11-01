@@ -176,3 +176,21 @@ describe("decisionCandidates / listDecisions", () => {
     expect(all[2]).toMatchObject({ kind: "token-cluster", status: "decided", chosen: "#3b82f6" });
   });
 });
+
+describe("readDecisions mapping 검증", () => {
+  const put = (items: unknown[]): void => {
+    fs.mkdirSync(path.join(tmp, ".dsmith"), { recursive: true });
+    fs.writeFileSync(path.join(tmp, ".dsmith", "decisions.json"), JSON.stringify({ version: 1, items }));
+  };
+  const ok = { item: "Button", kind: "duplicate", status: "decided", options: ["a"], chosen: "a" };
+
+  it("문자열 값의 mapping은 읽힌다", async () => {
+    put([{ ...ok, mapping: { kind: "variant" } }]);
+    expect((await readDecisions(tmp)).items[0]?.mapping).toEqual({ kind: "variant" });
+  });
+
+  it.each([["배열", ["a"]], ["숫자 값", { a: 1 }], ["문자열", "a"]])("mapping이 %s이면 에러", async (_l, mapping) => {
+    put([{ ...ok, mapping }]);
+    await expect(readDecisions(tmp)).rejects.toThrow(/items\[0\].*mapping/);
+  });
+});

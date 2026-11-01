@@ -18,7 +18,7 @@ export type { ExtractorMatcher, FileStyles } from "./index/extract-file.js";
 export { extractFileStyles, extractorMatchers } from "./index/extract-file.js";
 export { DEFAULT_EXCLUDE, indexRepo } from "./index/indexer.js";
 export type { ModuleContext } from "./index/component-usage.js";
-export { extractComponentUsage } from "./index/component-usage.js";
+export { extractComponentUsage, moduleKeyOf } from "./index/component-usage.js";
 export type { TsPaths } from "./index/specifier.js";
 export {
   normalizePackageSpecifier,
