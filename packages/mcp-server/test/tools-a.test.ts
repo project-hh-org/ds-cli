@@ -365,3 +365,59 @@ describe("resources", () => {
   });
 });
 
+
+describe("lint_snippet filename 힌트", () => {
+  const lint = async (client: Client, args: Record<string, unknown>): Promise<any> =>
+    json(await client.callTool({ name: "lint_snippet", arguments: args }));
+  const HINT = "filename을 지정하세요 (예: styles.css, Button.tsx)";
+
+  it("filename 없이 CSS를 주면 위반 없이 조용히 끝내지 않고 힌트를 준다", async () => {
+    const { client } = await withDs();
+    for (const code of [".btn { color: #ff0000; padding: 13px; }", "#root { margin: 13px }", ":root { --a: 1px; }", "@media (min-width: 1px) { .a { color: red; } }", "a:hover { color: #123456; }"]) {
+      const out = await lint(client, { code });
+      expect(out.violations, code).toEqual([]);
+      expect(out.hint, code).toBe(HINT);
+    }
+  });
+
+  it("filename을 주면 같은 CSS가 위반으로 잡히고 힌트는 없다", async () => {
+    const { client } = await withDs();
+    const out = await lint(client, { code: ".btn { color: #ff0000; }", filename: "styles.css" });
+    expect(out.violations).toHaveLength(1);
+    expect(out).not.toHaveProperty("hint");
+  });
+
+  it("JSX·빈 코드·위반이 있는 tsx에는 힌트를 붙이지 않는다", async () => {
+    const { client } = await withDs();
+    expect(await lint(client, { code: "export const A = () => <div />" })).not.toHaveProperty("hint");
+    expect(await lint(client, { code: "" })).not.toHaveProperty("hint");
+    expect(await lint(client, { code: 'export const A = () => <div style={{ color: "#3B82F6" }} />' })).not.toHaveProperty("hint");
+  });
+
+  it("실행된 Extractor가 없으면(appliesTo가 모두 거짓) 힌트를 준다", async () => {
+    const { lintSnippet } = await import("../src/tools/lint-snippet.js");
+    const idle = { name: "idle", files: ["**/*.tsx"], appliesTo: () => false, extract: () => [] };
+    const run = (code: string, filename?: string) => lintSnippet({ root: "/x" } as never, [idle as never], { code, filename });
+    const out = run("padding: 13px");
+    expect(out.extractorsRun).toEqual([]);
+    expect(out.hint).toBe(HINT);
+    expect(run("  ")).not.toHaveProperty("hint");
+    expect(run("const a = 1;")).not.toHaveProperty("hint");
+    expect(run("padding: 13px", "a.tsx")).not.toHaveProperty("hint");
+  });
+});
+
+describe("lint_snippet suggestion.distance", () => {
+  it("제안에 distance가 있다(resolve_token과 같은 단위)", async () => {
+    const { client } = await withDs();
+    const out = json(await client.callTool({ name: "lint_snippet", arguments: { code: 'export const A = () => <div style={{ color: "#3B82F6", padding: 13 }} />' } }));
+    for (const v of out.violations) {
+      if (v.suggestion !== undefined) expect(typeof v.suggestion.distance).toBe("number");
+    }
+    const color = out.violations.find((v: { property: string }) => v.property === "color");
+    expect(color.suggestion).toMatchObject({ name: "--color-primary", confidence: "high" });
+    expect(typeof color.suggestion.distance).toBe("number");
+    const padding = out.violations.find((v: { property: string }) => v.property === "padding");
+    expect(padding.suggestion?.distance).toBe(5);
+  });
+});

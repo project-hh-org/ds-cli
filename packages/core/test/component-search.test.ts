@@ -98,3 +98,29 @@ describe("searchComponents", () => {
     expect(searchComponents([s("Badge", 1)], "badges")[0]?.name).toBe("Badge");
   });
 });
+
+describe("searchComponents: 한국어 번역 용어", () => {
+  const list = [s("DatePicker", 5), s("Calendar", 2), s("Select", 9), s("Button", 3)];
+
+  it("'날짜 선택'은 구문 규칙으로 date만 켜서 DatePicker·Calendar가 앞서고 Select는 나오지 않는다", () => {
+    for (const intent of ["날짜 선택", "날짜선택", "날짜 고르는 UI", "날짜를 선택"]) {
+      const names = searchComponents(list, intent).map((r) => r.name);
+      expect(names[0], intent).toBe("DatePicker");
+      expect(names, intent).toContain("Calendar");
+      expect(names, intent).not.toContain("Select");
+    }
+  });
+
+  it("번역된 용어는 이름 전체 일치 보너스를 받지 않는다: '선택' → Select는 +3(이름 조각)+2(동의어)뿐", () => {
+    expect(searchComponents([s("Select", 1)], "선택")).toEqual([
+      { name: "Select", module: "src/Select", score: 5, why: "한국어 '선택'→select; 동의어 select→Select", usageCount: 1 },
+    ]);
+    expect(searchComponents([s("Select", 1)], "select")[0]?.why).toBe("이름 전체 일치; 이름 'select' 일치; 동의어 select→Select");
+  });
+
+  it("영어로 직접 쓴 용어는 번역과 겹쳐도 정확히 일치 보너스를 받는다", () => {
+    const r = searchComponents([s("Select", 1)], "select 선택");
+    expect(r[0]?.score).toBe(9);
+    expect(r[0]?.why).toContain("이름 전체 일치");
+  });
+});

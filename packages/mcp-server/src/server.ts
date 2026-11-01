@@ -91,7 +91,7 @@ export function createDsmithServer(deps: ServerDeps): Promise<McpServer> {
     "lint_snippet",
     {
       description:
-        "Check a code snippet for hardcoded colors and spacing and suggest the nearest design token for each (distance units and confidence as in resolve_token). filename picks the extractors (.tsx, .css, ...). Use on code you just wrote or are about to write, before saving it.",
+        "Check a code snippet for hardcoded colors and spacing and suggest the nearest design token for each (suggestion has name, value, distance and confidence, as in resolve_token). filename picks the extractors (.tsx, .css, ...); without it the snippet is read as .tsx, so pass filename for CSS (a hint says so when nothing could be checked). Use on code you just wrote or are about to write, before saving it.",
       inputSchema: z.object({
         code: z.string().max(100_000),
         filename: z.string().max(MAX_TEXT).optional(),
@@ -134,11 +134,20 @@ export function createDsmithServer(deps: ServerDeps): Promise<McpServer> {
     "get_component",
     {
       description:
-        "Get a component's props (with allowed values), variants, usage count and definition file from this repo. Use before using or changing a component.",
+        "Get a component's props (with allowed values), variants, usage count and definition file from this repo. When several modules export the same name, returns the one chosen with decide, else the design-system one, else the most used (isDs and decided say which; the rest are in otherModules). Use before using or changing a component.",
       inputSchema: z.object({ name: z.string().min(1).max(MAX_TEXT), module: z.string().max(MAX_TEXT).optional() }),
       annotations: readOnly,
     },
-    (args) => guarded(async () => shrinkToBudget(await getComponent(await workspace(), args), budget)),
+    async (args): Promise<CallToolResult> => {
+      try {
+        const result = await getComponent(await workspace(), args);
+        // explain_decision처럼 실패는 오류 객체(isError)로, 비슷한 이름은 similar에 담는다.
+        if ("error" in result) return { isError: true, content: [{ type: "text", text: clipJson(toText(result), budget) }] };
+        return ok(shrinkToBudget(result, budget));
+      } catch (err) {
+        return failWith(err, budget);
+      }
+    },
   );
 
   server.registerTool(
