@@ -30,8 +30,8 @@ export type { ColorCluster } from "./cluster/color-cluster.js";
 export { clusterColors } from "./cluster/color-cluster.js";
 export type { SpacingCandidate } from "./cluster/spacing-cluster.js";
 export { clusterSpacing } from "./cluster/spacing-cluster.js";
-export type { TokenMatch } from "./match/token-matcher.js";
-export { matchToken } from "./match/token-matcher.js";
+export type { RankedToken, TokenMatch } from "./match/token-matcher.js";
+export { matchToken, rankTokens } from "./match/token-matcher.js";
 export {
   COLOR_PROPERTIES,
   LENGTH_PROPERTIES,
@@ -63,3 +63,7 @@ export type { ComponentProps, PropInfo } from "./component/props.js";
 export { readComponentProps } from "./component/props.js";
 export type { ComponentMatch } from "./component/search.js";
 export { COMPONENT_SYNONYMS, searchComponents } from "./component/search.js";
+export { readCssVariableTokens } from "./tokens/css-variables.js";
+export { proposalTokens } from "./tokens/proposal.js";
+export type { LoadedTokens, TokenSourceKind } from "./tokens/load.js";
+export { loadTokens, tokenCategoryOf } from "./tokens/load.js";
