@@ -8,4 +8,11 @@
 - `applyMigration` — 파일 단위로 재파싱·재추출 검증(속성까지 확인) 후 해시 비교로 쓰고, `.dsmith/migrations/<id>.json`에 기록한다(소스보다 먼저). 한 파일의 쓰기 오류는 그 파일만 `write-failed`로 두고 나머지를 계속 적용한다.
 - `revertMigration` — 기록으로 되돌린다. 적용 뒤 사용자가 고친 파일은 건드리지 않는다.
 
-CLI: `dsmith migrate [--apply] [--close] [--revert <id>] [--list]`. 종료 코드 1: 적용하지 못한 파일(롤백·계획 뒤 변경·쓰기 실패)이 있거나, `--revert`에서 되돌리지 못한 파일(적용 뒤 수정됨·없음)이 있을 때.
+- 결정(`decide`)된 중복 컴포넌트는 import를 DS 쪽으로 바꾼다. props 대응(`mapping`)이 없거나 값이 동적이면 그 사용은 보류(`mapping-missing`)하고, 지역 정의는 지우지 않고 주석만 단다.
+- `checkBranch` / `createBranch` / `commitFiles` / `abandonBranch` — `--branch`용 git 단계. git 2.23 이상, 작성자 정보, 깨끗하고 무시되지 않는 대상 파일, 없는 브랜치 이름이 사전 조건이다. push하거나 PR을 열지 않는다.
+
+CLI: `dsmith migrate [--apply] [--branch <name>] [--close] [--revert <id>] [--list]`. 종료 코드 1: 적용하지 못한 파일(롤백·계획 뒤 변경·쓰기 실패)이 있거나, `--revert`에서 되돌리지 못한 파일(적용 뒤 수정됨·없음)이 있을 때. `--branch`의 결과는 커밋됨 / 일부 실패로 커밋 없이 남음(되돌리기 명령 출력) / 적용된 것이 없어 브랜치를 버림 중 하나다.
+
+알려진 한계: Tailwind v4에서 `tokens.css`의 `--color-*`·`--radius-*`·`--text-*`가 Tailwind 기본 테마 변수와 같은 이름이면 기본 유틸리티의 값이 바뀔 수 있다. 다루지 않는다.
+
+Docs: https://github.com/project-hh-org/dsmith#readme

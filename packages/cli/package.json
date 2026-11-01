@@ -44,7 +44,9 @@
     "commander": "^12.1.0"
   },
   "devDependencies": {
+    "@dsmith-dev/eslint-plugin": "workspace:*",
     "@modelcontextprotocol/client": "^2.4.0",
+    "eslint": "^10.14.0",
     "vitest": "^3.0.0"
   },
   "scripts": {

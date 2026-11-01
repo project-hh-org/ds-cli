@@ -1,6 +1,6 @@
 # 릴리스 절차
 
-`dsmith`와 `@dsmith-dev/*` 10개 패키지는 changesets의 fixed 그룹이라 항상 같은 버전으로 올라간다. 아직 npm에 게시된 버전은 없고, 첫 게시가 0.1.0이다(`.changeset/initial-release.md`).
+`dsmith`와 `@dsmith-dev/*` 패키지는 changesets의 fixed 그룹이라 항상 같은 버전으로 올라간다. 아직 npm에 게시된 버전은 없고, 첫 게시가 0.1.0이다(`.changeset/initial-release.md`).
 
 ## 절차
 
@@ -38,4 +38,4 @@ provenance는 `NPM_CONFIG_PROVENANCE=true`와 워크플로의 `id-token: write`�
 
 ## 첫 배포 뒤 할 일
 
-npm trusted publishing(OIDC)은 패키지가 npm에 이미 있어야 설정할 수 있어 첫 배포에는 `NPM_TOKEN`을 쓴다. 0.1.0 게시 후 패키지 10개 각각의 Settings → Trusted Publisher에 이 저장소와 `release.yml`을 등록하면 장기 토큰 없이 게시할 수 있다. 전환하면 `NPM_TOKEN` secret과 `NODE_AUTH_TOKEN` 설정을 제거한다. 전환 전에 한 번 시험 게시(patch)로 동작을 확인한다.
+npm trusted publishing(OIDC)은 패키지가 npm에 이미 있어야 설정할 수 있어 첫 배포에는 `NPM_TOKEN`을 쓴다. 0.1.0 게시 후 패키지 각각의 Settings → Trusted Publisher에 이 저장소와 `release.yml`을 등록하면 장기 토큰 없이 게시할 수 있다. 전환하면 `NPM_TOKEN` secret과 `NODE_AUTH_TOKEN` 설정을 제거한다. 전환 전에 한 번 시험 게시(patch)로 동작을 확인한다.

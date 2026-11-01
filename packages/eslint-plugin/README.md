@@ -9,6 +9,20 @@ import dsmith from "@dsmith-dev/eslint-plugin";
 export default [dsmith.configs.recommended];
 ```
 
+`dsmith guard init` adds this block to your flat config for you.
+
+## Rules
+
+`configs.recommended` turns on all three (flat config only; eslintrc is not supported):
+
+| Rule | Level | Reports |
+| --- | --- | --- |
+| `dsmith/no-hardcoded-style` | warn | A hardcoded style value. Exact matches get an auto-fix to the token reference; close matches get a suggestion only. |
+| `dsmith/prefer-ds-component` | warn | A non-DS component that has a design-system counterpart. |
+| `dsmith/no-deprecated-component` | error | A component the design system marks as deprecated. |
+
+They use the same rule engine (`evaluateFile` in `@dsmith-dev/core`) as `dsmith migrate` and `dsmith guard --ci`.
+
 ## Scope and behavior
 
 - **JS/TS only.** The rules run on `js, jsx, mjs, cjs, ts, tsx, mts, cts` files. CSS files are not linted by ESLint; they are checked by `dsmith guard --ci`.
