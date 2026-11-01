@@ -43,13 +43,57 @@ describe("classifyDeclaration", () => {
   });
 });
 
+/** `x({...})` 첫 인자 객체. */
+function firstObject(code: string): ObjectExpression {
+  const stmt = parseTsx(code, "a.ts").program.body[0]!;
+  if (stmt.type !== "ExpressionStatement" || stmt.expression.type !== "CallExpression") throw new Error("shape");
+  return stmt.expression.arguments[0] as ObjectExpression;
+}
+
 describe("usagesFromStyleObject", () => {
+  const nestedCode = `x({ color: "#fff", "&:hover": { color: "#000" }, [bp.up("md")]: { padding: 8 } })`;
+
+  it("기본은 중첩 객체를 재귀하지 않는다(키 하나가 dynamic)", () => {
+    const results = usagesFromStyleObject(firstObject(nestedCode), { file: "a.ts", code: nestedCode, extractor: "x" });
+    expect(results.map((r) => [r.usage.property, r.usage.source])).toEqual([
+      ["color", "hardcoded"],
+      ["other", "dynamic"],
+    ]);
+  });
+
+  it("nested면 문자열·계산된 키의 객체 값을 재귀하고 키 자체는 usage를 내지 않는다", () => {
+    const ctx = { file: "a.ts", code: nestedCode, extractor: "x", nested: true };
+    const results = usagesFromStyleObject(firstObject(nestedCode), ctx);
+    expect(results.map((r) => [r.usage.property, r.usage.raw, r.usage.source])).toEqual([
+      ["color", "#fff", "hardcoded"],
+      ["color", "#000", "hardcoded"],
+      ["padding", "8", "hardcoded"],
+    ]);
+    expect(nestedCode.slice(results[1]!.patch!.start, results[1]!.patch!.end)).toBe(`"#000"`);
+  });
+
+  it("classify override는 지정한 키만 바꾸고 undefined면 기본 분류", () => {
+    const code = `x({ color: "#fff", p: 2, margin: 4 })`;
+    const results = usagesFromStyleObject(firstObject(code), {
+      file: "a.ts",
+      code,
+      extractor: "x",
+      classify: (key, _value, defaultClassify) => {
+        if (key === "margin") return null;
+        if (key !== "p") return undefined;
+        const base = defaultClassify()!;
+        return { ...base, usage: { ...base.usage, property: "padding", normalized: { kind: "length", px: 16 } } };
+      },
+    });
+    expect(results.map((r) => [r.usage.property, r.usage.raw, r.usage.normalized])).toEqual([
+      ["color", "#fff", { kind: "color", hex: "#ffffff", l: expect.any(Number), c: expect.any(Number), h: expect.any(Number) }],
+      ["padding", "2", { kind: "length", px: 16 }],
+    ]);
+  });
+
   it("리터럴 값은 값 노드 구간, 그 밖은 dynamic(패치 없음)", () => {
     const code = `x({ color: "#fff", padding: 12, margin: m })`;
-    const ast = parseTsx(code, "a.ts");
-    const stmt = ast.program.body[0]!;
-    if (stmt.type !== "ExpressionStatement" || stmt.expression.type !== "CallExpression") throw new Error("shape");
-    const obj = stmt.expression.arguments[0] as ObjectExpression;
+    const obj = firstObject(code);
     const results = usagesFromStyleObject(obj, { file: "a.ts", code, extractor: "x" });
     expect(results.map((r) => [r.usage.property, r.usage.source])).toEqual([
       ["color", "hardcoded"],

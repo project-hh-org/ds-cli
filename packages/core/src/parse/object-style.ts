@@ -57,6 +57,14 @@ export interface StyleObjectContext {
   file: string;
   code: string;
   extractor: string;
+  /** true면 객체 값(`"&:hover": {…}`, `[bp]: {…}`)을 같은 규칙으로 재귀하고 그 키 자체는 usage를 내지 않는다. 기본 false. */
+  nested?: boolean;
+  /** 속성별 분류 override. undefined를 돌려주면 기본 분류(`defaultClassify`)를 쓴다. */
+  classify?: (
+    key: string,
+    value: Expression | PatternLike,
+    defaultClassify: () => StyleObjectUsage | null,
+  ) => StyleObjectUsage | null | undefined;
 }
 
 export interface StyleObjectUsage {
@@ -128,14 +136,22 @@ function buildUsage(
  * 스타일 객체 리터럴(`{ color: "#fff", padding: 12 }`)의 최상위 속성을 StyleUsage로 바꾼다.
  * 문자열·숫자·부호 붙은 숫자 리터럴은 hardcoded(`var(--…)` 문자열은 token), 그 밖의 값은 dynamic.
  * 계산된 키·스프레드·메서드는 건너뛴다. 리터럴 값에는 치환할 값 노드 구간을 `patch`로 돌려준다.
+ * `ctx.nested`면 객체 값은 키(계산된 키 포함)와 상관없이 재귀한다.
  */
 export function usagesFromStyleObject(obj: ObjectExpression, ctx: StyleObjectContext): StyleObjectUsage[] {
   const results: StyleObjectUsage[] = [];
   for (const prop of obj.properties) {
     if (prop.type !== "ObjectProperty") continue;
+    if (ctx.nested === true && prop.value.type === "ObjectExpression") {
+      results.push(...usagesFromStyleObject(prop.value, ctx));
+      continue;
+    }
     const key = propertyKeyName(prop);
     if (key === null) continue;
-    const result = buildUsage(ctx, propertyOf(key, prop.value), prop.value);
+    const value = prop.value;
+    const defaultClassify = (): StyleObjectUsage | null => buildUsage(ctx, propertyOf(key, value), value);
+    const override = ctx.classify?.(key, value, defaultClassify);
+    const result = override === undefined ? defaultClassify() : override;
     if (result !== null) results.push(result);
   }
   return results;
