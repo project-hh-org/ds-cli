@@ -41,6 +41,17 @@ function messageOf(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
+const NUL_PLACEHOLDER_REASON = "NUL 바이트만 있는 파일 — 클라우드 동기화 플레이스홀더일 수 있음";
+const NUL_PROBE_BYTES = 512;
+
+/** 비어 있지 않고 앞 512바이트(짧으면 전체)가 모두 0x00인지. 크기는 맞지만 내용이 내려받아지지 않은 동기화 플레이스홀더가 이렇다. */
+function isNulPlaceholder(bytes: Buffer): boolean {
+  if (bytes.length === 0) return false;
+  const end = Math.min(bytes.length, NUL_PROBE_BYTES);
+  for (let i = 0; i < end; i += 1) if (bytes[i] !== 0) return false;
+  return true;
+}
+
 /** baseUrl 디렉터리 바로 아래 항목 이름: 디렉터리와, 확장자를 뗀 JS/TS 소스 파일. 읽지 못하면 빈 집합. */
 async function baseUrlEntriesOf(dir: string): Promise<Set<string>> {
   try {
@@ -120,13 +131,18 @@ export async function indexRepo(
   };
 
   for (const file of files) {
-    let code: string;
+    let bytes: Buffer;
     try {
-      code = await fs.readFile(path.join(root, file), "utf-8");
+      bytes = await fs.readFile(path.join(root, file));
     } catch (err) {
       index.files.skipped.push({ file, reason: `read: ${messageOf(err)}` });
       continue;
     }
+    if (isNulPlaceholder(bytes)) {
+      index.files.skipped.push({ file, reason: NUL_PLACEHOLDER_REASON });
+      continue;
+    }
+    const code = bytes.toString("utf-8");
 
     // 한 파일의 결과는 모두 성공했을 때만 인덱스에 반영한다(부분 결과가 남지 않게).
     const ctx: ExtractContext = { root, file, code };

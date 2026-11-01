@@ -277,6 +277,27 @@ describe("indexRepo", () => {
     expect(index.components.map((c) => c.file)).toEqual(["good.tsx"]);
   });
 
+  it("NUL 바이트만 있는 파일(클라우드 동기화 플레이스홀더)은 파싱하지 않고 전용 reason으로 skipped에 기록한다", async () => {
+    const abs = path.join(tmp, "src/Placeholder.tsx");
+    fs.mkdirSync(path.dirname(abs), { recursive: true });
+    fs.writeFileSync(abs, Buffer.alloc(2048));
+    put("src/Partly.tsx", `\0\0export const A = 1;`);
+    put("src/Ok.tsx", `export const Ok = () => <div />;`);
+    const extract = vi.fn(() => []);
+    const spy = { ...inlineStyleExtractor, name: "spy", appliesTo: () => true, extract };
+
+    const index = await indexRepo(tmp, [spy]);
+
+    expect(index.files.skipped).toContainEqual({
+      file: "src/Placeholder.tsx",
+      reason: "NUL 바이트만 있는 파일 — 클라우드 동기화 플레이스홀더일 수 있음",
+    });
+    expect(extract.mock.calls.map(([ctx]) => (ctx as { file: string }).file)).not.toContain("src/Placeholder.tsx");
+    // 일부만 NUL인 파일은 기존 파싱 오류 경로를 탄다.
+    expect(index.files.skipped.find((s) => s.file === "src/Partly.tsx")?.reason).toMatch(/^parse\(components\): /);
+    expect(index.files.scanned).toBe(1);
+  });
+
   it("읽기 실패는 reason이 read:로 시작하는 skipped로 기록하고 계속 진행한다", async () => {
     put("a.tsx", `const a = <p />;`);
     put("b.tsx", `const b = <p />;`);
