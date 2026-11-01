@@ -15,9 +15,9 @@
 | 인증 | `NPM_TOKEN` (npm Granular Access Token, dsmith-dev org 쓰기 + `dsmith` 패키지 쓰기, 2FA bypass) → GitHub repo secret | OIDC trusted publishing은 패키지가 npm에 먼저 존재해야 설정 가능. 첫 배포 뒤 전환 검토 |
 | provenance | `NPM_CONFIG_PROVENANCE=true` + `id-token: write` | 스펙 §8 |
 | CI | `ci.yml`: PR·push(main) 에서 `pnpm install --frozen-lockfile && pnpm build && pnpm test && pnpm typecheck`, Node 20·22 매트릭스 | 머지 전 녹색 보장 |
-| 릴리스 | `release.yml`: push(main) → `changesets/action@v1` 이 "Version Packages" PR 생성 → 그 PR 머지 시 `pnpm release`(= `pnpm build && changeset publish`) | 표준 changesets 흐름 |
+| 릴리스 | `release.yml`: push(main) → `changesets/action@v1` 이 "Version Packages" PR 생성 → 그 PR 머지 시 `pnpm release`(= `pnpm build && pnpm publish -r && changeset tag`) | 표준 changesets 흐름 |
 | 라이선스 | MIT, `LICENSE` 루트 1개, 각 package.json `license: "MIT"`, `author`, `repository`, `homepage` | npm 페이지 메타 |
-| 워크스페이스 의존성 | `workspace:*` 그대로 — `changeset publish`가 pnpm 경유로 실제 버전으로 치환 | `npm publish` 직접 호출 금지 (치환 안 됨) |
+| 워크스페이스 의존성 | `workspace:*` 그대로 — `pnpm publish -r`이 실제 버전으로 치환 (`changeset publish`는 npm을 호출해 치환 안 됨, pnpm 공식 안내 https://pnpm.io/using-changesets) + `changeset tag`로 태그 | `npm publish` 직접 호출 금지 (치환 안 됨) |
 
 ## Tasks
 

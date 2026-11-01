@@ -11,12 +11,18 @@ audit     # 하드코딩 값 분포, 중복 컴포넌트, 토큰 후보 → .dsm
 
 > **MVP 상태:** 구현된 커맨드는 `detect`와 `audit`뿐이다. `init`(DS 초안 생성), `migrate`(토큰 치환 codemod), `guard`(ESLint 규칙·CI 드리프트 검사), `ai`(MCP 서버·AGENTS.md·슬래시 명령), `usage`(사용량 대시보드)는 계획 단계다 — [설계 스펙](docs/superpowers/specs/2026-10-31-ds-cli-design.md) 참고.
 
-아직 npm에 배포하지 않았으므로 빌드한 뒤 직접 실행한다. 배포 예정: `npx dsmith audit` ([MVP 계획](docs/superpowers/plans/2026-10-31-ds-cli-mvp.md) Goal).
+0.1.0 배포 전까지는 빌드한 뒤 직접 실행한다. 배포는 릴리스 PR(`chore: 버전 올림`)을 머지하면 GitHub Actions가 자동으로 하며, 절차는 [docs/release.md](docs/release.md)에 있다.
 
 ```
 pnpm install && pnpm -r build
 node packages/cli/dist/bin.js detect --root <repo>
 node packages/cli/dist/bin.js audit --root <repo>
+```
+
+0.1.0 배포 후에는 설치 없이 실행할 수 있다.
+
+```
+npx dsmith audit        # 또는: pnpm dlx dsmith audit
 ```
 
 ### 감지 결과 고치기 (`overrides`)

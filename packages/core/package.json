@@ -1,8 +1,21 @@
 {
   "name": "@dsmith-dev/core",
   "version": "0.0.0",
-  "description": "dsmith 공통 모델과 색·길이 정규화",
+  "description": "Shared model, color and length normalization, parsers and indexer for dsmith",
+  "keywords": ["design-system", "design-tokens", "dsmith", "css", "parser"],
+  "license": "MIT",
+  "author": "Dahee Hwang <dahee@project-hh.com>",
+  "homepage": "https://github.com/project-hh-org/dsmith#readme",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/project-hh-org/dsmith.git",
+    "directory": "packages/core"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
   "type": "module",
+  "sideEffects": false,
   "engines": {
     "node": ">=20"
   },
