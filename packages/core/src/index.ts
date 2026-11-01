@@ -46,6 +46,8 @@ export type { ClassifyOptions } from "./parse/css-decl-usage.js";
 export { classifyDeclaration, lineLocator } from "./parse/css-decl-usage.js";
 export type { StyleObjectContext, StyleObjectPatch, StyleObjectUsage } from "./parse/object-style.js";
 export { usagesFromStyleObject } from "./parse/object-style.js";
+export type { ComponentSummary, LocalDefinition } from "./component/summary.js";
+export { duplicateNames, localDefinitionFiles, localDefinitionsOf, summarizeComponents } from "./component/summary.js";
 export type {
   ManagedRegion,
   PlannedWrite,
