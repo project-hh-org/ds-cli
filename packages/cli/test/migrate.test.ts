@@ -69,7 +69,7 @@ async function migrate(root: string, opts: Partial<MigrateCommandOptions> = {}):
 const skippedSum = (p: MigratePlan): number => Object.values(p.skipped).reduce((n, v) => n + (v ?? 0), 0);
 
 function expectInvariants(p: MigratePlan): void {
-  expect(p.planned + skippedSum(p) + p.scope.outOfRange).toBe(p.scope.candidates);
+  expect(p.planned + skippedSum(p) + p.scope.outOfRange + p.close.length).toBe(p.scope.candidates);
   expect(p.scope.candidates + p.scope.far).toBe(p.scope.total);
 }
 
@@ -125,10 +125,11 @@ describe("dsmith migrate — fixture e2e", () => {
     const { root } = await prepare("examples/legacy-demo", { stateZero: true });
     const treeBefore = treeHash(root);
     const auditBefore = (await runAudit(root)).result.health;
+    const treeWithDsmith = treeHash(root, { includeDsmith: true }); // runAudit 뒤 .dsmith까지 포함한 해시
 
     const planOnly = await migrate(root);
     expect(planOnly.json.plan.planned).toBeGreaterThan(0);
-    expect(treeHash(root, { includeDsmith: true })).toBe(treeHash(root, { includeDsmith: true })); // 계획은 읽기만
+    expect(treeHash(root, { includeDsmith: true })).toBe(treeWithDsmith); // 계획은 읽기만 (.dsmith 포함)
     expect(treeHash(root)).toBe(treeBefore);
 
     const hardcodedBefore = (await expectedResidual(root)).total;
@@ -146,8 +147,11 @@ describe("dsmith migrate — fixture e2e", () => {
     expect(auditAfter.hardcodedShare).toBeLessThan(auditBefore.hardcodedShare);
     expect(json.actual!.before.score).toBe(auditBefore.score);
     expect(json.actual!.after.score).toBe(auditAfter.score);
-    // 예상(계획 시점)과 실제의 하드코딩 비율은 거의 같다(단축 속성이 token이 되며 평가 대상에서 빠지면 분모가 조금 달라진다)
-    expect(Math.abs(json.actual!.after.hardcodedShare - json.projected!.after.hardcodedShare)).toBeLessThan(0.01);
+    // 예상(계획 시점)과 실제(재audit)가 정확히 같다: 검증이 속성까지 확인해 단축 속성이 평가 대상에서 빠지는 일이 없다
+    expect(json.actual!.after.hardcodedShare).toBe(json.projected!.after.hardcodedShare);
+    expect(json.actual!.after.score).toBe(json.projected!.after.score);
+    expect(json.actual!.before).toEqual(json.projected!.before);
+    expect(json.actual!.after.residual).toEqual(json.projected!.after.residual);
     expect((await expectedResidual(root)).total).toBe(hardcodedBefore - applied.replaced);
 
     const again = await migrate(root);
@@ -163,7 +167,7 @@ describe("dsmith migrate — fixture e2e", () => {
     expect((await runAudit(root)).result.health.score).toBe(auditBefore.score);
   }, 120_000);
 
-  it("--files · --category · --min-confidence exact · --max-files", async () => {
+  it("--files · --category · --close · --max-files", async () => {
     const { root } = await prepare("examples/legacy-demo", { stateZero: true });
     const all = (await migrate(root)).json.plan;
 
@@ -173,10 +177,17 @@ describe("dsmith migrate — fixture e2e", () => {
     expect(colors.byCategory.spacing + colors.byCategory.radius + colors.byCategory["font-size"]).toBe(0);
     expect(colors.planned).toBe(all.byCategory.color);
 
-    const exact = (await migrate(root, { minConfidence: "exact" })).json.plan;
-    expectInvariants(exact);
-    expect(exact.skipped["low-confidence"]).toBeGreaterThanOrEqual(all.confidence.close);
-    expect(exact.confidence.close).toBe(0);
+    // close는 기본에서 빠지고 --close로만 포함된다 (I4)
+    expect(all.includeClose).toBe(false);
+    expect(all.confidence.close).toBe(0);
+    expect(all.close.length).toBeGreaterThan(0);
+    const withClose = (await migrate(root, { close: true })).json.plan;
+    expectInvariants(withClose);
+    expect(withClose.includeClose).toBe(true);
+    expect(withClose.close).toEqual([]);
+    expect(withClose.confidence.close).toBe(all.close.length);
+    expect(withClose.planned).toBe(all.planned + all.close.length);
+    expect(withClose.scope.candidates).toBe(all.scope.candidates);
 
     const some = all.files.slice(0, 2).map((f) => f.file);
     const filtered = (await migrate(root, { files: some })).json.plan;
@@ -296,14 +307,13 @@ describe("dsmith migrate — fixture e2e", () => {
     await expect(runMigrateCommand({ root, branch: "x" })).rejects.toThrow("--branch는 --apply와 함께");
     await expect(runMigrateCommand({ root, category: "weight" })).rejects.toThrow("--category");
     await expect(runMigrateCommand({ root, maxFiles: "0" })).rejects.toThrow("--max-files");
-    await expect(runMigrateCommand({ root, minConfidence: "far" })).rejects.toThrow("--min-confidence");
     await expect(runMigrateCommand({ root, apply: true, revert: "x" })).rejects.toThrow("함께 쓸 수 없습니다");
   }, 60_000);
 
   it("옵션이 등록돼 있다", () => {
     const cmd = buildProgram().commands.find((c) => c.name() === "migrate");
     expect(cmd?.options.map((o) => o.long).sort()).toEqual(
-      ["--apply", "--branch", "--category", "--files", "--json", "--list", "--max-files", "--min-confidence", "--only", "--revert", "--root"].sort(),
+      ["--apply", "--branch", "--category", "--close", "--files", "--json", "--list", "--max-files", "--only", "--revert", "--root"].sort(),
     );
   });
 });
@@ -508,4 +518,108 @@ describe("dsmith migrate --apply --branch", () => {
     expect(out.text).toContain("적용할 치환이 없음");
     expect(git(root, "branch", "--list", "ds/none").trim()).toBe("");
   }, 120_000);
+});
+
+describe("dsmith migrate — 리뷰 수정 (C1 · I1 · I3 · I4 · I5, legacy-demo)", () => {
+  const MODAL = "src/components/Modal.tsx";
+
+  it("C1: Modal의 반투명 backdrop(rgba(17, 24, 39, 0.5))은 translucent-color로 건너뛰고 파일에 그대로 남는다", async () => {
+    const { root } = await prepare("examples/legacy-demo", { stateZero: true });
+    const modalBefore = fs.readFileSync(path.join(root, MODAL), "utf-8");
+    expect(modalBefore).toContain("rgba(17, 24, 39, 0.5)");
+    const { json } = await migrate(root, { close: true });
+    const skip = json.plan.skippedItems.find((i) => i.file === MODAL && i.reason === "translucent-color");
+    expect(skip, JSON.stringify(json.plan.skippedItems)).toBeDefined();
+    expect(skip!.raw).toBe("rgba(17, 24, 39, 0.5)");
+    expect(json.plan.files.flatMap((f) => f.replacements).some((r) => r.raw.includes("rgba"))).toBe(false);
+
+    await migrate(root, { apply: true, close: true });
+    expect(fs.readFileSync(path.join(root, MODAL), "utf-8")).toContain("rgba(17, 24, 39, 0.5)");
+  }, 120_000);
+
+  it("I4: 기본은 identical·exact만 적용하고 close 후보는 plan.close에 남는다; --close를 주면 포함하고 기록에 남는다", async () => {
+    const { root } = await prepare("examples/legacy-demo", { stateZero: true });
+    const treeBefore = treeHash(root);
+    const base = await migrate(root);
+    expect(base.json.plan.confidence.close).toBe(0);
+    expect(base.json.plan.close.length).toBeGreaterThan(0);
+    expect(base.json.plan.close[0]).toMatchObject({ token: expect.any(String), value: expect.any(String), distance: expect.any(Number) });
+    expect(base.text).toContain(`close 후보 ${base.json.plan.close.length}건 — --close로 포함`);
+
+    const first = await migrate(root, { apply: true });
+    const record = JSON.parse(fs.readFileSync(path.join(root, first.json.applied!.record), "utf-8")) as { close: boolean };
+    expect(record.close).toBe(false);
+    // 적용한 것 가운데 close는 없고, 남은 close 후보는 그대로다
+    const afterBase = (await migrate(root)).json.plan;
+    expect(afterBase.planned).toBe(0);
+    expect(afterBase.close.length).toBe(base.json.plan.close.length);
+
+    // --close: 남은 close 후보를 포함해 적용한다. 같은 날 두 번째 리포트는 -2가 붙어 덮어쓰지 않는다 (M5)
+    const second = await migrate(root, { apply: true, close: true });
+    expect(second.json.applied!.replaced).toBe(base.json.plan.close.length);
+    const record2 = JSON.parse(fs.readFileSync(path.join(root, second.json.applied!.record), "utf-8")) as { close: boolean };
+    expect(record2.close).toBe(true);
+    const reports = fs.readdirSync(path.join(root, ".dsmith/reports")).filter((f) => f.startsWith("migrate-")).sort();
+    expect(reports).toHaveLength(2);
+    const second2 = reports.find((f) => /-2\.md$/.test(f));
+    expect(second2).toMatch(/^migrate-\d{4}-\d{2}-\d{2}-2\.md$/);
+    expect(second.text).toContain(`리포트: .dsmith/reports/${second2}`);
+
+    await runMigrateCommand({ root, revert: second.json.applied!.id });
+    await runMigrateCommand({ root, revert: first.json.applied!.id });
+    expect(treeHash(root)).toBe(treeBefore);
+  }, 180_000);
+
+  it("I3: audit 뒤 파일을 고쳐도 예상은 실제와 정확히 같고, 낡은 인덱스 경고가 나온다", async () => {
+    const { root } = await prepare("examples/legacy-demo", { stateZero: true });
+    const clean = await migrate(root);
+    expect(clean.text).not.toContain("인덱스가 오래됨");
+    const edited = clean.json.plan.files.slice(0, 2).map((f) => f.file);
+    for (const f of edited) {
+      const abs = path.join(root, f);
+      fs.writeFileSync(abs, `${f.endsWith(".css") ? "/* 줄이 밀림 */" : "// 줄이 밀림"}\n${fs.readFileSync(abs, "utf-8")}`);
+    }
+    await new Promise((r) => setTimeout(r, 20));
+    fs.writeFileSync(path.join(root, "src/components/NewBox.tsx"), 'export const NewBox = () => <div style={{ padding: 16, color: "#111827" }} />;\n');
+
+    const { json, text } = await migrate(root, { apply: true });
+    expect(text).toContain("인덱스가 오래됨: 3개 파일이 audit 이후 바뀜(인덱스에 없던 새 파일 1개 포함) — dsmith audit을 다시 실행하세요");
+    expect(json.plan.stale.changed).toEqual([...edited].sort());
+    expect(json.plan.stale.added).toEqual(["src/components/NewBox.tsx"]);
+    expect(json.applied!.files.every((f) => f.status === "applied")).toBe(true);
+    const actual = json.actual!;
+    expect(actual.after.hardcodedShare).toBe(json.projected!.after.hardcodedShare);
+    expect(actual.after.score).toBe(json.projected!.after.score);
+    // "전"도 낡은 인덱스가 아니라 디스크 기준이다: 편집한 파일을 포함한 재계산과 같다
+    const reAudit = (await runAudit(root)).result.health;
+    expect(actual.after.score).toBe(reAudit.score);
+    expect(actual.after.hardcodedShare).toBe(reAudit.hardcodedShare);
+  }, 180_000);
+
+  it("I5: --revert에서 적용 뒤 수정된 파일이 있으면 종료 코드 1, 깨끗하면 0(설정 안 함)", async () => {
+    const { root } = await prepare("examples/legacy-demo", { stateZero: true });
+    const applied = (await migrate(root, { apply: true })).json.applied!;
+    expect((await runMigrateCommand({ root, apply: false, list: true })).exitCode).toBeUndefined();
+    const victim = applied.files[0]!.file;
+    fs.appendFileSync(path.join(root, victim), "\n// 적용 뒤 손으로 고침\n");
+    const partial = await runMigrateCommand({ root, revert: applied.id });
+    expect(partial.exitCode).toBe(1);
+    expect(partial.text).toContain(`${victim}: skipped-modified`);
+    expect((partial.json as { files: { file: string; status: string }[] }).files.find((f) => f.file === victim)?.status).toBe("skipped-modified");
+
+    // 고친 파일을 원래 적용 결과로 되돌려 놓으면 revert는 깨끗이 끝난다
+    const clean = await prepare("examples/legacy-demo", { stateZero: true });
+    const appliedClean = (await migrate(clean.root, { apply: true })).json.applied!;
+    const ok = await runMigrateCommand({ root: clean.root, revert: appliedClean.id });
+    expect(ok.exitCode).toBeUndefined();
+  }, 180_000);
+
+  it("--json 계획에 close·includeClose·stale이 있다", async () => {
+    const { root } = await prepare("fixtures/inline-app");
+    const result = spawnSync(process.execPath, [bin, "migrate", "--root", root, "--json"], { encoding: "utf-8" });
+    expect(result.status, result.stderr).toBe(0);
+    const json = JSON.parse(result.stdout) as Json;
+    expect(Object.keys(json.plan)).toEqual(expect.arrayContaining(["includeClose", "close", "stale"]));
+    expect(json.plan.stale).toEqual({ changed: [], added: [] });
+  }, 60_000);
 });

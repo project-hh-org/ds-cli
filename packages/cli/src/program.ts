@@ -111,7 +111,7 @@ interface MigrateCliOptions {
   files?: string[];
   category?: string;
   only?: string;
-  minConfidence?: string;
+  close?: boolean;
   maxFiles?: string;
   apply?: boolean;
   branch?: string;
@@ -306,7 +306,7 @@ export function buildProgram(): Command {
     .option("--files <glob...>", "치환할 파일 glob(root 상대). 여러 개 줄 수 있다")
     .option("--category <name>", "카테고리만: color | spacing | radius | font-size")
     .option("--only <kind>", "tokens | components")
-    .option("--min-confidence <level>", "exact면 가장 가까운 토큰이 close인 값은 건너뜀(기본 close)")
+    .option("--close", "근사(close: ±2px·색 ΔE 임계 안) 매칭도 포함. 기본은 같은 값·exact만 계획하고 close 후보는 건수만 알린다(렌더링되는 값이 바뀔 수 있음)")
     .option("--max-files <n>", "파일 순으로 앞에서 n개 파일만")
     .option("--apply", "계획을 적용(파일을 쓴다)")
     .option("--branch <name>", "적용을 새 git 브랜치에 커밋(--apply와 함께)")

@@ -1,3 +1,4 @@
+import fs from "node:fs/promises";
 import path from "node:path";
 import {
   atomicWrite,
@@ -13,6 +14,7 @@ import {
 import { readDetect, type DetectResult } from "@dsmith-dev/detect";
 import {
   abandonBranch,
+  analyzeMigration,
   applyMigration,
   checkBranch,
   commitFiles,
@@ -20,8 +22,8 @@ import {
   createBranch,
   formatPlanSummary,
   planExcludes,
-  planMigration,
   projectStyles,
+  withFreshStyles,
   renderMigrateReport,
   residualByCategory,
   revertMigration,
@@ -41,7 +43,8 @@ export interface MigrateCommandOptions {
   files?: string[] | undefined;
   category?: string | undefined;
   only?: string | undefined;
-  minConfidence?: string | undefined;
+  /** close(근사) 매칭도 계획·적용에 포함 */
+  close?: boolean | undefined;
   maxFiles?: string | undefined;
   apply?: boolean | undefined;
   branch?: string | undefined;
@@ -54,7 +57,7 @@ export interface MigrateOutput {
   json: unknown;
   /** 사람용 출력 */
   text: string;
-  /** 종료 코드: 롤백·계획 뒤 변경된 파일이 있거나 커밋하지 못했으면 1 */
+  /** 종료 코드: 적용하지 못한 파일(롤백·계획 뒤 변경·쓰기 실패)이나 되돌리지 못한 파일(적용 뒤 수정됨·없음)이 있거나 커밋하지 못했으면 1 */
   exitCode?: number;
 }
 
@@ -64,6 +67,19 @@ function oneOf<T extends string>(flag: string, value: string | undefined, allowe
   if (value === undefined) return undefined;
   if (!(allowed as readonly string[]).includes(value)) throw new Error(`${flag}는 ${allowed.join(" | ")} 중 하나여야 합니다: ${value}`);
   return value as T;
+}
+
+/** `.dsmith/reports/migrate-<date>.md` — 그날 이미 있으면 `-2`, `-3`…을 붙여 덮어쓰지 않는다 */
+async function reportPathFor(root: string, now: Date): Promise<string> {
+  const base = `.dsmith/reports/migrate-${localDate(now)}`;
+  for (let n = 1; ; n += 1) {
+    const rel = n === 1 ? `${base}.md` : `${base}-${n}.md`;
+    try {
+      await fs.access(path.join(root, ...rel.split("/")));
+    } catch {
+      return rel;
+    }
+  }
 }
 
 function numbersOf(detect: DetectResult, index: Index, plan: MigratePlan): AuditNumbers {
@@ -114,7 +130,6 @@ export async function runMigrateCommand(opts: MigrateCommandOptions): Promise<Mi
   const root = path.resolve(opts.root);
   const category = oneOf("--category", opts.category, CATEGORIES);
   const only = oneOf("--only", opts.only, ["tokens", "components"] as const);
-  const minConfidence = oneOf("--min-confidence", opts.minConfidence, ["exact", "close"] as const);
   let maxFiles: number | undefined;
   if (opts.maxFiles !== undefined) {
     maxFiles = Number(opts.maxFiles);
@@ -133,12 +148,13 @@ export async function runMigrateCommand(opts: MigrateCommandOptions): Promise<Mi
   if (opts.revert !== undefined) {
     const result = await revertMigration(root, opts.revert);
     await runAudit(root); // 인덱스·점수 갱신
-    return { json: result, text: formatRevert(result) };
+    const notReverted = result.files.some((f) => f.status === "skipped-modified" || f.status === "missing");
+    return { json: result, text: formatRevert(result), ...(notReverted ? { exitCode: 1 } : {}) };
   }
 
   const { detect, index } = await loadState(root);
   const extractors = buildExtractors(detect.activeExtractors);
-  const plan = await planMigration({
+  const { plan, fresh } = await analyzeMigration({
     root,
     extractors,
     detect,
@@ -146,11 +162,13 @@ export async function runMigrateCommand(opts: MigrateCommandOptions): Promise<Mi
     ...(opts.files === undefined || opts.files.length === 0 ? {} : { files: opts.files }),
     ...(category === undefined ? {} : { category }),
     ...(only === undefined ? {} : { only }),
-    ...(minConfidence === undefined ? {} : { minConfidence }),
+    ...(opts.close === true ? { close: true } : {}),
     ...(maxFiles === undefined ? {} : { maxFiles }),
   });
-  const before = numbersOf(detect, index, plan);
-  const projectedAfter = numbersOf(detect, { ...index, styles: projectStyles(index.styles, plan) }, plan);
+  // 전/예상 점수는 audit 뒤 바뀐 파일까지 반영한 값이어야 한다: 계획이 디스크에서 다시 읽은 파일의 사용으로 인덱스를 갈아 끼운다
+  const freshIndex = withFreshStyles(index, fresh);
+  const before = numbersOf(detect, freshIndex, plan);
+  const projectedAfter = numbersOf(detect, { ...freshIndex, styles: projectStyles(freshIndex.styles, plan) }, plan);
   const projected = { before, after: projectedAfter };
 
   if (opts.apply !== true) {
@@ -218,7 +236,7 @@ export async function runMigrateCommand(opts: MigrateCommandOptions): Promise<Mi
     hardcodedShare: auditAfter.health.hardcodedShare,
     residual: residualByCategory(indexAfter.styles, planExcludes(plan)),
   };
-  const reportRel = `.dsmith/reports/migrate-${localDate(new Date())}.md`;
+  const reportRel = await reportPathFor(root, new Date());
   await atomicWrite(path.join(root, ...reportRel.split("/")), renderMigrateReport({ plan, applied, before, after }));
 
   const text = [
