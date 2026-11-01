@@ -3,10 +3,12 @@ import path from "node:path";
 import {
   clusterColors,
   clusterSpacing,
+  duplicateNames,
   indexRepo,
   isRatedUsage,
+  localDefinitionsOf,
+  summarizeComponents,
   writeIndex,
-  type ComponentUsage,
   type Index,
 } from "@dsmith-dev/core";
 import { detect, excludeGlobs, sharesFromIndex, writeDetect, type DetectResult } from "@dsmith-dev/detect";
@@ -30,67 +32,6 @@ function byFileOf(index: Index): AuditResult["hardcoded"]["byFile"] {
     .map(([file, count]) => ({ file, count }))
     .sort((a, b) => b.count - a.count || a.file.localeCompare(b.file))
     .slice(0, BY_FILE_LIMIT);
-}
-
-const LOCAL_DEFINITION_LIMIT = 20;
-
-/**
- * name+module로 묶는다. 서브패스·별칭이 달라도 같은 모듈이면 한 그룹이다.
- * importedFrom은 처음 본 값을 남기지만(결과 JSON 호환) 리포트의 출처 열은 module을 표시한다.
- */
-function componentsOf(usages: ComponentUsage[]): AuditResult["components"] {
-  const groups = new Map<string, AuditResult["components"][number]>();
-  for (const c of usages) {
-    const key = JSON.stringify([c.name, c.module]);
-    const g = groups.get(key);
-    if (g) g.count += 1;
-    else groups.set(key, { name: c.name, importedFrom: c.importedFrom, module: c.module, count: 1 });
-  }
-  return [...groups.values()].sort(
-    (a, b) =>
-      b.count - a.count ||
-      a.name.localeCompare(b.name) ||
-      (a.importedFrom ?? "").localeCompare(b.importedFrom ?? "") ||
-      a.module.localeCompare(b.module),
-  );
-}
-
-/**
- * 같은 이름이 둘 이상의 module에서 오는 컴포넌트 이름을 사용 수 내림차순으로 모은다.
- * import 없는 지역 사용(module "")은 출처로 세지 않는다 — 그건 localDefinitions가 따로 보고한다.
- */
-function duplicatesOf(components: AuditResult["components"]): AuditResult["duplicates"] {
-  const byName = new Map<string, { modules: Set<string>; total: number }>();
-  for (const c of components) {
-    const entry = byName.get(c.name) ?? { modules: new Set<string>(), total: 0 };
-    if (c.module !== "") entry.modules.add(c.module);
-    entry.total += c.count;
-    byName.set(c.name, entry);
-  }
-  const names = [...byName.entries()]
-    .filter(([, e]) => e.modules.size >= 2)
-    .sort((a, b) => b[1].total - a[1].total || a[0].localeCompare(b[0]))
-    .map(([name]) => name);
-  return names.length === 0 ? [] : [{ names, reason: "same-name-different-source" }];
-}
-
-/**
- * import 없이 쓰고 그 파일 최상위에 선언도 있는(declaredLocally) 이름 중 둘 이상의 파일에 있는 것.
- * props·지역 변수로 받은 컴포넌트는 정의가 아니므로 세지 않는다. 파일 수 내림차순, 같으면 이름순, 상위 20개.
- */
-function localDefinitionsOf(usages: ComponentUsage[]): AuditResult["localDefinitions"] {
-  const filesByName = new Map<string, Set<string>>();
-  for (const c of usages) {
-    if (c.importedFrom !== null || c.declaredLocally !== true) continue;
-    const files = filesByName.get(c.name) ?? new Set<string>();
-    files.add(c.file);
-    filesByName.set(c.name, files);
-  }
-  return [...filesByName.entries()]
-    .map(([name, files]) => ({ name, files: files.size }))
-    .filter((d) => d.files >= 2)
-    .sort((a, b) => b.files - a.files || a.name.localeCompare(b.name))
-    .slice(0, LOCAL_DEFINITION_LIMIT);
 }
 
 function round4(n: number): number {
@@ -121,8 +62,12 @@ function healthOf(index: Index, ds: DetectResult["ds"], duplicateCount: number):
 }
 
 export function computeAudit(detectResult: DetectResult, index: Index): AuditResult {
-  const components = componentsOf(index.components);
-  const duplicates = duplicatesOf(components);
+  const summaries = summarizeComponents(index.components);
+  // props·files는 결과 JSON에 싣지 않는다(AuditResult 모양 불변)
+  const components = summaries.map(({ name, importedFrom, module, count }) => ({ name, importedFrom, module, count }));
+  const duplicateList = duplicateNames(summaries);
+  const duplicates: AuditResult["duplicates"] =
+    duplicateList.length === 0 ? [] : [{ names: duplicateList, reason: "same-name-different-source" }];
   const duplicateCount = duplicates.reduce((n, d) => n + d.names.length, 0);
   return {
     detect: detectResult,

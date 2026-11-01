@@ -1,8 +1,11 @@
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { runAudit } from "../src/commands/audit.js";
+import { runDecideExplain } from "../src/commands/decide.js";
+import { runInstall } from "../src/commands/install.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 /** `fixtures/<name>` 또는 `examples/<name>`(base 지정) 절대 경로. */
@@ -185,5 +188,52 @@ describe("examples/legacy-demo", () => {
     expect(result.hardcoded.byFile).toContainEqual({ file: "app/globals.css", count: 7 });
     expect(result.health).toMatchObject({ score: 52, rated: 187, hardcodedShare: 0.3422, dsImportShare: 0.0909, duplicateCount: 2 });
     expect(report).toMatchSnapshot();
+  });
+});
+
+describe("examples/legacy-demo: audit → install → decide", () => {
+  it("audit 뒤 claude-code만 설치하고, 같은 레포에서 결정 카드가 ui/button을 추천한다", async () => {
+    const tmp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "dsmith-e2e-install-")));
+    const repo = path.join(tmp, "legacy-demo");
+    const home = path.join(tmp, "home");
+    fs.mkdirSync(home);
+    try {
+      fs.cpSync(fixture("legacy-demo", "examples"), repo, {
+        recursive: true,
+        filter: (src) => !src.split(path.sep).includes(".dsmith"),
+      });
+      await runAudit(repo);
+      const result = await runInstall({ root: repo, home, tools: ["claude-code"], version: "0.2.0" });
+      expect(result.outcomes.map((o) => o.status)).toEqual(Array(9).fill("created"));
+
+      const list = (dir: string, prefix = ""): string[] =>
+        fs.readdirSync(dir, { withFileTypes: true }).flatMap((e) =>
+          e.isDirectory() ? list(path.join(dir, e.name), `${prefix}${e.name}/`) : [`${prefix}${e.name}`],
+        );
+      const installed = list(repo).filter((f) => f.startsWith(".claude/") || f === ".mcp.json" || f === ".dsmith/install.json");
+      expect(installed.sort()).toEqual([
+        ".claude/skills/ds-ai/SKILL.md",
+        ".claude/skills/ds-audit/SKILL.md",
+        ".claude/skills/ds-check/SKILL.md",
+        ".claude/skills/ds-decide/SKILL.md",
+        ".claude/skills/ds-detect/SKILL.md",
+        ".claude/skills/ds-init/SKILL.md",
+        ".claude/skills/ds-migrate/SKILL.md",
+        ".claude/skills/ds/SKILL.md",
+        ".dsmith/install.json",
+        ".mcp.json",
+      ]);
+      expect(JSON.parse(fs.readFileSync(path.join(repo, ".mcp.json"), "utf-8"))).toEqual({
+        mcpServers: { dsmith: { command: "npx", args: ["-y", "dsmith@0.2", "mcp"] } },
+      });
+      // 홈에는 아무것도 쓰지 않았다
+      expect(fs.readdirSync(home)).toEqual([]);
+
+      const card = await runDecideExplain(repo, "Button", { git: false });
+      if (!("card" in card)) throw new Error("not-found");
+      expect(card.card.recommendation.optionId).toBe("src/components/ui/button");
+    } finally {
+      fs.rmSync(tmp, { recursive: true, force: true });
+    }
   });
 });

@@ -1,4 +1,4 @@
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -8,7 +8,10 @@ import { auditWarnings, localDate } from "../src/report/audit-report.js";
 import type { Index } from "@dsmith-dev/core";
 import type { DetectResult } from "@dsmith-dev/detect";
 import type { Extractor, StyleUsage } from "@dsmith-dev/extractor-api";
+import { AI_TOOLS, loadCommands } from "@dsmith-dev/agent-skill";
+import { TOOL_NAMES } from "@dsmith-dev/mcp-server";
 import { computeAudit, runAudit } from "../src/commands/audit.js";
+import { buildProgram } from "../src/program.js";
 import { detectHints, runDetect } from "../src/commands/detect.js";
 import { registry } from "../src/registry.js";
 
@@ -382,5 +385,129 @@ describe("제외 (--exclude, overrides.exclude)", () => {
     expect(run("audit", "--exclude", "legacy/**", "--exclude", "old/**").index.files.scanned).toBe(1);
     const detected = run("detect", "--exclude", "legacy/**", "old/**", "src/**");
     expect(detected.styling.methods).toEqual([{ name: "inline-style", evidence: ["fallback"], share: 0 }]);
+  });
+});
+
+describe("슬래시 명령 ↔ CLI·MCP 일관성", () => {
+  it("명령 소스가 부르는 MCP 도구는 서버가 내는 도구 이름 안에 있다", async () => {
+    const used = (await loadCommands()).flatMap((c) => c.uses.filter((u) => u.startsWith("mcp:")).map((u) => u.slice(4)));
+    expect(used.length).toBeGreaterThan(0);
+    for (const tool of used) expect(TOOL_NAMES as readonly string[]).toContain(tool);
+  });
+
+  it("명령 소스가 부르는 CLI 서브커맨드와 플래그는 실제로 등록돼 있다", async () => {
+    const program = buildProgram();
+    expect(program.commands.map((c) => c.name()).sort()).toEqual(["audit", "decide", "detect", "install", "mcp"]);
+    const used = (await loadCommands()).flatMap((c) => c.uses.filter((u) => u.startsWith("cli:")).map((u) => u.slice(4)));
+    expect(used.length).toBeGreaterThan(0);
+    for (const use of used) {
+      const [name, ...flags] = use.split(" ");
+      const cmd = program.commands.find((c) => c.name() === name);
+      expect(cmd, `서브커맨드 ${name}`).toBeDefined();
+      for (const flag of flags) {
+        expect(cmd?.options.map((o) => o.long), `${name}의 ${flag}`).toContain(flag);
+      }
+    }
+  });
+
+  it("install 옵션이 AI 도구 이름을 도움말에 보인다", () => {
+    const help = buildProgram().commands.find((c) => c.name() === "install")?.helpInformation() ?? "";
+    for (const tool of AI_TOOLS) expect(help).toContain(tool);
+  });
+});
+
+describe("audit --json 리포트 경로", () => {
+  const bin = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../dist/bin.js");
+
+  it("--json이면 stdout은 JSON만, 리포트 경로는 stderr의 '리포트: …' 줄로 알린다", () => {
+    tailwindInlineRepo();
+    const r = spawnSync(process.execPath, [bin, "audit", "--root", tmp, "--json"], { encoding: "utf-8" });
+    expect(r.status).toBe(0);
+    expect(() => JSON.parse(r.stdout)).not.toThrow();
+    const line = r.stderr.split("\n").find((l) => l.startsWith("리포트: "));
+    expect(line).toBeDefined();
+    const reported = path.resolve(process.cwd(), line?.slice("리포트: ".length) ?? "");
+    expect(fs.realpathSync(reported)).toBe(fs.realpathSync(path.join(tmp, ".dsmith", "reports", `audit-${localDate(new Date())}.md`)));
+    expect(fs.existsSync(reported)).toBe(true);
+  });
+
+  it("--json이 아니면 stdout에만 쓰고 stderr에는 중복해서 쓰지 않는다", () => {
+    tailwindInlineRepo();
+    const r = spawnSync(process.execPath, [bin, "audit", "--root", tmp], { encoding: "utf-8" });
+    expect(r.stdout).toContain("리포트: ");
+    expect(r.stderr).not.toContain("리포트: ");
+  });
+});
+
+describe("슬래시 명령 본문 ↔ 실제 CLI 정합", () => {
+  const here = path.dirname(fileURLToPath(import.meta.url));
+  const bin = path.resolve(here, "../dist/bin.js");
+  const FIELD = /^[A-Za-z][A-Za-z0-9]*(?:\[\])?(?:\.[A-Za-z][A-Za-z0-9]*(?:\[\])?)*$/;
+
+  /** 본문의 백틱 코드 조각 */
+  const spansOf = (body: string): string[] => [...body.matchAll(/`([^`\n]+)`/g)].map((m) => m[1] as string);
+
+  /** `npx dsmith …` 또는 `{{cli}} …`로 시작하는 조각만: [서브커맨드, 플래그들] */
+  function cliCalls(body: string): { line: string; sub: string; flags: string[] }[] {
+    return spansOf(body).flatMap((line) => {
+      const m = /^(?:npx dsmith|\{\{cli\}\})\s+(\S+)(.*)$/.exec(line);
+      if (m === null) return [];
+      const flags = (m[2] ?? "").split(/\s+/).filter((t) => t.startsWith("--"));
+      return [{ line, sub: m[1] as string, flags }];
+    });
+  }
+
+  /** JSON 안의 모든 키 경로(배열은 `[]`) — 객체 키는 `a.b`, 배열 원소 안은 `a[].b` */
+  function keyPaths(value: unknown, prefix = ""): string[] {
+    if (Array.isArray(value)) {
+      const here = prefix === "" ? "" : `${prefix}[]`;
+      return value.flatMap((v) => keyPaths(v, here));
+    }
+    if (typeof value !== "object" || value === null) return [];
+    return Object.entries(value).flatMap(([k, v]) => {
+      const p = prefix === "" ? k : `${prefix}.${k}`;
+      return [p, ...keyPaths(v, p)];
+    });
+  }
+
+  it("본문이 부르는 모든 CLI 줄의 서브커맨드와 플래그가 program.ts에 있다", async () => {
+    const program = buildProgram();
+    const commands = await loadCommands();
+    const calls = commands.flatMap((c) => cliCalls(c.body).map((call) => ({ ...call, command: c.name })));
+    expect(calls.length).toBeGreaterThanOrEqual(8);
+    for (const { command, line, sub, flags } of calls) {
+      const cmd = program.commands.find((x) => x.name() === sub);
+      expect(cmd, `${command}: \`${line}\`의 서브커맨드 ${sub}`).toBeDefined();
+      const known = cmd?.options.map((o) => o.long) ?? [];
+      for (const flag of flags) expect(known, `${command}: \`${line}\`의 ${flag}`).toContain(flag);
+    }
+  });
+
+  it("ds-audit·ds-detect 본문이 가리키는 JSON 필드는 실제 audit·detect --json 출력에 있다", async () => {
+    const src = path.resolve(here, "../../../examples/legacy-demo");
+    fs.cpSync(src, tmp, { recursive: true, filter: (p) => !p.split(path.sep).includes(".dsmith") });
+    const run = (sub: string): unknown =>
+      JSON.parse(spawnSync(process.execPath, [bin, sub, "--root", tmp, "--json"], { encoding: "utf-8" }).stdout);
+    // `overrides`는 사용자가 detect.json에 적었을 때만 출력에 나온다 — 본문이 안내하는 대로 하나 적어 둔다.
+    const first = run("detect") as Record<string, unknown>;
+    fs.writeFileSync(
+      path.join(tmp, ".dsmith", "detect.json"),
+      JSON.stringify({ ...first, overrides: { exclude: ["nothing-here/**"] } }, null, 2),
+    );
+    const outputs: Record<string, string[]> = { "ds-audit": keyPaths(run("audit")), "ds-detect": keyPaths(run("detect")) };
+
+    const commands = await loadCommands();
+    for (const [name, paths] of Object.entries(outputs)) {
+      const body = commands.find((c) => c.name === name)?.body ?? "";
+      const fields = spansOf(body)
+        .map((s) => s.replace(/:\s.*$/, ""))
+        .filter((s) => FIELD.test(s));
+      expect(fields.length, name).toBeGreaterThan(5);
+      for (const field of fields) {
+        // 앞 경로를 생략한 이름(`kind`, `total`)은 어느 깊이의 경로 끝과 맞아도 된다
+        const found = paths.some((p) => p === field || p.endsWith(`.${field}`) || p.endsWith(`]${field}`));
+        expect(found, `${name}: \`${field}\`가 실제 출력에 없음`).toBe(true);
+      }
+    }
   });
 });

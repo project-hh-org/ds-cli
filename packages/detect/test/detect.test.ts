@@ -4,7 +4,7 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { indexRepo, type ComponentUsage, type Index, type StyleUsage } from "@dsmith-dev/core";
 import type { ExtractorMeta } from "@dsmith-dev/extractor-api";
-import { decideState, detect, readDetect, writeDetect } from "../src/index.js";
+import { decideState, detect, isDsSpecifier, readDetect, writeDetect } from "../src/index.js";
 import { sharesFromIndex, sharesFromSources } from "../src/detect-state.js";
 import { loadSources } from "../src/fs-utils.js";
 
@@ -912,5 +912,14 @@ describe("index와 함께 감지", () => {
       indexOf([style("tailwind", "token")], [comp("Button", "@acme/ui"), comp("Card", "@acme/ui")]),
     );
     expect(high.state).toBe(2);
+  });
+});
+
+describe("isDsSpecifier (패키지 루트 export)", () => {
+  it("로컬 DS 디렉터리 아래 module과 npm 서브패스를 DS로 본다", () => {
+    expect(isDsSpecifier("src/components/ui/button", { kind: "local", dir: "src/components/ui", tokenFiles: [] })).toBe(true);
+    expect(isDsSpecifier("src/components/Button", { kind: "local", dir: "src/components/ui", tokenFiles: [] })).toBe(false);
+    expect(isDsSpecifier("@mui/material/Button", { kind: "npm", packageNames: ["@mui/material"], tokenFiles: [] })).toBe(true);
+    expect(isDsSpecifier("anything", { kind: "none", tokenFiles: [] })).toBe(false);
   });
 });

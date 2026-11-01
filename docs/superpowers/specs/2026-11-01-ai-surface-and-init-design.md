@@ -82,8 +82,8 @@
 | DS 소스 | `detect.ds`: `local` → 디렉터리의 export된 대문자 컴포넌트, `npm` → `node_modules/<pkg>`의 타입 선언(`types`/`exports` 의 `.d.ts`; 배럴 `export *` 1단계 추적), `none` → `init` 산출(`design-system/`)이 있으면 그것, 없으면 안내 후 종료 |
 | 카탈로그 항목 | `{ name, module, file?, props: [{name, type, required, values?(유니온 리터럴), description?(JSDoc)}], deprecated?: string(JSDoc @deprecated), examples?: [stories 파일에서 첫 export의 소스 ≤ 20줄], tokensUsed?: [정의 파일의 token 사용] }`. 타입 추출은 babel(typescript·dts)로 `TSInterfaceDeclaration`/`TSTypeLiteral`/`TSTypeAliasDeclaration` 멤버를 읽는다(제네릭·교차 타입은 이름만 남기고 `type: "…"`); TS 컴파일러 API는 쓰지 않는다(의존성·속도) |
 | 토큰 | `detect.ds.tokenFiles`(CSS 변수) + `design-system/tokens.json` → `catalog.tokens` |
-| `AGENTS.md` 섹션 | 마커 사이에: DS 위치, 토큰 파일, 컴포넌트 수와 상위 20 이름, 규칙 5줄(하드코딩 금지·토큰 사용·컴포넌트 우선·`/ds-check`), MCP 도구 이름. 길이 상한 80줄 |
-| 산출 | `.dsmith/catalog.json`, `AGENTS.md` 섹션, stdout 요약(컴포넌트 N, props 추출 성공률, deprecated M) |
+| `AGENTS.md` 섹션 | `<!-- dsmith:ds:start -->`…`<!-- dsmith:ds:end -->` 마커 사이에(install의 `<!-- dsmith:start -->` 섹션과 별개): DS 위치, 토큰 파일, 컴포넌트 수와 상위 20 이름, 규칙 5줄(하드코딩 금지·토큰 사용·컴포넌트 우선·`/ds-check`), MCP 도구 이름. 길이 상한 80줄 |
+| 산출 | `.dsmith/catalog.json`, `AGENTS.md` 섹션, 쓰기 매니페스트 `.dsmith/ai.json`, stdout 요약(컴포넌트 N, props 추출 성공률, deprecated M) |
 
 ### 2.3 검증
 
@@ -96,9 +96,11 @@
 
 - 패키지: `packages/mcp-server`(`@dsmith-dev/mcp-server`), `packages/agent-skill`(`@dsmith-dev/agent-skill`, commands·renderers·templates), `packages/init`(`@dsmith-dev/init`), `packages/catalog`(`@dsmith-dev/catalog`, `ai`의 빌더). CLI가 전부 의존하고 서브커맨드로 노출: `install`, `mcp`, `decide`, `init`, `ai`. 별도 bin은 두지 않는다(`npx dsmith mcp`)
 - 새 Core 모듈: `cluster/font-size`, `tokens/draft`(토큰 초안 모델 + W3C 직렬화), `decisions/`(모델·읽기쓰기), `catalog/`(모델만; 빌더는 패키지)
-- `.dsmith/` 추가 파일: `decisions.json`, `catalog.json`, `install.json`, `init.json`
+- `.dsmith/` 추가 파일: `decisions.json`, `catalog.json`, `install.json`, `init.json`, `ai.json`
+- 쓰기 매니페스트는 명령마다 따로 둔다: `install`은 `.dsmith/install.json`, `ai`는 `.dsmith/ai.json`을 쓴다. 한 명령이 다른 명령이 쓴 영역을 소유하지 않는다
+- `AGENTS.md` 마커: `install`의 AGENTS.md 섹션은 `<!-- dsmith:start -->`…`<!-- dsmith:end -->`를 쓴다. `ai`의 DS 섹션은 이와 구별되는 `<!-- dsmith:ds:start -->`…`<!-- dsmith:ds:end -->`를 **예약**한다 — 3b가 도입하기 전까지 `install`은 이 마커를 쓰지 않고, 사용자가 같은 마커를 직접 쓰지 않아야 한다
 - 쓰기 안전: 레포 파일을 쓰는 커맨드(`install`, `init`, `ai`)는 모두 `--dry-run`, 마커/전용 경로, 사용자 수정 보존 규칙을 공유하는 core `fs/safe-write.ts` 하나를 쓴다
-- 버전: 3a 머지 후 0.2.0, 3b 머지 후 0.3.0 (changeset minor)
+- 버전: 첫 npm 게시(0.1.0)는 detect·audit만 담는다. 3a(install·mcp·슬래시 명령)는 그 다음 마이너로 나간다 — 계획은 0.2.0이고 실제 번호는 Version PR이 계산한다. 3b는 다시 그 다음 마이너다(changeset minor). MCP 등록의 `dsmith@0.x` 고정은 설치한 시점의 마이너를 따른다
 - 범위 밖(Plan 4): migrate·guard·render-diff·usage·benchmark, `record` 외 MCP 쓰기 도구, Figma 소스, `.mcpb` 패키징
 
 ## 4. 증명 포인트 (면접용 한 줄)

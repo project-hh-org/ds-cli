@@ -14,6 +14,8 @@ export { normalizeColor } from "./normalize/color.js";
 export { normalizeLength } from "./normalize/length.js";
 export { parseTsx, traverse } from "./parse/tsx.js";
 export type { Index, IndexOptions } from "./index/indexer.js";
+export type { ExtractorMatcher, FileStyles } from "./index/extract-file.js";
+export { extractFileStyles, extractorMatchers } from "./index/extract-file.js";
 export { DEFAULT_EXCLUDE, indexRepo } from "./index/indexer.js";
 export type { ModuleContext } from "./index/component-usage.js";
 export { extractComponentUsage } from "./index/component-usage.js";
@@ -30,8 +32,8 @@ export type { ColorCluster } from "./cluster/color-cluster.js";
 export { clusterColors } from "./cluster/color-cluster.js";
 export type { SpacingCandidate } from "./cluster/spacing-cluster.js";
 export { clusterSpacing } from "./cluster/spacing-cluster.js";
-export type { TokenMatch } from "./match/token-matcher.js";
-export { matchToken } from "./match/token-matcher.js";
+export type { RankedToken, TokenMatch } from "./match/token-matcher.js";
+export { matchToken, rankTokens } from "./match/token-matcher.js";
 export {
   COLOR_PROPERTIES,
   LENGTH_PROPERTIES,
@@ -46,3 +48,45 @@ export type { ClassifyOptions } from "./parse/css-decl-usage.js";
 export { classifyDeclaration, lineLocator } from "./parse/css-decl-usage.js";
 export type { StyleObjectContext, StyleObjectPatch, StyleObjectUsage } from "./parse/object-style.js";
 export { usagesFromStyleObject } from "./parse/object-style.js";
+export type { ComponentSummary, LocalDefinition } from "./component/summary.js";
+export { duplicateNames, localDefinitionFiles, localDefinitionsOf, summarizeComponents } from "./component/summary.js";
+export type {
+  ManagedRegion,
+  PlannedWrite,
+  SafeWriteOptions,
+  SafeWriteResult,
+  WriteManifest,
+  WriteOutcome,
+  WriteStatus,
+} from "./fs/safe-write.js";
+export { regionKey, safeWrite } from "./fs/safe-write.js";
+export { DEFINITION_EXTENSIONS, resolveDefinitionFile } from "./component/definition.js";
+export type { ComponentProps, PropInfo } from "./component/props.js";
+export { readComponentProps } from "./component/props.js";
+export type { ComponentMatch } from "./component/search.js";
+export { COMPONENT_SYNONYMS, searchComponents } from "./component/search.js";
+export { collectCssVariables, readCssVariableTokens } from "./tokens/css-variables.js";
+export { proposalTokens } from "./tokens/proposal.js";
+export type { LoadedToken, LoadedTokens, TokenSourceKind } from "./tokens/load.js";
+export { loadTokens, tokenCategoryOf } from "./tokens/load.js";
+export type {
+  Confidence,
+  DecisionCard,
+  DecisionKind,
+  DecisionListItem,
+  DecisionOption,
+  DecisionRecord,
+  DecisionsFile,
+  DifferenceAspect,
+  GitHistory,
+} from "./decisions/model.js";
+export { readDecisions, recordDecision, writeDecisions } from "./decisions/store.js";
+export type { DecisionCandidate } from "./decisions/candidates.js";
+export { candidatesOf, decisionCandidates, listDecisions, similarItems } from "./decisions/candidates.js";
+export { readGitHistory } from "./decisions/git-history.js";
+export type { CardInput } from "./decisions/card.js";
+export { buildDecisionCard } from "./decisions/card.js";
+export type { ExplainOptions, ExplainResult } from "./decisions/explain.js";
+export { DEFAULT_MAX_OPTIONS, explainDecision } from "./decisions/explain.js";
+export type { ChooseOptions } from "./decisions/choose.js";
+export { chooseDecision } from "./decisions/choose.js";

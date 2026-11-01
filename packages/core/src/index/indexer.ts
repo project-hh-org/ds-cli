@@ -1,12 +1,12 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import fg from "fast-glob";
-import picomatch from "picomatch";
 import { JS_FILES } from "@dsmith-dev/extractor-api";
 import type { ExtractContext, Extractor, StyleUsage } from "@dsmith-dev/extractor-api";
 import type { ComponentUsage } from "../model/component-usage.js";
 import { parseTsx } from "../parse/tsx.js";
 import { extractComponentUsage, type ModuleContext } from "./component-usage.js";
+import { extractFileStyles, extractorMatchers } from "./extract-file.js";
 import { readTsconfigPaths } from "./specifier.js";
 
 export interface Index {
@@ -129,7 +129,7 @@ export async function indexRepo(
     dependencies: await dependencyNamesOf(root),
   };
 
-  const matchers = extractors.map((e) => ({ extractor: e, matches: picomatch(e.files, { dot: false }) }));
+  const matchers = extractorMatchers(extractors);
 
   const index: Index = {
     root,
@@ -156,28 +156,20 @@ export async function indexRepo(
 
     // 한 파일의 결과는 모두 성공했을 때만 인덱스에 반영한다(부분 결과가 남지 않게).
     const ctx: ExtractContext = { root, file, code };
-    const styles: StyleUsage[] = [];
-    let stage = "components";
     try {
-      for (const { extractor, matches } of matchers) {
-        if (!matches(file)) continue;
-        stage = extractor.name;
-        if (!extractor.appliesTo(ctx)) continue;
-        for (const usage of extractor.extract(ctx)) {
-          // WeakMap 키인 원본 객체를 그대로 유지해야 하므로 복제하지 않고 file만 맞춘다.
-          usage.file = file;
-          styles.push(usage);
-        }
+      const { styles } = extractFileStyles(ctx, matchers);
+      let components: ComponentUsage[];
+      try {
+        components = JS_FILE.test(file) ? extractComponentUsage(file, parseTsx(code, file), tsPaths, moduleContext) : [];
+      } catch (err) {
+        throw new Error(`parse(components): ${messageOf(err)}`);
       }
-      stage = "components";
-      const components = JS_FILE.test(file)
-        ? extractComponentUsage(file, parseTsx(code, file), tsPaths, moduleContext)
-        : [];
       index.styles.push(...styles);
       index.components.push(...components);
       index.files.scanned += 1;
     } catch (err) {
-      index.files.skipped.push({ file, reason: `parse(${stage}): ${messageOf(err)}` });
+      // extractFileStyles의 오류는 이미 `parse(<name>): …` 형식이다.
+      index.files.skipped.push({ file, reason: messageOf(err) });
     }
   }
   return index;

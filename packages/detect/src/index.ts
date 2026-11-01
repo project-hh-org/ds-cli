@@ -20,6 +20,7 @@ import { loadSources, readDependencyNames } from "./fs-utils.js";
 import { readDetect, writeDetect } from "./store.js";
 
 export type { DsDetection } from "./detect-ds.js";
+export { isDsSpecifier } from "./detect-ds.js";
 export type { FrameworkDetection } from "./detect-framework.js";
 export type { LintDetection } from "./detect-lint.js";
 export type { StylingDetection, StylingMethodName } from "./detect-styling.js";

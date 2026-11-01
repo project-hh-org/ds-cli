@@ -1,7 +1,7 @@
 {
   "name": "dsmith",
   "version": "0.1.0",
-  "description": "Design-system lifecycle CLI: detect your styling setup and audit hardcoded style values",
+  "description": "Design-system lifecycle CLI: detect, audit, install AI tool commands and an MCP server (install, mcp), record component decisions (decide)",
   "keywords": ["design-system", "design-tokens", "cli", "audit", "dsmith"],
   "license": "MIT",
   "author": "Dahee Hwang <dahee@project-hh.com>",
@@ -26,6 +26,7 @@
     "dist"
   ],
   "dependencies": {
+    "@dsmith-dev/agent-skill": "workspace:*",
     "@dsmith-dev/core": "workspace:*",
     "@dsmith-dev/detect": "workspace:*",
     "@dsmith-dev/extractor-api": "workspace:*",
@@ -35,9 +36,11 @@
     "@dsmith-dev/extractor-mui-sx": "workspace:*",
     "@dsmith-dev/extractor-styled": "workspace:*",
     "@dsmith-dev/extractor-tailwind": "workspace:*",
+    "@dsmith-dev/mcp-server": "workspace:*",
     "commander": "^12.1.0"
   },
   "devDependencies": {
+    "@modelcontextprotocol/client": "^2.4.0",
     "vitest": "^3.0.0"
   },
   "scripts": {

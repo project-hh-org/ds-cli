@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { Token } from "../src/model/token.js";
 import { lengthDistance } from "../src/match/distance.js";
-import { matchToken } from "../src/match/token-matcher.js";
+import { matchToken, rankTokens } from "../src/match/token-matcher.js";
 import { normalizeColor } from "../src/normalize/color.js";
 import { normalizeLength } from "../src/normalize/length.js";
 
@@ -98,5 +98,49 @@ describe("matchToken", () => {
     const n = normalizeLength("12px");
     expect(n).not.toBeNull();
     expect(matchToken({ kind: "length", px: n as number }, tokens)?.confidence).toBe("exact");
+  });
+});
+
+describe("rankTokens", () => {
+  const colors = [
+    colorToken("c1", "#3B82F6"),
+    colorToken("c2", "#2563EB"),
+    colorToken("c3", "#60A5FA"),
+    colorToken("c4", "#EF4444"),
+    colorToken("c5", "#10B981"),
+  ];
+
+  it("거리 오름차순으로 기본 4개를 돌려준다", () => {
+    const ranked = rankTokens(norm("#3B82F6"), colors);
+    expect(ranked).toHaveLength(4);
+    expect(ranked[0]?.token.name).toBe("c1");
+    expect(ranked[0]?.confidence).toBe("exact");
+    const distances = ranked.map((r) => r.distance);
+    expect(distances).toEqual([...distances].sort((a, b) => a - b));
+  });
+
+  it("limit으로 개수를 정한다", () => {
+    expect(rankTokens(norm("#3B82F6"), colors, { limit: 2 })).toHaveLength(2);
+    expect(rankTokens(norm("#3B82F6"), colors, { limit: 10 })).toHaveLength(5);
+  });
+
+  it("거리가 같으면 입력 순서를 지킨다", () => {
+    const tied = [spaceToken("a", 10), spaceToken("b", 10), spaceToken("c", 10)];
+    expect(rankTokens({ kind: "length", px: 10 }, tied).map((r) => r.token.name)).toEqual(["a", "b", "c"]);
+  });
+
+  it("category를 주면 그 카테고리 토큰만 후보로 삼는다", () => {
+    const set = [spaceToken("space-1", 6), spaceToken("radius-md", 6, "radius"), spaceToken("radius-lg", 8, "radius")];
+    const ranked = rankTokens({ kind: "length", px: 6 }, set, { category: "radius" });
+    expect(ranked.map((r) => r.token.name)).toEqual(["radius-md", "radius-lg"]);
+  });
+
+  it("unknown이거나 후보가 없으면 빈 배열이다", () => {
+    expect(rankTokens({ kind: "unknown" }, colors)).toEqual([]);
+    expect(rankTokens(norm("#3B82F6"), [])).toEqual([]);
+  });
+
+  it("matchToken은 rankTokens의 첫 항목이다", () => {
+    expect(matchToken(norm("#EE4343"), colors)).toEqual(rankTokens(norm("#EE4343"), colors, { limit: 1 })[0]);
   });
 });
