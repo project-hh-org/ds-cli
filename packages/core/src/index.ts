@@ -15,6 +15,7 @@ export { normalizeLength } from "./normalize/length.js";
 export { parseTsx, traverse } from "./parse/tsx.js";
 export type { Index, IndexOptions } from "./index/indexer.js";
 export { indexRepo } from "./index/indexer.js";
+export type { ModuleContext } from "./index/component-usage.js";
 export { extractComponentUsage } from "./index/component-usage.js";
 export type { TsPaths } from "./index/specifier.js";
 export {

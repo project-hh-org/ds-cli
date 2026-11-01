@@ -12,6 +12,11 @@ export function normalizeSpecifier(spec: string): string {
 /** 경로 형태(상대, 루트 절대, `@/`·`~/` 별칭)의 specifier인지. */
 const PATH_LIKE = /^(?:\.|\/|[@~]\/)/;
 
+/** 패키지 모양(bare)의 specifier인지: `.`, `/`, `@/`, `~/`로 시작하지 않는다. */
+export function isBareSpecifier(spec: string): boolean {
+  return !PATH_LIKE.test(spec);
+}
+
 /**
  * 패키지 specifier에서 서브패스를 뗀 패키지명. scoped는 앞 두 세그먼트, bare는 첫 세그먼트.
  * 경로 형태(`.`, `/`, `@/`, `~/`로 시작)는 그대로 둔다.
@@ -23,9 +28,13 @@ export function normalizePackageSpecifier(spec: string): string {
   return parts[0] ?? spec;
 }
 
-/** 해석한 경로에서 확장자와 끝의 `/index`를 뗀다. 상대 import와 paths 해석이 같은 모양이 되게 한다. */
+/**
+ * 해석한 경로에서 확장자, 끝의 `/`, 끝의 `/index`를 뗀다. 상대 import와 paths 해석이 같은 모양이 되게 한다.
+ * root의 index(`.`, `./`, `index`, 빈 경로)는 모두 `"index"`로 맞춘다 — 빈 문자열은 "import 없음"과 겹친다.
+ */
 export function stripModulePath(p: string): string {
-  return p.replace(SOURCE_EXTENSION, "").replace(/\/index$/, "");
+  const stripped = p.replace(SOURCE_EXTENSION, "").replace(/\/+$/, "").replace(/\/index$/, "");
+  return stripped === "" || stripped === "." ? "index" : stripped;
 }
 
 export interface TsPaths {
@@ -88,7 +97,7 @@ function stripTrailingCommas(text: string): string {
 
 /** JSONC(주석·끝 쉼표 허용) 문자열을 파싱한다. */
 function parseJsonc(text: string): unknown {
-  return JSON.parse(stripTrailingCommas(stripComments(text.replace(/^﻿/, ""))));
+  return JSON.parse(stripTrailingCommas(stripComments(text.replace(/^\uFEFF/, ""))));
 }
 
 type JsonObject = Record<string, unknown>;
@@ -156,7 +165,7 @@ function toRootRelative(root: string, abs: string): string {
  * `<root>/tsconfig.json`(없으면 `jsconfig.json`)의 baseUrl·paths를 읽는다.
  * JSONC를 허용하고 `extends`는 한 단계만 따라간다(읽지 못하면 무시). 자식의 값이 부모를 덮는다.
  * baseUrl이 없으면 paths를 선언한 파일의 디렉터리를 기준으로 한다.
- * paths가 없으면 null. 어떤 입력에도 예외를 던지지 않는다.
+ * baseUrl만 있으면(CRA·Next baseUrl 전용) paths는 빈 객체다. 둘 다 없으면 null. 어떤 입력에도 예외를 던지지 않는다.
  */
 export async function readTsconfigPaths(root: string): Promise<TsPaths | null> {
   try {
@@ -183,11 +192,15 @@ export async function readTsconfigPaths(root: string): Promise<TsPaths | null> {
     }
     collect(collected, config, dir);
 
-    const paths = collected.paths;
-    if (paths === undefined || Object.keys(paths.value).length === 0) return null;
-    const baseAbs =
-      collected.baseUrl !== undefined ? path.resolve(collected.baseUrl.dir, collected.baseUrl.value) : paths.dir;
-    return { baseUrl: toRootRelative(root, baseAbs), paths: paths.value };
+    const paths =
+      collected.paths !== undefined && Object.keys(collected.paths.value).length > 0 ? collected.paths : undefined;
+    const baseUrl = collected.baseUrl;
+    if (baseUrl !== undefined) {
+      const baseAbs = path.resolve(baseUrl.dir, baseUrl.value);
+      return { baseUrl: toRootRelative(root, baseAbs), paths: paths?.value ?? {} };
+    }
+    if (paths === undefined) return null;
+    return { baseUrl: toRootRelative(root, paths.dir), paths: paths.value };
   } catch {
     return null;
   }
@@ -219,6 +232,7 @@ export function resolveWithPaths(spec: string, importer: string, tsPaths: TsPath
       break;
     }
   }
-  if (target === undefined) return null;
+  // 절대 경로 대상은 root 상대 키로 만들 수 없다(join하면 root 아래로 잘못 붙는다).
+  if (target === undefined || path.posix.isAbsolute(target) || /^[A-Za-z]:[\\/]/.test(target)) return null;
   return stripModulePath(path.posix.join(tsPaths.baseUrl === "" ? "." : tsPaths.baseUrl, target));
 }

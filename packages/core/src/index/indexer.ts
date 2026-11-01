@@ -6,7 +6,7 @@ import { JS_FILES } from "@dsmith/extractor-api";
 import type { ExtractContext, Extractor, StyleUsage } from "@dsmith/extractor-api";
 import type { ComponentUsage } from "../model/component-usage.js";
 import { parseTsx } from "../parse/tsx.js";
-import { extractComponentUsage } from "./component-usage.js";
+import { extractComponentUsage, type ModuleContext } from "./component-usage.js";
 import { readTsconfigPaths } from "./specifier.js";
 
 export interface Index {
@@ -41,6 +41,38 @@ function messageOf(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
+/** baseUrl 디렉터리 바로 아래 항목 이름: 디렉터리와, 확장자를 뗀 JS/TS 소스 파일. 읽지 못하면 빈 집합. */
+async function baseUrlEntriesOf(dir: string): Promise<Set<string>> {
+  try {
+    const entries = await fs.readdir(dir, { withFileTypes: true });
+    const names = new Set<string>();
+    for (const e of entries) {
+      if (e.isDirectory()) names.add(e.name);
+      else if (e.isFile() && JS_FILE.test(e.name)) names.add(e.name.replace(JS_FILE, ""));
+    }
+    return names;
+  } catch {
+    return new Set();
+  }
+}
+
+/** root package.json의 dependencies·devDependencies·peerDependencies 이름. 없거나 깨졌으면 빈 집합. */
+async function dependencyNamesOf(root: string): Promise<Set<string>> {
+  try {
+    const pkg = JSON.parse(await fs.readFile(path.join(root, "package.json"), "utf-8")) as Record<string, unknown>;
+    const names = new Set<string>();
+    for (const field of ["dependencies", "devDependencies", "peerDependencies"]) {
+      const deps = pkg[field];
+      if (typeof deps === "object" && deps !== null && !Array.isArray(deps)) {
+        for (const name of Object.keys(deps)) names.add(name);
+      }
+    }
+    return names;
+  } catch {
+    return new Set();
+  }
+}
+
 export async function indexRepo(
   root: string,
   extractors: Extractor[],
@@ -67,8 +99,12 @@ export async function indexRepo(
     }
   }
 
-  // 컴포넌트 import 해석에 쓸 tsconfig paths는 레포마다 한 번만 읽는다.
+  // 컴포넌트 import 해석에 쓸 tsconfig paths·baseUrl 항목·의존성은 레포마다 한 번만 읽는다.
   const tsPaths = await readTsconfigPaths(root);
+  const moduleContext: ModuleContext = {
+    baseUrlEntries: tsPaths === null ? new Set() : await baseUrlEntriesOf(path.join(root, tsPaths.baseUrl)),
+    dependencies: await dependencyNamesOf(root),
+  };
 
   const matchers = extractors.map((e) => ({ extractor: e, matches: picomatch(e.files, { dot: false }) }));
 
@@ -106,7 +142,9 @@ export async function indexRepo(
         }
       }
       stage = "components";
-      const components = JS_FILE.test(file) ? extractComponentUsage(file, parseTsx(code, file), tsPaths) : [];
+      const components = JS_FILE.test(file)
+        ? extractComponentUsage(file, parseTsx(code, file), tsPaths, moduleContext)
+        : [];
       index.styles.push(...styles);
       index.components.push(...components);
       index.files.scanned += 1;

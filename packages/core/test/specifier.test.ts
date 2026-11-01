@@ -101,8 +101,18 @@ describe("readTsconfigPaths", () => {
     expect(await readTsconfigPaths(tmp)).toBeNull();
   });
 
-  it("paths가 없으면 null", async () => {
+  it("baseUrl만 있고 paths가 없으면 빈 paths와 baseUrl을 돌려준다(CRA·Next baseUrl 전용)", async () => {
     put("tsconfig.json", `{ "compilerOptions": { "baseUrl": "." } }`);
+    expect(await readTsconfigPaths(tmp)).toEqual({ baseUrl: "", paths: {} });
+  });
+
+  it("baseUrl이 하위 디렉터리이고 paths가 없어도 root 상대 baseUrl을 돌려준다", async () => {
+    put("jsconfig.json", `{ "compilerOptions": { "baseUrl": "src" } }`);
+    expect(await readTsconfigPaths(tmp)).toEqual({ baseUrl: "src", paths: {} });
+  });
+
+  it("baseUrl도 paths도 없으면 null", async () => {
+    put("tsconfig.json", `{ "compilerOptions": { "strict": true } }`);
     expect(await readTsconfigPaths(tmp)).toBeNull();
   });
 
@@ -159,5 +169,19 @@ describe("resolveWithPaths", () => {
 
   it("대상의 /index 파일은 디렉터리로 줄인다", () => {
     expect(resolveWithPaths("@/ui/index", "a.tsx", tp)).toBe("src/ui");
+  });
+
+  it("대상이 디렉터리로 끝나면 끝의 /를 뗀다", () => {
+    expect(resolveWithPaths("@/", "a.tsx", tp)).toBe("src");
+  });
+
+  it("절대 경로 대상은 root 아래로 붙이지 않고 일치하지 않은 것으로 본다", () => {
+    const abs = { baseUrl: "", paths: { "abs/*": ["/abs/*"], "~abs": ["/opt/ui/index.ts"] } };
+    expect(resolveWithPaths("abs/x", "a.tsx", abs)).toBeNull();
+    expect(resolveWithPaths("~abs", "a.tsx", abs)).toBeNull();
+  });
+
+  it("paths가 비어 있으면(baseUrl 전용) null", () => {
+    expect(resolveWithPaths("components/ui/button", "a.tsx", { baseUrl: "src", paths: {} })).toBeNull();
   });
 });

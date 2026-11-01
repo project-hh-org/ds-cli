@@ -99,7 +99,7 @@ export function parseCssDeclarations(text: string, offset?: number): CssDecl[];
 ## 8. cli 변경
 
 - 레지스트리에 4종 추가; `detect(root, index, { available: Object.values(registry).map(f => f().meta) })`.
-- 리포트: "감지됐지만 분석하지 않은 방식"은 그대로(이제 css-modules만 남음), `지역 재정의 컴포넌트` 섹션 추가(`localDefinitions` 상위 10).
+- 리포트: "감지됐지만 분석하지 않은 방식"은 그대로(이제 css-modules만 남음), `지역 재정의 컴포넌트` 섹션 추가(`localDefinitions` 상위 20).
 - `audit --json`의 `AuditResult`에 `localDefinitions: { name, files: number }[]` 추가.
 
 ## 9. 증명

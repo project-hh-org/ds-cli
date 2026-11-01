@@ -67,6 +67,51 @@ describe("indexRepo", () => {
     ]);
   });
 
+  it("baseUrl 전용 tsconfig: baseUrl 아래 최상위 항목으로 시작하는 bare import를 경로 module로 푼다", async () => {
+    put("tsconfig.json", `{ "compilerOptions": { "baseUrl": "src" } }`);
+    put("src/components/ui/button.tsx", `export const Button = () => <button />;`);
+    put("src/components/a/Header.tsx", `export const Header = () => <header />;`);
+    put("src/components/b/Header.tsx", `export const Header = () => <header />;`);
+    put(
+      "src/pages/home.tsx",
+      [
+        `import { Button } from "components/ui/button";`,
+        `import { Header } from "components/a/Header";`,
+        `import { Header as H2 } from "components/b/Header";`,
+        `import { Box } from "@mui/material/Box";`,
+        `export const P = () => <><Button /><Header /><H2 /><Box /></>;`,
+      ].join("\n"),
+    );
+    const index = await indexRepo(tmp, [inlineStyleExtractor]);
+    expect(index.components.map((c) => c.module)).toEqual([
+      "src/components/ui/button",
+      "src/components/a/Header",
+      "src/components/b/Header",
+      "@mui/material",
+    ]);
+  });
+
+  it("모노레포 앱: 의존성으로 선언한 패키지의 paths 별칭은 패키지명 module로 합친다", async () => {
+    put("package.json", JSON.stringify({ name: "web", dependencies: { "@acme/ui": "workspace:*" } }));
+    put(
+      "tsconfig.json",
+      JSON.stringify({
+        compilerOptions: {
+          paths: { "@acme/ui": ["./ui-src/index.ts"], "@acme/ui/*": ["./ui-src/*"], "@/*": ["./src/*"] },
+        },
+      }),
+    );
+    put("src/a.tsx", `import { Button } from "@acme/ui";\nexport const A = () => <Button />;`);
+    put("src/b.tsx", `import { Button } from "@acme/ui/button";\nexport const B = () => <Button />;`);
+    put("src/c.tsx", `import { Nav } from "@/nav";\nexport const C = () => <Nav />;`);
+    const index = await indexRepo(tmp, [inlineStyleExtractor]);
+    expect(index.components.map((c) => [c.name, c.module])).toEqual([
+      ["Button", "@acme/ui"],
+      ["Button", "@acme/ui"],
+      ["Nav", "src/nav"],
+    ]);
+  });
+
   it("extractor가 던진 usage 객체를 복제하지 않고 그대로 넘긴다(write용 WeakMap 키 보존)", async () => {
     put("a.tsx", `const a = <p />;`);
     const original = {

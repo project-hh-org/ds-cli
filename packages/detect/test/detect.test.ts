@@ -2,7 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import type { ComponentUsage, Index, StyleUsage } from "@dsmith/core";
+import { indexRepo, type ComponentUsage, type Index, type StyleUsage } from "@dsmith/core";
 import type { ExtractorMeta } from "@dsmith/extractor-api";
 import { decideState, detect, readDetect, writeDetect } from "../src/index.js";
 import { sharesFromIndex, sharesFromSources } from "../src/detect-state.js";
@@ -700,6 +700,48 @@ describe("index와 함께 감지", () => {
       [comp("Button", "ui/button", "src/components/ui/button"), comp("Header", null, "")],
     );
     expect(sharesFromIndex(index, ds).dsImportShare).toBe(0.5);
+  });
+
+  it("sharesFromIndex: module이 DS가 아니어도 importedFrom이 DS를 가리키면 DS import로 센다(안전망)", () => {
+    const local = { kind: "local", dir: "src/components/ui", tokenFiles: [] } as const;
+    // baseUrl 해석이 없던 index.json: module은 패키지 규칙으로 "components"가 됐다.
+    const index = indexOf([], [comp("Button", "components/ui/button", "components"), comp("Header", "./Header")]);
+    expect(sharesFromIndex(index, local).dsImportShare).toBe(0.5);
+    const npm = { kind: "npm", packageName: "@acme/ui", packageNames: ["@acme/ui"], tokenFiles: [] } as const;
+    const mono = indexOf([], [comp("Button", "@acme/ui", "../../packages/ui/src"), comp("Header", null)]);
+    expect(sharesFromIndex(mono, npm).dsImportShare).toBe(0.5);
+  });
+
+  it("baseUrl 전용 레포(src/components/ui): bare import가 로컬 DS import로 집계된다", async () => {
+    repo({
+      "package.json": pkg({ react: "^18" }),
+      "tsconfig.json": `{ "compilerOptions": { "baseUrl": "src" } }`,
+      "src/components/ui/button.tsx": "export const Button = () => <button />;",
+      "src/pages/home.tsx": "import { Button } from 'components/ui/button';\nexport const H = () => <Button />;",
+    });
+    const index = await indexRepo(tmp, []);
+    expect(index.components.map((c) => c.module)).toEqual(["src/components/ui/button"]);
+    const r = await detect(tmp, index);
+    expect(r.ds).toMatchObject({ kind: "local", dir: "src/components/ui" });
+    expect(sharesFromIndex(index, r.ds).dsImportShare).toBe(1);
+  });
+
+  it("모노레포 앱(paths가 ../../packages/ui를 가리킴): 루트·서브패스 import 모두 npm DS import로 집계된다", async () => {
+    repo({
+      "package.json": pkg({ "@acme/ui": "workspace:*" }),
+      "tsconfig.json": JSON.stringify({
+        compilerOptions: {
+          paths: { "@acme/ui": ["../../packages/ui/src/index.ts"], "@acme/ui/*": ["../../packages/ui/src/*"] },
+        },
+      }),
+      "src/A.tsx": "import { Button } from '@acme/ui';\nexport const A = () => <Button />;",
+      "src/B.tsx": "import { Button } from '@acme/ui/button';\nexport const B = () => <Button />;",
+    });
+    const index = await indexRepo(tmp, []);
+    expect(index.components.map((c) => c.module)).toEqual(["@acme/ui", "@acme/ui"]);
+    const r = await detect(tmp, index);
+    expect(r.ds).toMatchObject({ kind: "npm", packageName: "@acme/ui" });
+    expect(sharesFromIndex(index, r.ds).dsImportShare).toBe(1);
   });
 
   it("sharesFromIndex: DS 없음이면 dsImportShare 0", () => {
