@@ -205,11 +205,11 @@ exports[`fixtures/mui-app > mui-sx가 켜지고, @mui/material이 대표 DS이�
 | 컴포넌트 | 출처 | 사용 수 |
 | --- | --- | --- |
 | Button | @mui/material | 2 |
-| AddIcon | @mui/icons-material/Add | 1 |
+| AddIcon | @mui/icons-material | 1 |
 | Box | @mui/material | 1 |
 | Members | src/pages/Members | 1 |
 | Plans | src/pages/Plans | 1 |
-| Stack | @mui/material/Stack | 1 |
+| Stack | @mui/material | 1 |
 | Typography | @mui/material | 1 |
 
 ## 중복 컴포넌트

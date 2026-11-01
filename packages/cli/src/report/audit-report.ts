@@ -123,7 +123,8 @@ export function renderAuditReport(r: AuditResult): string {
     lines.push(
       ...table(
         ["컴포넌트", "출처", "사용 수"],
-        shown.map((c) => [c.name, c.importedFrom ?? "(출처 없음)", String(c.count)]),
+        // 출처는 묶음 기준인 정규화된 module이다. 그룹의 importedFrom은 처음 본 표기라 서브패스·별칭이 섞여 있다.
+        shown.map((c) => [c.name, c.module !== "" ? c.module : (c.importedFrom ?? "(출처 없음)"), String(c.count)]),
       ),
       ...more(shown.length, r.components.length),
     );

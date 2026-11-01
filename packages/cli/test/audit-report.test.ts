@@ -95,6 +95,22 @@ describe("renderAuditReport", () => {
     expect(md).toContain("Button");
   });
 
+  it("컴포넌트 사용량의 출처는 묶음 기준인 정규화된 module이다(서브패스·별칭 importedFrom이 아니라)", () => {
+    const base = fixture();
+    const out = renderAuditReport({
+      ...base,
+      components: [
+        { name: "Stack", importedFrom: "@mui/material/Stack", module: "@mui/material", count: 5 },
+        { name: "Card", importedFrom: "@src/components/Card", module: "src/components/Card", count: 3 },
+        { name: "Header", importedFrom: null, module: "", count: 1 },
+      ],
+    });
+    expect(out).toContain("| Stack | @mui/material | 5 |");
+    expect(out).toContain("| Card | src/components/Card | 3 |");
+    expect(out).toContain("| Header | (출처 없음) | 1 |");
+    expect(out).not.toContain("@mui/material/Stack");
+  });
+
   it("중복 컴포넌트 다음에 지역 재정의 컴포넌트 표와 설명을 그린다", () => {
     const section = md.slice(md.indexOf("## 지역 재정의 컴포넌트"), md.indexOf("## 파일별 하드코딩 상위"));
     expect(md.indexOf("## 중복 컴포넌트")).toBeLessThan(md.indexOf("## 지역 재정의 컴포넌트"));

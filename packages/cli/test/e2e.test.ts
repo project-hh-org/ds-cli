@@ -148,8 +148,16 @@ describe("fixtures/mui-app", () => {
     expect(result.duplicates).toEqual([]);
 
     const index = readJson(root, "index.json");
+    // 서브패스 병합: 루트 import와 서브패스 import의 Button이 같은 module로 정규화된다.
+    const buttons = index.components.filter((c: { name: string }) => c.name === "Button");
+    expect(buttons.length).toBeGreaterThanOrEqual(2);
+    expect(new Set(buttons.map((c: { importedFrom: string }) => c.importedFrom))).toEqual(
+      new Set(["@mui/material", "@mui/material/Button"]),
+    );
+    expect(new Set(buttons.map((c: { module: string }) => c.module))).toEqual(new Set(["@mui/material"]));
+
     const tokens = index.styles.filter((u: { source: string }) => u.source === "token");
-    expect(tokens.length).toBeGreaterThanOrEqual(2);
+    expect(tokens.length).toBe(4);
     // paddingTop(장문 spacing 키)도 token으로 센다.
     expect(tokens).toContainEqual(expect.objectContaining({ file: "src/pages/Plans.tsx", property: "padding", extractor: "mui-sx" }));
     expect(result.hardcoded.colors.flatMap((c) => c.members.map((m) => m.hex))).toContain("#111111");

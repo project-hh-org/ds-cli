@@ -33,7 +33,10 @@ function byFileOf(index: Index): AuditResult["hardcoded"]["byFile"] {
 
 const LOCAL_DEFINITION_LIMIT = 20;
 
-/** name+module로 묶는다. 서브패스·별칭이 달라도 같은 모듈이면 한 그룹이고, importedFrom은 처음 본 값을 표시한다. */
+/**
+ * name+module로 묶는다. 서브패스·별칭이 달라도 같은 모듈이면 한 그룹이다.
+ * importedFrom은 처음 본 값을 남기지만(결과 JSON 호환) 리포트의 출처 열은 module을 표시한다.
+ */
 function componentsOf(usages: ComponentUsage[]): AuditResult["components"] {
   const groups = new Map<string, AuditResult["components"][number]>();
   for (const c of usages) {
