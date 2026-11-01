@@ -1,7 +1,7 @@
 {
   "name": "dsmith",
   "version": "0.0.0",
-  "description": "Design-system lifecycle CLI: detect your styling setup and audit hardcoded style values",
+  "description": "Design-system lifecycle CLI: detect, audit, install AI tool commands and an MCP server (install, mcp), record component decisions (decide)",
   "keywords": ["design-system", "design-tokens", "cli", "audit", "dsmith"],
   "license": "MIT",
   "author": "Dahee Hwang <dahee@project-hh.com>",

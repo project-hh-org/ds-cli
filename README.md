@@ -98,7 +98,7 @@ npx dsmith install       # 쓰는 AI 도구를 감지해 설치. 그 뒤 AI 도�
 | `/ds-check` | 파일의 하드코딩 값을 찾아 토큰으로 바꿀 수정안 제안 |
 | `/ds-init` · `/ds-ai` · `/ds-migrate` | 아직 제공되지 않음 — 현재 가능한 단계를 안내 |
 
-MCP 서버 `dsmith`(`npx -y dsmith@0.2 mcp`)가 AI 도구에 내는 도구 6개:
+MCP 서버 `dsmith`(`npx -y dsmith@<설치된 0.x 마이너> mcp` — 0.x는 마이너까지, 1.x 이상은 메이저까지 고정)가 AI 도구에 내는 도구 6개:
 
 - `resolve_token` — 하드코딩 값에 가장 가까운 디자인 토큰과 신뢰도
 - `lint_snippet` — 코드 조각의 하드코딩 스타일 값을 찾아 토큰 제안
@@ -107,24 +107,27 @@ MCP 서버 `dsmith`(`npx -y dsmith@0.2 mcp`)가 AI 도구에 내는 도구 6개:
 - `explain_decision` — 중복·지역 재정의 항목의 결정 카드(옵션·차이·영향·추천)
 - `list_decisions` — 결정할 항목과 이미 결정한 항목
 
-서버는 `.dsmith/` 인덱스를 읽고, 없으면 시작할 때 `audit`을 1회 실행한다. 도구 응답 하나는 추정 토큰 약 1,500 이하로 제한된다(목록은 `nextCursor`로 이어 받고, 큰 객체는 줄이고 `omitted`에 잘린 개수를 적는다). 바꾸려면 MCP 등록의 `args` 끝에 `--budget <tokens>`를 더한다(`dsmith mcp --budget 3000`). 결정은 사람이 고른 뒤 `dsmith decide --item <이름> --choose <id>`로만 기록한다 — MCP에는 쓰기 도구가 없다.
+서버는 `.dsmith/` 인덱스를 읽고, 없으면 첫 도구 호출 때 인덱스를 만든다(`audit`과 같은 분석). 서버를 띄운 폴더에서 위로 올라가며 `.git` 또는 `.dsmith/detect.json`·`index.json`이 있는 가장 가까운 폴더를 레포로 본다(`--global`이 홈에 남기는 `~/.dsmith/install.json`은 근거가 아니다). 도구 응답 하나는 추정 토큰 약 1,500 이하로 제한된다(목록은 `nextCursor`로 이어 받고, 큰 객체는 줄이고 `omitted`에 잘린 개수를 적는다). 바꾸려면 MCP 등록의 `args` 끝에 `--budget <tokens>`를 더한다(`dsmith mcp --budget 3000`). 결정은 사람이 고른 뒤 `dsmith decide --item <이름> --choose <id>`로만 기록한다 — MCP에는 쓰기 도구가 없다.
 
 쓰기 규칙:
 
 - `--dry-run`: 아무것도 쓰지 않고(매니페스트 포함) 쓸 파일과 diff만 보인다.
 - 사용자가 고친 파일·블록은 덮어쓰지 않고 건너뛴다. 덮어쓰려면 `--force`. 해시는 `.dsmith/install.json`(`--global`이면 `~/.dsmith/install.json`)에 기록된다.
+- 등록된 `.mcp.json`의 dsmith 항목을 직접 고치면(예: `--budget` 추가) 그 항목은 사용자 소유가 되어 이후 `install`이 건너뛴다. 건너뛴 설정 파일에는 직접 넣을 JSON/TOML이 "할 일"로 출력된다.
 - 두 번째 실행은 아무것도 바꾸지 않는다. `AGENTS.md`·`.mcp.json`·`config.toml` 등 기존 파일은 dsmith 블록/키만 건드린다. Codex `config.toml`에 dsmith가 관리하지 않는 `[mcp_servers.dsmith]`가 이미 있으면 `--force`로도 쓰지 않는다.
 
 ### 로컬 개발에서 MCP 붙이기
 
-배포 전(또는 이 레포를 개발하는 동안)에는 `npx dsmith`로 받을 패키지가 없다. 빌드한 바이너리를 MCP 실행 명령으로 직접 준다. `package.json` 버전이 `0.0.0`인 로컬 빌드에서는 `--mcp-command`가 필수다.
+배포 전(또는 이 레포를 개발하는 동안)에는 `npx dsmith`로 받을 패키지가 없다. 빌드한 바이너리를 `--mcp-command`로 주면 **MCP 서버 실행 명령과 슬래시 명령·`AGENTS.md` 안의 CLI 호출이 모두 그 빌드**를 쓴다. `package.json` 버전이 `0.0.0`인 로컬 빌드에서는 `--mcp-command`가 필수이고, 빠지면 이 빌드의 `dist/bin.js` 경로가 든 실행 예가 오류로 나온다.
 
 ```
 pnpm install && pnpm -r build
-node packages/cli/dist/bin.js install --root <repo> --mcp-command "node <abs>/packages/cli/dist/bin.js"
+node <abs>/packages/cli/dist/bin.js install --root <repo> --mcp-command "node <abs>/packages/cli/dist/bin.js"
 ```
 
-값은 공백으로 나뉘어 `command`와 `args`가 되고 끝에 `mcp`가 붙는다(따옴표는 지원하지 않아 공백이 든 경로는 쓸 수 없다). 이 경로는 이 컴퓨터에만 있으므로 레포 모드에서는 `.mcp.json` 같은 산출 파일을 커밋하지 말라는 경고가 나온다.
+그러면 `.mcp.json`은 `{ "command": "node", "args": ["<abs>/packages/cli/dist/bin.js", "mcp"] }`를 가리키고, `/ds-audit` 등은 `node <abs>/packages/cli/dist/bin.js audit --json`을 실행하라고 적힌다. 값은 공백으로 나뉘어 `command`와 `args`가 되고 끝에 `mcp`가 붙는다(따옴표는 지원하지 않아 공백이 든 경로는 쓸 수 없다). 이 경로는 이 컴퓨터에만 있으므로 레포 모드에서는 산출 파일(`.mcp.json`, `.claude/skills/`, `AGENTS.md` 등)을 커밋하지 말라는 경고가 나온다.
+
+대안: `npm link`(또는 `pnpm link --global`)로 `packages/cli`를 연결해 `dsmith` 명령을 PATH에 올리고 `--mcp-command dsmith`를 준다 — `.mcp.json`은 `dsmith mcp`, 명령 본문은 `dsmith audit --json`이 된다. 경로가 파일에 들어가지 않는 대신 연결한 사람의 PATH에만 있다.
 
 ## 구조
 
