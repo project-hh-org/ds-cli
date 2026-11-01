@@ -17,6 +17,7 @@
     { "path": "packages/migrate" },
     { "path": "packages/catalog" },
     { "path": "packages/guard" },
-    { "path": "packages/cli" }
+    { "path": "packages/cli" },
+    { "path": "benchmarks" }
   ]
 }

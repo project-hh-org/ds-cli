@@ -8,9 +8,9 @@
     "node": ">=20"
   },
   "scripts": {
-    "build": "pnpm -r --filter './packages/*' build",
-    "test": "pnpm -r --filter './packages/*' test",
-    "typecheck": "pnpm -r --filter './packages/*' typecheck",
+    "build": "pnpm -r --filter './packages/*' --filter ./benchmarks build",
+    "test": "pnpm -r --filter './packages/*' --filter ./benchmarks test",
+    "typecheck": "pnpm -r --filter './packages/*' --filter ./benchmarks typecheck",
     "lint": "pnpm -r --filter './packages/*' lint",
     "changeset": "changeset",
     "version": "changeset version && pnpm install --lockfile-only",

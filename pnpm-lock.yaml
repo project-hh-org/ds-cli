@@ -24,6 +24,52 @@ importers:
         specifier: ^3.0.0
         version: 3.2.7(@types/node@22.20.5)(yaml@2.9.1)
 
+  benchmarks:
+    dependencies:
+      '@dsmith-dev/core':
+        specifier: workspace:*
+        version: link:../packages/core
+      '@dsmith-dev/detect':
+        specifier: workspace:*
+        version: link:../packages/detect
+      '@dsmith-dev/extractor-api':
+        specifier: workspace:*
+        version: link:../packages/extractor-api
+      '@dsmith-dev/extractor-css':
+        specifier: workspace:*
+        version: link:../packages/extractor-css
+      '@dsmith-dev/extractor-emotion':
+        specifier: workspace:*
+        version: link:../packages/extractor-emotion
+      '@dsmith-dev/extractor-inline-style':
+        specifier: workspace:*
+        version: link:../packages/extractor-inline-style
+      '@dsmith-dev/extractor-mui-sx':
+        specifier: workspace:*
+        version: link:../packages/extractor-mui-sx
+      '@dsmith-dev/extractor-styled':
+        specifier: workspace:*
+        version: link:../packages/extractor-styled
+      '@dsmith-dev/extractor-tailwind':
+        specifier: workspace:*
+        version: link:../packages/extractor-tailwind
+      '@dsmith-dev/guard':
+        specifier: workspace:*
+        version: link:../packages/guard
+      picomatch:
+        specifier: ^4.0.7
+        version: 4.0.7
+    devDependencies:
+      '@types/picomatch':
+        specifier: ^4.0.3
+        version: 4.0.3
+      dsmith:
+        specifier: workspace:*
+        version: link:../packages/cli
+      vitest:
+        specifier: ^3.0.0
+        version: 3.2.7(@types/node@22.20.5)(yaml@2.9.1)
+
   packages/agent-skill:
     dependencies:
       '@dsmith-dev/core':

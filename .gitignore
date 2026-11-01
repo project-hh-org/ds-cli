@@ -11,3 +11,6 @@ fixtures/**/.dsmith/
 
 # 데모 대상 프로젝트 안에서 생성되는 도구 작업 파일
 examples/**/.dsmith/
+
+# 벤치마크 에이전트 실행 기록(stream-json) — 산출물(outputs/)만 커밋한다
+benchmarks/results/**/transcripts/

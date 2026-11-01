@@ -1,0 +1,34 @@
+{
+  "name": "dsmith-benchmarks",
+  "version": "0.0.0",
+  "private": true,
+  "description": "dsmith 벤치마크 하네스 — 같은 UI 생성 프롬프트를 baseline/dsmith 조건으로 돌려 같은 규칙 엔진으로 채점 (배포 안 함)",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@dsmith-dev/core": "workspace:*",
+    "@dsmith-dev/detect": "workspace:*",
+    "@dsmith-dev/extractor-api": "workspace:*",
+    "@dsmith-dev/extractor-css": "workspace:*",
+    "@dsmith-dev/extractor-emotion": "workspace:*",
+    "@dsmith-dev/extractor-inline-style": "workspace:*",
+    "@dsmith-dev/extractor-mui-sx": "workspace:*",
+    "@dsmith-dev/extractor-styled": "workspace:*",
+    "@dsmith-dev/extractor-tailwind": "workspace:*",
+    "@dsmith-dev/guard": "workspace:*",
+    "picomatch": "^4.0.7"
+  },
+  "devDependencies": {
+    "@types/picomatch": "^4.0.3",
+    "dsmith": "workspace:*",
+    "vitest": "^3.0.0"
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "bench": "node dist/run.js"
+  }
+}
