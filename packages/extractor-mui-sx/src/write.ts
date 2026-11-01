@@ -1,4 +1,5 @@
 import type { StyleUsage, WritePatch } from "@dsmith/extractor-api";
+import { isRatedUsage } from "@dsmith/core";
 
 /** 치환할 소스 구간. 문자열 값은 따옴표 안 하위 구간(`quote: false`), 숫자 값은 노드 전체(`quote: true`). */
 export interface PatchTarget {
@@ -18,10 +19,10 @@ export function registerPatchTarget(usage: StyleUsage, target: PatchTarget): voi
 /**
  * 기록해 둔 구간을 치환하는 패치를 만든다. 문자열 값은 따옴표 안 구간에 `tokenRef` 그대로,
  * 숫자 값(`fontSize: 13`)은 노드 전체를 문자열 CSS 값(`"var(--fs)"`)으로 바꾼다.
- * hardcoded가 아니거나(테마 스케일 token·dynamic) 이 추출기가 만들지 않은 usage는 null.
+ * hardcoded가 아니거나(테마 스케일 token·dynamic) 점수 대상이 아니거나(`isRatedUsage` false) 이 추출기가 만들지 않은 usage는 null.
  */
 export function write(usage: StyleUsage, tokenRef: string): WritePatch | null {
-  if (usage.source !== "hardcoded") return null;
+  if (usage.source !== "hardcoded" || !isRatedUsage(usage)) return null;
   const target = patchTargets.get(usage);
   if (target === undefined) return null;
   const replacement = target.quote ? JSON.stringify(tokenRef) : tokenRef;

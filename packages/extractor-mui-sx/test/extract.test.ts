@@ -133,10 +133,11 @@ describe("muiSxExtractor extract", () => {
     ]);
   });
 
-  it("비율 크기도 write 패치는 유지된다", () => {
+  it("비율 크기(정규화 안 된 hardcoded)는 점수 대상이 아니라 write가 null", () => {
     const code = JSX(`{ width: 0.5 }`);
     const [u] = muiSxExtractor.extract({ root: "/", file: "a.tsx", code });
-    expect(muiSxExtractor.write(u!, "var(--w)")).not.toBeNull();
+    expect(u).toMatchObject({ property: "width", source: "hardcoded", normalized: { kind: "unknown" } });
+    expect(muiSxExtractor.write(u!, "var(--w)")).toBeNull();
   });
 
   it("간격 키라도 문자열 값은 hardcoded", () => {

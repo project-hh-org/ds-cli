@@ -99,3 +99,15 @@ describe("tailwindExtractor.write", () => {
     expect(tailwindExtractor.write(foreign, "x")).toBeNull();
   });
 });
+
+describe("tailwindExtractor.write: 점수 대상이 아닌 usage", () => {
+  it("other 속성(text-[foo])과 정규화 안 된 값(w-[calc(...)])은 null", () => {
+    const code = `const x = <div className="text-[foo] w-[calc(100%-8px)] p-[13px]" />;`;
+    const usages = extractAll(code);
+    expect(usages.map((u) => [u.raw, tailwindExtractor.write(u, "x") === null])).toEqual([
+      ["text-[foo]", true],
+      ["w-[calc(100%-8px)]", true],
+      ["p-[13px]", false],
+    ]);
+  });
+});

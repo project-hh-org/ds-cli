@@ -58,3 +58,18 @@ describe("inlineStyleExtractor.write", () => {
     expect(inlineStyleExtractor.write(foreign, "var(--c)")).toBeNull();
   });
 });
+
+describe("inlineStyleExtractor.write: 점수 대상이 아닌 usage", () => {
+  it("other 속성(content·fontFamily·boxShadow·opacity 숫자)과 정규화 안 된 값은 null", () => {
+    const code = `const x = <div style={{ content: "가😀", fontFamily: "Inter", boxShadow: "0 1px 2px #000", opacity: 0.5, width: "calc(100% - 8px)", padding: "13px 8px" }} />;`;
+    const usages = inlineStyleExtractor.extract({ root: "/", file: "w.tsx", code });
+    expect(usages.map((u) => [u.property, inlineStyleExtractor.write(u, "var(--x)") === null])).toEqual([
+      ["other", true],
+      ["other", true],
+      ["other", true],
+      ["other", true],
+      ["width", true],
+      ["padding", false],
+    ]);
+  });
+});

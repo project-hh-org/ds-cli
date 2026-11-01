@@ -33,3 +33,16 @@ describe("emotionExtractor.write", () => {
     expect(emotionExtractor.write(find(code, "theme.fg"), "var(--fg)")).toBeNull();
   });
 });
+
+describe("emotionExtractor.write: 점수 대상이 아닌 usage", () => {
+  it("css prop의 other 속성(content·boxShadow)과 정규화 안 된 값은 null", () => {
+    const code = `const a = <div css={{ content: "가😀", boxShadow: "0 1px 2px #000", height: "100dvh", color: "#fff" }} />;`;
+    const usages = emotionExtractor.extract({ root: "/", file: "e.tsx", code });
+    expect(usages.map((u) => [u.property, emotionExtractor.write(u, "var(--x)") === null])).toEqual([
+      ["other", true],
+      ["other", true],
+      ["height", true],
+      ["color", false],
+    ]);
+  });
+});

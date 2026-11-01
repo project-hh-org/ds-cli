@@ -62,3 +62,17 @@ describe("muiSxExtractor.write", () => {
     expect(muiSxExtractor.write(foreign, "x")).toBeNull();
   });
 });
+
+describe("muiSxExtractor.write: 점수 대상이 아닌 usage", () => {
+  it("other 속성과 정규화 안 된 값(비율 width 숫자 포함)은 null", () => {
+    const code = JSX(`{ content: "가😀", boxShadow: "0 1px 2px #000", width: 0.5, height: "100dvh", color: "#111" }`);
+    const usages = muiSxExtractor.extract({ root: "/", file: "a.tsx", code });
+    expect(usages.map((u) => [u.property, muiSxExtractor.write(u, "x") === null])).toEqual([
+      ["other", true],
+      ["other", true],
+      ["width", true],
+      ["height", true],
+      ["color", false],
+    ]);
+  });
+});

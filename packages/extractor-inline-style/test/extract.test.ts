@@ -182,11 +182,11 @@ describe("inlineStyleExtractor", () => {
     ]);
   });
 
-  it("비길이 숫자 리터럴도 치환 패치는 만든다", () => {
+  it("비길이 숫자 리터럴(opacity)은 점수 대상이 아니라 치환 패치를 만들지 않는다", () => {
     const code = "const x = <div style={{ opacity: 0.5 }} />;";
     const [usage] = inlineStyleExtractor.extract({ root: "/", file: "m.tsx", code });
-    const patch = inlineStyleExtractor.write(usage!, "var(--opacity-half)")!;
-    expect(code.slice(patch.start, patch.end)).toBe("0.5");
+    expect(usage).toMatchObject({ property: "other", raw: "0.5", source: "hardcoded" });
+    expect(inlineStyleExtractor.write(usage!, "var(--opacity-half)")).toBeNull();
   });
 
   it("복구 불가능한 문법 오류는 parseTsx와 마찬가지로 예외를 던진다", () => {

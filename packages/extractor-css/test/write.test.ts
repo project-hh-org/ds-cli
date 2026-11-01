@@ -59,3 +59,17 @@ describe("cssExtractor.write", () => {
     expect(cssExtractor.write(foreign, "var(--x)")).toBeNull();
   });
 });
+
+describe("cssExtractor.write: 점수 대상이 아닌 usage", () => {
+  it("other 속성(content·font-family·box-shadow)과 정규화 안 된 값(calc)은 null", () => {
+    const code = `.a { content: "가😀"; font-family: Inter; box-shadow: 0 1px 2px #000; width: calc(100% - 8px); color: #fff; }`;
+    const usages = cssExtractor.extract({ root: "/", file: "a.css", code });
+    expect(usages.map((u) => [u.property, cssExtractor.write(u, "var(--x)") === null])).toEqual([
+      ["other", true],
+      ["other", true],
+      ["other", true],
+      ["width", true],
+      ["color", false],
+    ]);
+  });
+});

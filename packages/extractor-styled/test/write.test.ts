@@ -65,3 +65,17 @@ describe("styledExtractor.write", () => {
     expect(styledExtractor.write(foreign, "x")).toBeNull();
   });
 });
+
+describe("styledExtractor.write: 점수 대상이 아닌 usage", () => {
+  it("템플릿·객체의 other 속성과 정규화 안 된 값은 null", () => {
+    const code = `${SC}const A = styled.div\`box-shadow: 0 1px 2px #000; content: "가😀";\`;\nconst B = styled.div({ fontFamily: "Inter", width: "calc(100% - 8px)", color: "#fff" });`;
+    const usages = styledExtractor.extract({ root: "/", file: "a.tsx", code });
+    expect(usages.map((u) => [u.property, styledExtractor.write(u, "var(--x)") === null])).toEqual([
+      ["other", true],
+      ["other", true],
+      ["other", true],
+      ["width", true],
+      ["color", false],
+    ]);
+  });
+});

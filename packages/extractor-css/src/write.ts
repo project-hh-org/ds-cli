@@ -1,4 +1,5 @@
 import type { StyleUsage, WritePatch } from "@dsmith/extractor-api";
+import { isRatedUsage } from "@dsmith/core";
 
 /** 치환 패치에 필요한 값(또는 축약 안의 색 토큰) 구간. */
 interface PatchTarget {
@@ -16,10 +17,10 @@ export function registerPatchTarget(usage: StyleUsage, target: PatchTarget): voi
 
 /**
  * 기록해 둔 구간을 `tokenRef` 그대로(따옴표 없이) 치환하는 패치를 만든다.
- * hardcoded가 아니거나 이 추출기가 만들지 않은 usage는 null.
+ * hardcoded가 아니거나 점수 대상이 아니거나(`isRatedUsage` false: other 속성·정규화 안 된 값) 이 추출기가 만들지 않은 usage는 null.
  */
 export function write(usage: StyleUsage, tokenRef: string): WritePatch | null {
-  if (usage.source !== "hardcoded") return null;
+  if (usage.source !== "hardcoded" || !isRatedUsage(usage)) return null;
   const target = patchTargets.get(usage);
   if (target === undefined) return null;
   return { file: target.file, start: target.start, end: target.end, replacement: tokenRef };
