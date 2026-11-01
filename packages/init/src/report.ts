@@ -18,7 +18,11 @@ const pct = (rate: number | null): string => (rate === null ? "해당 없음" : 
 export function renderInitReport(r: InitResult, draft: TokenDraft): string {
   const lines: string[] = ["# DS Init", ""];
   lines.push(`- 산출 디렉터리: \`${r.outDir}\``);
-  lines.push(`- 토큰 파일: \`tokens.json\` · \`tokens.css\` · \`tokens.ts\``);
+  const names = ["tokens.json", "tokens.css", "tokens.ts"];
+  const present = names.filter((_, i) => ["created", "updated", "unchanged"].includes(r.outcomes[i]?.status ?? ""));
+  lines.push(`- 토큰 파일: ${present.length === 0 ? "없음(쓰지 못함)" : present.map((n) => `\`${n}\``).join(" · ")}`);
+  const held = names.filter((n) => !present.includes(n));
+  if (present.length > 0 && held.length > 0) lines.push(`- 보류·쓰지 못함: ${held.map((n) => `\`${n}\``).join(" · ")} (사용자 수정 등 — \`--force\`로 덮어씀)`);
   lines.push("");
 
   lines.push("## 토큰", "");
@@ -61,7 +65,12 @@ export function renderInitReport(r: InitResult, draft: TokenDraft): string {
 
   const c = r.coverage;
   lines.push("## 커버리지", "");
-  lines.push(`전체: ${c.replaceable}/${c.total} (${pct(c.rate)})`, "");
+  const alphaCount = r.alphaDropped.reduce((n, a) => n + a.count, 0);
+  lines.push(`전체: ${c.replaceable}/${c.total} (${pct(c.rate)})${alphaCount > 0 ? ` — 알파 ${alphaCount}건 포함` : ""}`, "");
+  lines.push(
+    `분모의 범위: 색·간격·모서리·글꼴 크기 속성의 하드코딩 값. 값을 정규화하지 못한 것(unknown) ${r.coverageScope.unknown}건과 토큰 대상이 아닌 길이(width·height) ${r.coverageScope.nonTokenProperties}건은 뺐습니다.`,
+    "",
+  );
   lines.push("| 카테고리 | 바꿀 수 있음 | 전체 |", "| --- | --- | --- |");
   for (const category of ["color", "spacing", "radius", "font-size"] as const) {
     const b = c.byCategory[category];

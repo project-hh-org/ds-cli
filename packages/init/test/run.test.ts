@@ -174,11 +174,16 @@ describe("runInit: legacy-demo 상태 0", () => {
       kind: "token-cluster",
     });
     const jsonBefore = read(root, "design-system/tokens.json");
+    const tsBefore = read(root, "design-system/tokens.ts");
 
     const blocked = await run(root, { all: true });
     expect(blocked.outcomes[1]?.status).toBe("skipped-modified");
     // json은 짝이 막혀 있어 함께 건너뛴다
     expect(blocked.outcomes[0]?.status).toBe("skipped-modified");
+    expect(blocked.outcomes[0]?.reason).toContain("tokens.css 사용자 수정으로 함께 보류");
+    // ts도 같은 묶음이라 보류된다(세 파일이 어긋나지 않는다)
+    expect(blocked.outcomes[2]?.status).toBe("skipped-modified");
+    expect(read(root, "design-system/tokens.ts")).toBe(tsBefore);
     expect(read(root, "design-system/tokens.json")).toBe(jsonBefore);
     expect(read(root, "design-system/tokens.css")).toContain("--mine");
     expect(formatInitSummary(blocked)).toContain("--force");
@@ -186,6 +191,8 @@ describe("runInit: legacy-demo 상태 0", () => {
     const forced = await run(root, { all: true, force: true });
     expect(forced.outcomes[0]?.status).toBe("updated");
     expect(forced.outcomes[1]?.status).toBe("updated");
+    expect(forced.outcomes[2]?.status).toBe("updated");
+    expect(read(root, "design-system/tokens.ts")).not.toBe(tsBefore);
     expect(read(root, "design-system/tokens.css")).not.toContain("--mine");
     expect(read(root, "design-system/tokens.json")).not.toBe(jsonBefore);
   });
@@ -255,5 +262,86 @@ describe("runInit: inline-app", () => {
     const r = await run(root, { all: true });
     expect(r.tokens.total).toBeGreaterThan(0);
     expect(fs.existsSync(path.join(root, "design-system/tokens.css"))).toBe(true);
+  });
+});
+
+describe("runInit: 보강 (fix round 1)", () => {
+  it("pending token-cluster 기록의 options를 클러스터 구성원 변화에 맞춰 갱신하고 decided는 건드리지 않는다", async () => {
+    const root = await legacyDemo(true);
+    const first = await run(root);
+    expect(first.decisions.refreshed).toBe(0);
+    const before = await readDecisions(root);
+    const blue = before.items.find((i) => i.kind === "token-cluster" && i.item === "color-blue-400".replace("color-", ""));
+    expect(blue?.status).toBe("pending");
+    const red = before.items.find((i) => i.kind === "token-cluster" && i.item === "red-500");
+    expect(red).toBeDefined();
+    // red-500은 결정해 두고, blue-400 근처에 새 색을 추가한다
+    const index = (await readIndex(root)) as Index;
+    await chooseDecision(root, index, "red-500", (red as { options: string[] }).options[0] as string, { kind: "token-cluster" });
+    fs.writeFileSync(
+      path.join(root, "src/Extra.tsx"),
+      'export const Extra = () => <div style={{ color: "#3b81f6", background: "#ee4444" }}>x</div>;\n',
+    );
+    await auditFixture(root);
+    const second = await run(root, { force: true });
+    expect(second.decisions.refreshed).toBeGreaterThanOrEqual(1);
+    const after = await readDecisions(root);
+    const blueAfter = after.items.find((i) => i.kind === "token-cluster" && i.item === "blue-400");
+    expect(blueAfter?.options).toContain("#3b81f6");
+    expect(blueAfter?.status).toBe("pending");
+    const redAfter = after.items.find((i) => i.kind === "token-cluster" && i.item === "red-500");
+    expect(redAfter?.status).toBe("decided");
+    expect(redAfter?.options).toEqual((red as { options: string[] }).options);
+  });
+
+  it("Tailwind 대괄호 알파(#rrggbbaa, rgba())도 알파 제외 색으로 센다", async () => {
+    const root = copyFixture("examples/legacy-demo", {
+      "src/TwAlpha.tsx":
+        'export const T = () => <div className="bg-[#11182780] hover:text-[rgba(0,0,0,0.5)] text-[#111827]">x</div>;\n',
+    });
+    roots.push(root);
+    await auditFixture(root);
+    await forceStateZero(root);
+    const r = await run(root);
+    const raws = r.alphaDropped.map((a) => a.raw);
+    expect(raws).toContain("bg-[#11182780]");
+    expect(raws).toContain("hover:text-[rgba(0,0,0,0.5)]");
+    expect(raws).not.toContain("text-[#111827]");
+    expect(formatInitSummary(r)).toMatch(/알파 \d+건 포함/);
+  });
+
+  it("사용자가 지운 스캐폴드는 다시 만들지 않고, --force면 재생성한다", async () => {
+    const root = await legacyDemo(true);
+    await run(root, { all: true });
+    fs.rmSync(path.join(root, "design-system/components/Button.tsx"));
+    const r = await run(root, { all: true });
+    expect(r.skippedScaffolds).toContainEqual({
+      item: "Button",
+      reason: "사용자가 삭제한 파일은 다시 만들지 않음 (--force로 재생성)",
+    });
+    expect(fs.existsSync(path.join(root, "design-system/components/Button.tsx"))).toBe(false);
+    const forced = await run(root, { all: true, force: true });
+    expect(forced.scaffolds.find((s) => s.name === "Button")?.status).toBe("created");
+  });
+
+  it("init.json에 outDir·updatedAt을 기록하고 가장 최근 outDir로 갱신한다", async () => {
+    const root = await legacyDemo(true);
+    await run(root);
+    const m1 = JSON.parse(read(root, ".dsmith/init.json")) as { outDir: string; updatedAt: string };
+    expect(m1.outDir).toBe("design-system");
+    expect(typeof m1.updatedAt).toBe("string");
+    await run(root, { outDir: "src/ds", now: new Date(2026, 10, 2) });
+    const m2 = JSON.parse(read(root, ".dsmith/init.json")) as { outDir: string; updatedAt: string };
+    expect(m2.outDir).toBe("src/ds");
+  });
+
+  it("리포트에 분모 범위와 알파 건수가 있고, --all 요약은 추천안 기준임을 밝힌다", async () => {
+    const root = await legacyDemo(true);
+    const r = await run(root, { all: true });
+    const report = read(root, r.report as string);
+    expect(report).toContain("분모의 범위");
+    expect(report).toMatch(/전체: \d+\/\d+ \(.*\) — 알파 1건 포함/);
+    expect(formatInitSummary(r)).toContain("스캐폴드는 추천안 기준");
+    expect(formatInitSummary(r)).not.toContain("--all 로 추천안 사용");
   });
 });

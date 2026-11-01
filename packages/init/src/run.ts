@@ -2,6 +2,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import {
   atomicWrite,
+  COVERAGE_PROPERTIES,
   buildTokenDraft,
   decisionCandidates,
   draftCoverage,
@@ -14,6 +15,7 @@ import {
   readComponentProps,
   readDecisions,
   readIndex,
+  recordDecision,
   regionKey,
   safeWrite,
   seedDecisions,
@@ -74,7 +76,11 @@ export interface InitResult {
   mappings: ScaleMapping[];
   scaffolds: InitScaffold[];
   skippedScaffolds: { item: string; reason: string }[];
-  decisions: { added: number; pending: number; decided: number; stale: number };
+  decisions: { added: number; refreshed: number; pending: number; decided: number; stale: number };
+  /** 분모(커버리지)에서 빠진 하드코딩 값 수 */
+  coverageScope: { unknown: number; nonTokenProperties: number };
+  /** --all로 실행했나(요약 문구용) */
+  all: boolean;
   /** 알파 채널이 있어 토큰 값(6자리 hex)에서 알파가 빠진 하드코딩 색 */
   alphaDropped: AlphaColor[];
   outcomes: WriteOutcome[];
@@ -98,8 +104,8 @@ interface Target {
 }
 
 /** 하드코딩 색 중 알파가 1 미만인 것(raw 기준 집계). 토큰은 6자리 hex라 알파가 빠진다. */
-function alphaOf(raw: string): number | null {
-  const v = raw.trim();
+function alphaOfValue(value: string): number | null {
+  const v = value.trim();
   const hex = /^#(?:[0-9a-f]{3}([0-9a-f])|[0-9a-f]{6}([0-9a-f]{2}))$/i.exec(v);
   if (hex !== null) {
     const digits = hex[1] ?? hex[2] ?? "f";
@@ -118,6 +124,37 @@ function alphaOf(raw: string): number | null {
   return null;
 }
 
+/**
+ * raw의 알파. Tailwind 클래스(`hover:bg-[#11182780]`, `text-[rgba(0,0,0,0.5)]`, `bg-[#111]/50`)는
+ * 변형·유틸리티 접두사를 떼고 마지막 `[...]` 안 값과 뒤따르는 `/불투명도`를 읽는다.
+ */
+function alphaOf(raw: string): number | null {
+  const bracket = /\[([^[\]]+)\](?:\/(\d+(?:\.\d+)?|\[[^\]]+\]))?$/.exec(raw.trim());
+  if (bracket === null) return alphaOfValue(raw);
+  const inner = alphaOfValue((bracket[1] ?? "").replace(/_/g, " "));
+  const modifier = bracket[2];
+  if (modifier !== undefined) {
+    const n = modifier.startsWith("[") ? Number(modifier.slice(1, -1)) : Number(modifier) / 100;
+    if (Number.isFinite(n)) return n > 1 ? n / 100 : n;
+  }
+  return inner;
+}
+
+/** 분모에서 빠진 하드코딩 값 수: 정규화하지 못한 값(unknown)과 토큰 대상이 아닌 길이(width·height) */
+function coverageScope(styles: StyleUsage[], outDir: string): { unknown: number; nonTokenProperties: number } {
+  let unknown = 0;
+  let nonTokenProperties = 0;
+  for (const u of styles) {
+    if (u.source !== "hardcoded" || u.file === outDir || u.file.startsWith(`${outDir}/`)) continue;
+    if ((COVERAGE_PROPERTIES as readonly string[]).includes(u.property)) {
+      if (u.normalized.kind === "unknown") unknown += 1;
+    } else if (u.property === "width" || u.property === "height") {
+      nonTokenProperties += 1;
+    }
+  }
+  return { unknown, nonTokenProperties };
+}
+
 function alphaDropped(styles: StyleUsage[], outDir: string): AlphaColor[] {
   const found = new Map<string, AlphaColor>();
   for (const u of styles) {
@@ -132,7 +169,68 @@ function alphaDropped(styles: StyleUsage[], outDir: string): AlphaColor[] {
   return [...found.values()].sort((a, b) => b.count - a.count || (a.raw < b.raw ? -1 : a.raw > b.raw ? 1 : 0));
 }
 
-const byCountThenFile = (a: { file: string; count: number }, b: { file: string; count: number }): number =>
+/**
+ * 매니페스트에 `outDir`·`updatedAt`을 덧붙인다(ai가 가장 최근 init 산출 디렉터리를 찾는 근거).
+ * 이번 실행에서 쓴 파일이 없고 outDir도 그대로면 기존 값을 유지해 두 번째 실행이 바이트 동일하다.
+ * safeWrite가 매니페스트를 다시 쓰면 이 필드가 빠지므로 읽어 둔 값으로 복원한다.
+ */
+async function recordInitDir(
+  root: string,
+  outDir: string,
+  prev: InitManifestView,
+  outcomes: WriteOutcome[],
+  now: Date,
+): Promise<void> {
+  const file = path.join(root, MANIFEST);
+  let parsed: Record<string, unknown>;
+  try {
+    parsed = JSON.parse(await fs.readFile(file, "utf-8")) as Record<string, unknown>;
+  } catch {
+    return;
+  }
+  const wrote = outcomes.some((o) => o.status === "created" || o.status === "updated");
+  const updatedAt =
+    wrote || prev.outDir !== outDir || prev.updatedAt === undefined ? now.toISOString() : prev.updatedAt;
+  if (parsed.outDir === outDir && parsed.updatedAt === updatedAt) return;
+  await atomicWrite(file, `${JSON.stringify({ ...parsed, outDir, updatedAt }, null, 2)}\n`);
+}
+
+const DELETED_SCAFFOLD_REASON ="사용자가 삭제한 파일은 다시 만들지 않음 (--force로 재생성)";
+
+async function fileExists(abs: string): Promise<boolean> {
+  try {
+    await fs.access(abs);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+interface InitManifestView {
+  entries: Set<string>;
+  outDir?: string;
+  updatedAt?: string;
+}
+
+/** `.dsmith/init.json`에서 엔트리 키와 init이 덧붙이는 `outDir`·`updatedAt`을 읽는다(없거나 깨졌으면 빈 값). */
+async function readInitManifest(file: string): Promise<InitManifestView> {
+  try {
+    const parsed = JSON.parse(await fs.readFile(file, "utf-8")) as {
+      entries?: Record<string, unknown>;
+      outDir?: unknown;
+      updatedAt?: unknown;
+    };
+    return {
+      entries: new Set(Object.keys(parsed.entries ?? {})),
+      ...(typeof parsed.outDir === "string" ? { outDir: parsed.outDir } : {}),
+      ...(typeof parsed.updatedAt === "string" ? { updatedAt: parsed.updatedAt } : {}),
+    };
+  } catch {
+    return { entries: new Set() };
+  }
+}
+
+const byCountThenFile =(a: { file: string; count: number }, b: { file: string; count: number }): number =>
   b.count - a.count || (a.file < b.file ? -1 : a.file > b.file ? 1 : 0);
 
 export async function runInit(opts: InitOptions): Promise<InitResult> {
@@ -155,13 +253,21 @@ export async function runInit(opts: InitOptions): Promise<InitResult> {
   const draft: TokenDraft = buildTokenDraft(index.styles, { excludeDirs: [outDir], colorChoices });
 
   // 4. pending 결정 시드
-  const seed = seedDecisions(
-    decisions,
-    index,
-    draft.tokens
-      .filter((t) => t.category === "color" && t.members.length >= 2)
-      .map((t) => ({ item: t.key, options: t.members })),
-  );
+  const clusters = draft.tokens
+    .filter((t) => t.category === "color" && t.members.length >= 2)
+    .map((t) => ({ item: t.key, options: t.members }));
+  const seeded = seedDecisions(decisions, index, clusters);
+  // 클러스터 구성원이 바뀌었으면 pending token-cluster 기록의 options를 새로 맞춘다(decided 기록은 건드리지 않는다).
+  let refreshedFile = seeded.file;
+  let refreshed = 0;
+  for (const c of clusters) {
+    const record = refreshedFile.items.find((r) => r.item === c.item && r.kind === "token-cluster");
+    if (record === undefined || record.status !== "pending") continue;
+    if (record.options.length === c.options.length && record.options.every((o, i) => o === c.options[i])) continue;
+    refreshedFile = recordDecision(refreshedFile, { ...record, options: c.options });
+    refreshed += 1;
+  }
+  const seed = { file: refreshedFile, added: seeded.added };
 
   // 5. 스캐폴드 대상
   const listed = listDecisions(index, seed.file);
@@ -170,7 +276,8 @@ export async function runInit(opts: InitOptions): Promise<InitResult> {
   const targets: Target[] = [];
   if (opts.all === true) {
     const top = opts.top ?? DEFAULT_TOP;
-    for (const c of decisionCandidates(index).slice(0, top)) {
+    const candidates = decisionCandidates(index).filter((c) => c.kind !== "token-cluster");
+    for (const c of candidates.slice(0, top)) {
       if (c.kind === "token-cluster") continue;
       targets.push({ item: c.item, kind: c.kind, basis: decidedOf(c.item, c.kind) ? "decided" : "recommended" });
     }
@@ -181,6 +288,7 @@ export async function runInit(opts: InitOptions): Promise<InitResult> {
     }
   }
 
+  const prevManifest = await readInitManifest(path.join(root, MANIFEST));
   const summaries = summarizeComponents(index.components);
   const planned = new Map<string, PlannedWrite>();
   const scaffolds: Omit<InitScaffold, "status">[] = [];
@@ -220,6 +328,11 @@ export async function runInit(opts: InitOptions): Promise<InitResult> {
     const file = `${outDir}/components/${name}.tsx`;
     if (planned.has(file)) {
       skippedScaffolds.push({ item: name, reason: `이름 충돌: ${file}` });
+      continue;
+    }
+    // 매니페스트에 있는데 파일이 없다 = 사용자가 지운 스캐폴드. --force가 아니면 다시 만들지 않는다.
+    if (opts.force !== true && prevManifest.entries.has(file) && !(await fileExists(path.join(root, file)))) {
+      skippedScaffolds.push({ item: name, reason: DELETED_SCAFFOLD_REASON });
       continue;
     }
 
@@ -278,33 +391,37 @@ export async function runInit(opts: InitOptions): Promise<InitResult> {
     version: opts.version,
   };
 
-  // json과 css는 한 쌍이다: 둘 중 하나가 막히면(사용자 수정 등) 다른 하나도 쓰지 않아 어긋나지 않게 한다.
-  const preflight = await safeWrite([jsonWrite, cssWrite], { ...safeOpts, dryRun: true });
-  const blocked = preflight.outcomes.some((o) => o.status.startsWith("skipped"));
-  const pairBlocked = new Map<string, WriteOutcome>();
+  // json·css·ts는 한 묶음이다: 하나라도 막히면(사용자 수정 등) 나머지도 쓰지 않아 세 파일이 어긋나지 않게 한다.
+  const tokenWrites = [jsonWrite, cssWrite, tsWrite];
+  const preflight = await safeWrite(tokenWrites, { ...safeOpts, dryRun: true });
+  const blockers = tokenWrites.filter((_, i) => (preflight.outcomes[i] as WriteOutcome).status.startsWith("skipped"));
+  const blocked = blockers.length > 0;
+  const held = new Map<string, WriteOutcome>();
   if (blocked) {
-    for (const [w, o] of [jsonWrite, cssWrite].map((w, i) => [w, preflight.outcomes[i] as WriteOutcome] as const)) {
-      pairBlocked.set(w.file, o.status === "created" || o.status === "updated"
-        ? {
-            file: o.file,
-            key: o.key,
-            region: o.region,
-            status: "skipped-modified",
-            reason: "tokens.json·tokens.css는 함께 써야 함 — 짝 파일이 사용자 수정으로 막힘, 덮어쓰려면 --force",
-          }
-        : o);
-    }
+    const names = blockers.map((w) => path.basename(w.file));
+    const blockerStatuses = blockers.map((w) => (preflight.outcomes[tokenWrites.indexOf(w)] as WriteOutcome).status);
+    const cause = blockerStatuses.every((s) => s === "skipped-invalid") ? "쓸 수 없음" : "사용자 수정";
+    tokenWrites.forEach((w, i) => {
+      const o = preflight.outcomes[i] as WriteOutcome;
+      if (o.status === "created" || o.status === "updated") {
+        held.set(w.file, {
+          file: o.file,
+          key: o.key,
+          region: o.region,
+          status: "skipped-modified",
+          reason: `${names.join("·")} ${cause}으로 함께 보류 (이 파일은 수정되지 않음) — 세 토큰 파일은 함께 써야 함, 덮어쓰려면 --force`,
+        });
+      } else {
+        held.set(w.file, o);
+      }
+    });
   }
-  const toWrite: PlannedWrite[] = [
-    ...(blocked ? [] : [jsonWrite, cssWrite]),
-    tsWrite,
-    ...planned.values(),
-  ];
+  const toWrite: PlannedWrite[] = [...(blocked ? [] : tokenWrites), ...planned.values()];
   const written = await safeWrite(toWrite, { ...safeOpts, dryRun });
   const outcomeOf = new Map<string, WriteOutcome>();
   toWrite.forEach((w, i) => outcomeOf.set(w.file, written.outcomes[i] as WriteOutcome));
-  for (const [file, o] of pairBlocked) outcomeOf.set(file, o);
-  const outcomes = [jsonWrite, cssWrite, tsWrite, ...planned.values()].map((w) => outcomeOf.get(w.file) as WriteOutcome);
+  for (const [file, o] of held) outcomeOf.set(file, o);
+  const outcomes = [...tokenWrites, ...planned.values()].map((w) => outcomeOf.get(w.file) as WriteOutcome);
 
   // 7. 커버리지
   const coverage = draftCoverage(index.styles, draftToTokens(draft), { excludeDirs: [outDir] });
@@ -313,6 +430,7 @@ export async function runInit(opts: InitOptions): Promise<InitResult> {
   const after = listDecisions(index, seed.file);
   const decisionSummary = {
     added: seed.added.length,
+    refreshed,
     pending: after.filter((i) => i.status === "pending").length,
     decided: after.filter((i) => i.status === "decided").length,
     stale: after.filter((i) => i.stale === true).length,
@@ -341,6 +459,8 @@ export async function runInit(opts: InitOptions): Promise<InitResult> {
     skippedScaffolds,
     decisions: decisionSummary,
     alphaDropped: alphaDropped(index.styles, outDir),
+    coverageScope: coverageScope(index.styles, outDir),
+    all: opts.all === true,
     outcomes,
     report: null,
     manifest: MANIFEST,
@@ -349,7 +469,8 @@ export async function runInit(opts: InitOptions): Promise<InitResult> {
 
   // 8. dryRun이 아니면 결정 시드와 리포트를 쓴다(.dsmith 안은 atomicWrite).
   if (!dryRun) {
-    if (seed.added.length > 0) await writeDecisions(root, seed.file);
+    if (seed.added.length > 0 || refreshed > 0) await writeDecisions(root, seed.file);
+    await recordInitDir(root, outDir, prevManifest, outcomes, opts.now ?? new Date());
     const report = `.dsmith/reports/init-${localDate(opts.now ?? new Date())}.md`;
     await atomicWrite(path.join(root, report), renderInitReport(result, draft));
     result.report = report;
@@ -357,19 +478,35 @@ export async function runInit(opts: InitOptions): Promise<InitResult> {
   return result;
 }
 
+const TOKEN_FILE_NAMES = ["tokens.json", "tokens.css", "tokens.ts"] as const;
+
 export function formatInitSummary(r: InitResult): string {
   const t = r.tokens;
   const c = r.coverage;
   const lines: string[] = [];
   if (r.dryRun) lines.push("(dry-run — 아무것도 쓰지 않았습니다)");
+  // 실제로 쓰였거나 이미 같은 내용인 토큰 파일만 "→ …"에 적는다.
+  const tokenOutcomes = r.outcomes.slice(0, 3);
+  const ok = TOKEN_FILE_NAMES.filter((_, i) => {
+    const s = tokenOutcomes[i]?.status;
+    return s === "created" || s === "updated" || s === "unchanged";
+  });
+  const target =
+    ok.length === 0
+      ? ""
+      : ok.length === 3
+        ? ` → ${r.outDir}/tokens.{json,css,ts}`
+        : ` → ${ok.map((n) => `${r.outDir}/${n}`).join(", ")}`;
   lines.push(
-    `토큰: 색 ${t.color} · 간격 ${t.spacing} · 모서리 ${t.radius} · 글꼴 크기 ${t.fontSize} (병합된 원값 ${t.mergedValues}) → ${r.outDir}/tokens.{json,css,ts}`,
+    `토큰: 색 ${t.color} · 간격 ${t.spacing} · 모서리 ${t.radius} · 글꼴 크기 ${t.fontSize} (병합된 원값 ${t.mergedValues})${target}`,
   );
   const rate = c.rate === null ? "해당 없음" : `${(c.rate * 100).toFixed(1)}%`;
+  const alphaCount = r.alphaDropped.reduce((n, a) => n + a.count, 0);
+  const alphaNote = alphaCount > 0 ? `, 알파 ${alphaCount}건 포함` : "";
   lines.push(
     c.total === 0
       ? "커버리지: 하드코딩 값이 없음 (migrate 예상치)"
-      : `커버리지: 하드코딩 ${c.total}건 중 ${c.replaceable}건(${rate})을 토큰으로 바꿀 수 있음 (migrate 예상치)`,
+      : `커버리지: 하드코딩 ${c.total}건 중 ${c.replaceable}건(${rate})을 토큰으로 바꿀 수 있음 (migrate 예상치${alphaNote})`,
   );
   if (r.alphaDropped.length > 0) {
     lines.push(`알파 제외: 투명도가 있는 색 ${r.alphaDropped.length}종은 토큰 값에서 알파가 빠짐 (리포트 참고)`);
@@ -381,11 +518,19 @@ export function formatInitSummary(r: InitResult): string {
     skipped === 0 ? "" : ` (${r.skippedScaffolds.map((s) => `${s.item} — ${s.reason}`).join("; ")})`;
   lines.push(`스캐폴드: 생성 ${created} · 유지 ${kept} · 건너뜀 ${skipped}${skippedDetail}`);
   const stale = r.decisions.stale > 0 ? `, stale ${r.decisions.stale}건` : "";
-  lines.push(`결정: pending ${r.decisions.pending}건${stale} — /ds-decide 로 고르거나 --all 로 추천안 사용`);
-  const blockedToken = r.outcomes
-    .slice(0, 3)
-    .some((o) => o.status === "skipped-modified" || o.status === "skipped-unowned");
-  if (blockedToken) lines.push("사람이 고친 토큰 파일 — 덮어쓰려면 --force");
+  lines.push(
+    r.all
+      ? `결정: pending ${r.decisions.pending}건${stale} — 스캐폴드는 추천안 기준, /ds-decide 로 확정한 뒤 다시 실행`
+      : `결정: pending ${r.decisions.pending}건${stale} — /ds-decide 로 고르거나 --all 로 추천안 사용`,
+  );
+  if (tokenOutcomes.some((o) => o.status === "skipped-modified" || o.status === "skipped-unowned")) {
+    lines.push("사람이 고친 토큰 파일 — 세 파일을 함께 보류했습니다. 덮어쓰려면 --force");
+  }
+  for (const [i, o] of tokenOutcomes.entries()) {
+    if (o.status === "skipped-invalid") {
+      lines.push(`쓰지 못한 토큰 파일(skipped-invalid): ${TOKEN_FILE_NAMES[i]} — ${o.reason ?? "경로가 안전하지 않음"}`);
+    }
+  }
   if (r.report !== null) lines.push(`리포트: ${r.report}`);
   if (r.dryRun) {
     for (const o of r.outcomes) {
