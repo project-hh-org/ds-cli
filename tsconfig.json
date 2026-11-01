@@ -16,6 +16,7 @@
     { "path": "packages/init" },
     { "path": "packages/migrate" },
     { "path": "packages/catalog" },
+    { "path": "packages/guard" },
     { "path": "packages/cli" }
   ]
 }

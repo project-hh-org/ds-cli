@@ -7,7 +7,7 @@ import type { ComponentUsage } from "../model/component-usage.js";
 import { parseTsx } from "../parse/tsx.js";
 import { extractComponentUsage, type ModuleContext } from "./component-usage.js";
 import { extractFileStyles, extractorMatchers } from "./extract-file.js";
-import { readTsconfigPaths } from "./specifier.js";
+import { readTsconfigPaths, type TsPaths } from "./specifier.js";
 
 export interface Index {
   root: string;
@@ -94,6 +94,15 @@ async function dependencyNamesOf(root: string): Promise<Set<string>> {
   }
 }
 
+/** 인덱서와 guard 스냅샷이 같은 방식으로 모으는 module 해석 정보(baseUrl 항목은 baseUrl을 명시했을 때만). */
+export async function collectModuleContext(root: string, tsPaths: TsPaths | null): Promise<ModuleContext> {
+  return {
+    baseUrlEntries:
+      tsPaths?.baseUrlExplicit === true ? await baseUrlEntriesOf(path.join(root, tsPaths.baseUrl)) : new Set(),
+    dependencies: await dependencyNamesOf(root),
+  };
+}
+
 export async function indexRepo(
   root: string,
   extractors: Extractor[],
@@ -123,11 +132,7 @@ export async function indexRepo(
   // 컴포넌트 import 해석에 쓸 tsconfig paths·baseUrl 항목·의존성은 레포마다 한 번만 읽는다.
   // baseUrl 항목은 baseUrl을 명시했을 때만 모은다: paths 전용 tsconfig에서는 bare import가 baseUrl 기준으로 풀리지 않는다.
   const tsPaths = await readTsconfigPaths(root);
-  const moduleContext: ModuleContext = {
-    baseUrlEntries:
-      tsPaths?.baseUrlExplicit === true ? await baseUrlEntriesOf(path.join(root, tsPaths.baseUrl)) : new Set(),
-    dependencies: await dependencyNamesOf(root),
-  };
+  const moduleContext = await collectModuleContext(root, tsPaths);
 
   const matchers = extractorMatchers(extractors);
 
