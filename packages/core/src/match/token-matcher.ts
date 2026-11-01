@@ -2,6 +2,11 @@ import type { StyleUsage } from "@dsmith-dev/extractor-api";
 import type { Token } from "../model/token.js";
 import { colorDistance, lengthDistance } from "./distance.js";
 
+/**
+ * - `distance`: 색은 oklch ΔE_ok(hue를 직교 좌표로 바꾼 유클리드 거리, 실사용 범위 약 0~0.4), 길이는 px 차이.
+ * - `confidence`: 색은 거리 < 0.005 exact, < 0.03 close, 그 이상 far.
+ *   길이는 0px exact, 2px 이하 close, 그보다 크면 far.
+ */
 export interface TokenMatch {
   token: Token;
   distance: number;

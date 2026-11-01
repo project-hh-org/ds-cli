@@ -63,9 +63,9 @@ export type { ComponentProps, PropInfo } from "./component/props.js";
 export { readComponentProps } from "./component/props.js";
 export type { ComponentMatch } from "./component/search.js";
 export { COMPONENT_SYNONYMS, searchComponents } from "./component/search.js";
-export { readCssVariableTokens } from "./tokens/css-variables.js";
+export { collectCssVariables, readCssVariableTokens } from "./tokens/css-variables.js";
 export { proposalTokens } from "./tokens/proposal.js";
-export type { LoadedTokens, TokenSourceKind } from "./tokens/load.js";
+export type { LoadedToken, LoadedTokens, TokenSourceKind } from "./tokens/load.js";
 export { loadTokens, tokenCategoryOf } from "./tokens/load.js";
 export type {
   Confidence,
