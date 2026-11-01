@@ -11,16 +11,29 @@ import {
   loadReplacementTokens,
   applyPatches,
   partitionPatches,
+  readDecisions,
   readTailwindPreset,
   sha256Text,
   tokenCategoryOf,
+  type DecisionKind,
   type Index,
   type TextPatch,
   type Token,
 } from "@dsmith-dev/core";
 import type { DetectResult } from "@dsmith-dev/detect";
 import type { Extractor, StyleProperty, TokenRefContext } from "@dsmith-dev/extractor-api";
-import { checkEdit } from "./verify.js";
+import {
+  countComponentEdits,
+  loadModuleEnv,
+  planComponentEdits,
+  resolveChosenTargets,
+  type ChosenTarget,
+  type ComponentPlanSummary,
+  type HeldComponentEdit,
+  type ModuleEnv,
+  type PlannedComponentEdit,
+} from "./components.js";
+import { checkComponents, checkEdit } from "./verify.js";
 
 export type TokenSkipReason =
   | "no-token-ref"
@@ -32,8 +45,7 @@ export type TokenSkipReason =
   | "zero-value"
   | "scss-variable"
   | "multi-value";
-/** Task 5가 채움 */
-export type ComponentSkipReason = "decision-pending" | "mapping-missing" | "spread-props" | "export-unknown" | "overlap" | "rolled-back";
+export type { ComponentPlanSummary, ComponentSkipReason, HeldComponentEdit, PlannedComponentEdit } from "./components.js";
 
 export interface UsageRef {
   file: string;
@@ -61,29 +73,16 @@ export interface SkippedReplacement extends UsageRef {
   token?: string;
 }
 
-/** Task 5가 정의를 채운다. Task 4에서는 항상 빈 배열 */
-export interface PlannedComponentEdit {
-  patches: TextPatch[];
-}
-
 export interface FilePlan {
   file: string;
   /** 계획 시점 내용의 sha256Text */
   sha256: string;
   replacements: PlannedReplacement[];
   components: PlannedComponentEdit[];
+  /** 적용 뒤 재추출 검증: 이 파일의 컴포넌트 사용 중 item의 module이 전부 module이어야 한다(import를 옮긴 항목) */
+  componentChecks: { item: string; module: string }[];
   /** 최종(비중첩, start 오름차순) */
   patches: TextPatch[];
-}
-
-export interface ComponentPlanSummary {
-  decided: number;
-  files: number;
-  imports: number;
-  props: number;
-  annotations: number;
-  pending: number;
-  held: Partial<Record<ComponentSkipReason, number>>;
 }
 
 export interface MigratePlan {
@@ -116,6 +115,10 @@ export interface MigratePlan {
   /** patches가 1개 이상인 파일만, file 순 */
   files: FilePlan[];
   components: ComponentPlanSummary;
+  /** 결정은 됐지만 안전하게 바꿀 수 없어 보류한 컴포넌트 편집(file → line 순) */
+  componentHeld: HeldComponentEdit[];
+  /** 결정 대기(또는 stale)인 항목과 그 이름을 쓰는 파일 수 */
+  componentPending: { item: string; kind: DecisionKind; files: number }[];
   notes: string[];
 }
 
@@ -209,6 +212,119 @@ export async function planMigration(opts: MigrateOptions): Promise<MigratePlan> 
   };
 
   let unverified = 0;
+
+  // 결정이 끝난 컴포넌트(이 module들에서 온 import만 바꾼다)
+  let env: ModuleEnv | null = null;
+  let chosen: ChosenTarget[] = [];
+  let componentPending: MigratePlan["componentPending"] = [];
+  const targetsByFile = new Map<string, ChosenTarget[]>();
+  const heldAll: HeldComponentEdit[] = [];
+  if (opts.only !== "tokens") {
+    const resolved = await resolveChosenTargets(root, await readDecisions(root), index);
+    chosen = resolved.targets;
+    componentPending = resolved.pending;
+    env = await loadModuleEnv(root);
+    for (const t of chosen) {
+      const users = new Set<string>();
+      for (const c of index.components) {
+        if (c.name !== t.item) continue;
+        if (t.kind === "duplicate") {
+          if (t.options.includes(c.module) && c.module !== t.module) users.add(c.file);
+        } else if (c.declaredLocally === true && t.options.includes(c.file) && c.file !== t.file) {
+          users.add(c.file);
+        }
+      }
+      for (const f of users) targetsByFile.set(f, [...(targetsByFile.get(f) ?? []), t]);
+    }
+  }
+  const moduleOfItem = new Map(chosen.filter((t) => t.kind === "duplicate").map((t) => [t.item, t.module]));
+  const importChecks = (edits: PlannedComponentEdit[]): { item: string; module: string }[] => {
+    const items = [...new Set(edits.filter((e) => e.kind === "import").map((e) => e.item))].sort();
+    return items.flatMap((item) => {
+      const module = moduleOfItem.get(item);
+      return module === undefined ? [] : [{ item, module }];
+    });
+  };
+
+  /** group 전체를 보류하고 항목마다 한 건씩 held에 올린다. 남은 편집을 돌려준다 */
+  const holdGroups = (edits: PlannedComponentEdit[], groups: Set<string>, reason: HeldComponentEdit["reason"], detail: string): PlannedComponentEdit[] => {
+    const seen = new Set<string>();
+    for (const e of edits) {
+      if (!groups.has(e.group) || seen.has(`${e.file}\0${e.item}`)) continue;
+      seen.add(`${e.file}\0${e.item}`);
+      const line = Math.min(...edits.filter((x) => x.file === e.file && x.item === e.item).map((x) => x.line));
+      heldAll.push({ item: e.item, file: e.file, line, reason, detail });
+    }
+    return edits.filter((e) => !groups.has(e.group));
+  };
+
+  /** 컴포넌트 편집을 토큰 치환 위에 얹어 group마다 시험한다(적용 단계와 같은 검사). 실패한 group은 rolled-back으로 보류 */
+  const verifyGroups = (file: string, code: string, tokens: PlannedReplacement[], edits: PlannedComponentEdit[]): PlannedComponentEdit[] => {
+    const simulate = (comps: PlannedComponentEdit[]): string | null => {
+      try {
+        const after = applyPatches(code, partitionPatches([...tokens.map((r) => r.patch), ...comps.map((e) => e.patch)]).accepted);
+        const bad = checkEdit(root, file, code, after, tokens.length, matchers);
+        if (bad !== null) return bad;
+        return env === null ? null : checkComponents(file, after, importChecks(comps), env);
+      } catch (err) {
+        return err instanceof Error ? err.message : String(err);
+      }
+    };
+    const byGroup = new Map<string, PlannedComponentEdit[]>();
+    for (const e of edits) byGroup.set(e.group, [...(byGroup.get(e.group) ?? []), e]);
+    let kept = edits;
+    for (const [group, list] of byGroup) {
+      const error = simulate(list);
+      if (error !== null) kept = holdGroups(kept, new Set([group]), "rolled-back", error);
+    }
+    if (kept.length > 0) {
+      const error = simulate(kept);
+      if (error !== null) kept = holdGroups(kept, new Set(kept.map((e) => e.group)), "rolled-back", error);
+    }
+    return kept;
+  };
+
+  /** 토큰 치환 후보 → 겹침 보류 → 치환 뒤 재추출 확인. 통과한 치환만 돌려준다 */
+  const finalizeTokens = (planned: PlannedReplacement[], code: string, file: string): PlannedReplacement[] => {
+    // 파일당 파티션은 한 번: 토큰 패치 → 컴포넌트 패치 순으로 한 목록에 모아 partitionPatches
+    const { accepted, conflicts } = partitionPatches(planned.map((r) => r.patch));
+    const bad = new Set<string>();
+    for (const c of conflicts) {
+      bad.add(patchKey(c.a));
+      bad.add(patchKey(c.b));
+    }
+    const replacements: PlannedReplacement[] = [];
+    for (const r of planned) {
+      if (bad.has(patchKey(r.patch))) addSkip(r, "overlap", r.token);
+      else replacements.push(r);
+    }
+    if (accepted.length === 0) return [];
+
+    // 치환 뒤 다시 읽어 확인한다(적용 단계와 같은 검사). 통과하지 못하면 사용별로 따로 확인해 걸리는 것만 no-patch로 보류한다
+    // (예: 다중 값 단축 속성의 일부만 바꾸면 Extractor가 그 자리를 토큰으로 읽지 못함)
+    const verify = (reps: PlannedReplacement[]): boolean => {
+      try {
+        const after = applyPatches(code, partitionPatches(reps.map((r) => r.patch)).accepted);
+        return checkEdit(root, file, code, after, reps.length, matchers) === null;
+      } catch {
+        return false;
+      }
+    };
+    let kept = replacements;
+    if (!verify(kept)) {
+      const groups = new Map<string, PlannedReplacement[]>();
+      for (const r of replacements) groups.set(patchKey(r.patch), [...(groups.get(patchKey(r.patch)) ?? []), r]);
+      kept = [];
+      for (const group of groups.values()) {
+        if (verify(group)) kept.push(...group);
+        else for (const r of group) addSkip(r, "no-patch", r.token);
+      }
+      kept.sort((a, b) => a.line - b.line || a.column - b.column);
+      unverified += replacements.length - kept.length;
+    }
+    return kept;
+  };
+
   const filePlans: FilePlan[] = [];
   for (const file of targets) {
     let code: string;
@@ -288,51 +404,48 @@ export async function planMigration(opts: MigrateOptions): Promise<MigratePlan> 
         patch: { start: w.start, end: w.end, replacement: w.replacement },
       });
     }
-    if (planned.length === 0) continue;
+    let tokenKept = planned.length === 0 ? [] : finalizeTokens(planned, code, file);
+    if (opts.only === "components") {
+      // 토큰 치환은 범위 제한으로 뺀다(건너뜀이 아니라 범위 밖)
+      scope.outOfRange += tokenKept.length;
+      tokenKept = [];
+    }
 
-    // 파일당 파티션은 한 번: 토큰 패치 → (Task 5) 컴포넌트 패치 순으로 한 목록에 모아 partitionPatches
-    const { accepted, conflicts } = partitionPatches(planned.map((r) => r.patch));
-    const bad = new Set<string>();
-    for (const c of conflicts) {
-      bad.add(patchKey(c.a));
-      bad.add(patchKey(c.b));
-    }
-    const replacements: PlannedReplacement[] = [];
-    for (const r of planned) {
-      if (bad.has(patchKey(r.patch))) addSkip(r, "overlap", r.token);
-      else replacements.push(r);
-    }
-    if (accepted.length === 0) continue;
-
-    // 치환 뒤 다시 읽어 확인한다(적용 단계와 같은 검사). 통과하지 못하면 사용별로 따로 확인해 걸리는 것만 no-patch로 보류한다
-    // (예: 다중 값 단축 속성의 일부만 바꾸면 Extractor가 그 자리를 토큰으로 읽지 못함)
-    const verify = (reps: PlannedReplacement[]): boolean => {
-      try {
-        const after = applyPatches(code, partitionPatches(reps.map((r) => r.patch)).accepted);
-        return checkEdit(root, file, code, after, reps.length, matchers) === null;
-      } catch {
-        return false;
+    // 컴포넌트 편집: 토큰 패치와 겹치면 그 group을 통째로 보류하고, 겹친 토큰 치환도 보류한다
+    let compEdits: PlannedComponentEdit[] = [];
+    const compTargets = targetsByFile.get(file);
+    if (compTargets !== undefined && env !== null) {
+      const result = planComponentEdits({ file, code, targets: compTargets, tsPaths: env.tsPaths, moduleContext: env.moduleContext });
+      heldAll.push(...result.held);
+      compEdits = result.edits;
+      if (compEdits.length > 0) {
+        const { conflicts } = partitionPatches([...tokenKept.map((r) => r.patch), ...compEdits.map((e) => e.patch)]);
+        if (conflicts.length > 0) {
+          const bad = new Set<string>();
+          for (const c of conflicts) {
+            bad.add(patchKey(c.a));
+            bad.add(patchKey(c.b));
+          }
+          const badGroups = new Set(compEdits.filter((e) => bad.has(patchKey(e.patch))).map((e) => e.group));
+          tokenKept = tokenKept.filter((r) => {
+            if (!bad.has(patchKey(r.patch))) return true;
+            addSkip(r, "overlap", r.token);
+            return false;
+          });
+          compEdits = holdGroups(compEdits, badGroups, "overlap", "토큰 치환과 소스 구간이 겹침");
+        }
+        compEdits = verifyGroups(file, code, tokenKept, compEdits);
       }
-    };
-    let kept = replacements;
-    if (!verify(kept)) {
-      const groups = new Map<string, PlannedReplacement[]>();
-      for (const r of replacements) groups.set(patchKey(r.patch), [...(groups.get(patchKey(r.patch)) ?? []), r]);
-      kept = [];
-      for (const group of groups.values()) {
-        if (verify(group)) kept.push(...group);
-        else for (const r of group) addSkip(r, "no-patch", r.token);
-      }
-      kept.sort((a, b) => a.line - b.line || a.column - b.column);
-      unverified += replacements.length - kept.length;
     }
-    if (kept.length === 0) continue;
+    if (tokenKept.length === 0 && compEdits.length === 0) continue;
+    const componentChecks = importChecks(compEdits);
     filePlans.push({
       file,
       sha256: sha256Text(code),
-      replacements: kept,
-      components: [],
-      patches: partitionPatches(kept.map((r) => r.patch)).accepted,
+      replacements: tokenKept,
+      components: compEdits,
+      componentChecks,
+      patches: partitionPatches([...tokenKept.map((r) => r.patch), ...compEdits.map((e) => e.patch)]).accepted,
     });
   }
 
@@ -340,14 +453,35 @@ export async function planMigration(opts: MigrateOptions): Promise<MigratePlan> 
     notes.push(`${unverified}건은 치환 뒤 다시 읽어도 토큰으로 확인되지 않아 건너뜀(no-patch) — 다중 값 단축 속성의 일부 등`);
   }
   let files = filePlans;
-  if (opts.only === "components") {
-    scope.outOfRange += files.reduce((n, f) => n + f.replacements.length, 0);
-    files = [];
-  } else if (opts.maxFiles !== undefined && files.length > opts.maxFiles) {
+  if (opts.maxFiles !== undefined && files.length > opts.maxFiles) {
     const dropped = files.slice(opts.maxFiles);
     scope.outOfRange += dropped.reduce((n, f) => n + f.replacements.length, 0);
     notes.push(`범위 제한으로 ${dropped.length}개 파일 제외`);
     files = files.slice(0, opts.maxFiles);
+  }
+
+  const componentSummary: ComponentPlanSummary = {
+    decided: chosen.length,
+    files: files.filter((f) => f.components.length > 0).length,
+    imports: 0,
+    props: 0,
+    annotations: 0,
+    pending: componentPending.length,
+    held: {},
+  };
+  for (const f of files) {
+    const c = countComponentEdits(f.components);
+    componentSummary.imports += c.imports;
+    componentSummary.props += c.props;
+    componentSummary.annotations += c.annotations;
+  }
+  for (const h of heldAll) componentSummary.held[h.reason] = (componentSummary.held[h.reason] ?? 0) + 1;
+  const pendingFiles = componentPending.reduce((n, p) => n + p.files, 0);
+  if (pendingFiles > 0) componentSummary.held["decision-pending"] = pendingFiles;
+  if (componentPending.length > 0) {
+    notes.push(
+      `결정 대기 ${componentPending.length}건(${componentPending.map((p) => p.item).join(", ")}) — \`dsmith decide\`로 결정하면 import 치환 대상이 됨`,
+    );
   }
 
   const byCategory = emptyByCategory();
@@ -373,7 +507,9 @@ export async function planMigration(opts: MigrateOptions): Promise<MigratePlan> 
     skipped,
     skippedItems: skippedItems.sort(compareRefs),
     files,
-    components: { decided: 0, files: 0, imports: 0, props: 0, annotations: 0, pending: 0, held: {} },
+    components: componentSummary,
+    componentHeld: [...heldAll].sort((a, b) => (a.file < b.file ? -1 : a.file > b.file ? 1 : a.line - b.line || (a.item < b.item ? -1 : 1))),
+    componentPending,
     notes,
   };
 }

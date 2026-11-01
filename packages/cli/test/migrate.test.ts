@@ -4,10 +4,11 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
-import { COVERAGE_PROPERTIES, isRatedUsage, loadReplacementTokens, readIndex, replaceableToken, tokenCategoryOf } from "@dsmith-dev/core";
+import { COVERAGE_PROPERTIES, isRatedUsage, loadReplacementTokens, parseTsx, readIndex, replaceableToken, tokenCategoryOf } from "@dsmith-dev/core";
 import { readDetect, writeDetect } from "@dsmith-dev/detect";
 import type { ApplyResult, MigratePlan } from "@dsmith-dev/migrate";
 import { runAudit } from "../src/commands/audit.js";
+import { runDecideChoose } from "../src/commands/decide.js";
 import { runInitCommand } from "../src/commands/init.js";
 import { runMigrateCommand, type MigrateCommandOptions } from "../src/commands/migrate.js";
 import { buildProgram } from "../src/program.js";
@@ -305,6 +306,96 @@ describe("dsmith migrate — fixture e2e", () => {
       ["--apply", "--branch", "--category", "--files", "--json", "--list", "--max-files", "--min-confidence", "--only", "--revert", "--root"].sort(),
     );
   });
+});
+
+const DS_BUTTON = "src/components/ui/button";
+const OLD_PAGE = "app/orders/page.tsx";
+const BUTTON_MAP = { "variant=secondary": "variant=outline", "variant=danger": "variant=destructive" };
+
+describe("dsmith migrate — 결정 기반 컴포넌트 치환 (legacy-demo)", () => {
+  const parseErrors = (root: string, file: string): number => (parseTsx(fs.readFileSync(path.join(root, file), "utf-8"), file).errors ?? []).length;
+
+  it("결정 전에는 pending만 세고 파일은 바뀌지 않는다; props 차이는 mapping 없으면 보류, 주면 편집한다", async () => {
+    const { root } = await prepare("examples/legacy-demo", { stateZero: true });
+    const tree = treeHash(root, { includeDsmith: true });
+
+    const pending = (await migrate(root, { only: "components" })).json.plan;
+    expect(pending.components).toMatchObject({ decided: 0, imports: 0, props: 0, pending: 2, held: { "decision-pending": 4 } });
+    expect(pending.componentPending.map((p) => p.item).sort()).toEqual(["Badge", "Button"]);
+    expect(pending.files).toEqual([]);
+
+    await runDecideChoose(root, "Button", DS_BUTTON);
+    const heldPlan = (await migrate(root, { only: "components" })).json.plan;
+    expect(heldPlan.files).toEqual([]);
+    expect(heldPlan.components).toMatchObject({ decided: 1, imports: 0, pending: 1 });
+    expect(heldPlan.components.held["mapping-missing"]).toBe(1);
+    expect(heldPlan.componentHeld[0]).toMatchObject({ item: "Button", file: OLD_PAGE, reason: "mapping-missing" });
+    expect(heldPlan.componentHeld[0]?.detail).toContain('variant="secondary"');
+    expect(heldPlan.componentHeld[0]?.detail).toContain('variant="danger"');
+
+    await runDecideChoose(root, "Button", DS_BUTTON, undefined, { mapping: BUTTON_MAP });
+    const { json, text } = await migrate(root, { only: "components" });
+    expect(json.plan.components).toMatchObject({ decided: 1, files: 1, imports: 1, props: 3, annotations: 0 });
+    expect(json.plan.files.map((f) => f.file)).toEqual([OLD_PAGE]);
+    expect(text).toContain("컴포넌트: 결정 1건 → 파일 1 · import 1 · prop 3");
+    expect(text).toContain("결정 대기 Badge");
+    // 계획만으로는 아무것도 쓰지 않는다(.dsmith 포함, decisions는 위에서 이미 쓴 뒤)
+    const afterDecide = treeHash(root, { includeDsmith: true });
+    await migrate(root, { only: "components" });
+    expect(treeHash(root, { includeDsmith: true })).toBe(afterDecide);
+    expect(afterDecide).not.toBe(tree);
+  }, 120_000);
+
+  it("--apply --only components: import가 DS module로 가고 타입 오류가 늘지 않으며 재audit에서 중복 Button 사용처가 DS module뿐이다", async () => {
+    const { root } = await prepare("examples/legacy-demo", { stateZero: true });
+    await runDecideChoose(root, "Button", DS_BUTTON, undefined, { mapping: BUTTON_MAP });
+    const errorsBefore = parseErrors(root, OLD_PAGE);
+    const tokensOnlyHash = treeHash(root);
+
+    const { json, text } = await migrate(root, { apply: true, only: "components" });
+    expect(json.applied).toMatchObject({ replaced: 0, components: 1, props: 3, annotations: 0, componentsRolledBack: 0 });
+    expect(text).toMatch(/^적용: 1개 파일 · 치환 0 · 컴포넌트 import 1 · prop 3 \(되돌린 파일 0\) → 기록 /m);
+    const page = fs.readFileSync(path.join(root, OLD_PAGE), "utf-8");
+    expect(page).toContain('import { Button } from "@/components/ui/button";');
+    expect(page).not.toContain("src/components/Button");
+    expect(page).toContain('<Button variant="outline" size="sm">');
+    expect(page.match(/variant="destructive"/g)).toHaveLength(2);
+    expect(parseErrors(root, OLD_PAGE)).toBeLessThanOrEqual(errorsBefore);
+    // 정의는 지우지 않는다
+    expect(fs.existsSync(path.join(root, "src/components/Button.tsx"))).toBe(true);
+    expect(treeHash(root)).not.toBe(tokensOnlyHash);
+
+    await runAudit(root);
+    const index = (await readIndex(root))!;
+    expect([...new Set(index.components.filter((c) => c.name === "Button").map((c) => c.module))]).toEqual([DS_BUTTON]);
+
+    // Badge는 여전히 pending
+    const again = (await migrate(root, { only: "components" })).json.plan;
+    expect(again.components).toMatchObject({ decided: 1, imports: 0, props: 0, pending: 1 });
+    expect(again.files).toEqual([]);
+  }, 120_000);
+
+  it("--only tokens는 컴포넌트를 건드리지 않고, 기본(둘 다) 적용 뒤 --revert는 트리를 되돌린다", async () => {
+    const { root } = await prepare("examples/legacy-demo", { stateZero: true });
+    await runDecideChoose(root, "Button", DS_BUTTON, undefined, { mapping: BUTTON_MAP });
+    const treeBefore = treeHash(root);
+
+    const tokensOnly = await migrate(root, { only: "tokens" });
+    expect(tokensOnly.json.plan.components).toMatchObject({ decided: 0, imports: 0, pending: 0 });
+    expect(tokensOnly.json.plan.files.every((f) => f.components.length === 0)).toBe(true);
+
+    const both = await migrate(root, { apply: true });
+    const applied = both.json.applied!;
+    expect(applied.components).toBe(1);
+    expect(applied.files.every((f) => f.status === "applied")).toBe(true);
+    expect(fs.readFileSync(path.join(root, OLD_PAGE), "utf-8")).toContain('from "@/components/ui/button"');
+    const report = fs.readFileSync(path.join(root, ".dsmith/reports", both.text.match(/migrate-[\d-]+\.md/)![0]), "utf-8");
+    expect(report).toContain("## 컴포넌트");
+    expect(report).toContain("import 1 · prop 3");
+
+    await runMigrateCommand({ root, revert: applied.id });
+    expect(treeHash(root)).toBe(treeBefore);
+  }, 180_000);
 });
 
 /** 계획 범위(토큰 파일 제외)의 남은 hardcoded 대상 사용 수 */

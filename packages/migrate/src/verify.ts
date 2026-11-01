@@ -1,5 +1,27 @@
-import { extractFileStyles, validateEdit, type ExtractorMatcher } from "@dsmith-dev/core";
+import { extractComponentUsage, extractFileStyles, parseTsx, validateEdit, type ExtractorMatcher } from "@dsmith-dev/core";
 import type { StyleUsage } from "@dsmith-dev/extractor-api";
+import type { ModuleEnv } from "./components.js";
+
+/**
+ * 컴포넌트 import를 옮긴 파일의 재검증: 편집 뒤 그 파일의 `item` 사용(JSX)이 전부 기대한 module에서 와야 한다.
+ * 지역 선언(declaredLocally)과 import 없는 사용(module "")은 보지 않는다. 통과하면 null, 아니면 사유
+ */
+export function checkComponents(file: string, after: string, checks: { item: string; module: string }[], env: ModuleEnv): string | null {
+  if (checks.length === 0) return null;
+  let usages;
+  try {
+    usages = extractComponentUsage(file, parseTsx(after, file), env.tsPaths, env.moduleContext);
+  } catch (err) {
+    return `컴포넌트 재추출 검증 실패: ${err instanceof Error ? err.message : String(err)}`;
+  }
+  for (const { item, module } of checks) {
+    for (const u of usages) {
+      if (u.name !== item || u.declaredLocally === true || u.module === "") continue;
+      if (u.module !== module) return `컴포넌트 재추출 검증 실패: ${item}(${u.line}줄)이 ${u.module}에서 옴(기대 ${module})`;
+    }
+  }
+  return null;
+}
 
 interface Counts {
   hardcoded: number;

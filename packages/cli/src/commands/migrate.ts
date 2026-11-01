@@ -70,6 +70,12 @@ async function loadState(root: string): Promise<{ detect: DetectResult; index: I
   return { detect: d, index: i };
 }
 
+/** 컴포넌트 편집이 있을 때만 붙는 ` · 컴포넌트 import N · prop M · 주석 K` */
+function componentPart(applied: ApplyResult): string {
+  if (applied.components + applied.props + applied.annotations === 0) return "";
+  return ` · 컴포넌트 import ${applied.components} · prop ${applied.props}${applied.annotations > 0 ? ` · 지역 정의 주석 ${applied.annotations}` : ""}`;
+}
+
 function formatList(items: Awaited<ReturnType<typeof listMigrations>>): string {
   if (items.length === 0) return "마이그레이션 기록 없음";
   return items
@@ -138,7 +144,7 @@ export async function runMigrateCommand(opts: MigrateCommandOptions): Promise<Mi
     };
   }
 
-  if (plan.planned === 0) {
+  if (plan.files.length === 0) {
     return {
       json: { plan, projected, applied: null, actual: null },
       text: `${formatPlanSummary(plan, projected, { hint: false })}\n적용할 치환이 없음`,
@@ -161,7 +167,7 @@ export async function runMigrateCommand(opts: MigrateCommandOptions): Promise<Mi
   const rolledBack = applied.files.length - appliedFiles;
   const text = [
     formatPlanSummary(plan, projected, { hint: false }),
-    `적용: ${appliedFiles}개 파일 · 치환 ${applied.replaced} (되돌린 파일 ${rolledBack}) → 기록 ${applied.record}`,
+    `적용: ${appliedFiles}개 파일 · 치환 ${applied.replaced}${componentPart(applied)} (되돌린 파일 ${rolledBack}) → 기록 ${applied.record}`,
     `실제: 점수 ${before.score} → ${after.score}, 하드코딩 비율 ${pct(before.hardcodedShare)} → ${pct(after.hardcodedShare)}`,
     `리포트: ${reportRel}`,
   ].join("\n");

@@ -1,16 +1,23 @@
 export type {
-  ComponentPlanSummary,
-  ComponentSkipReason,
   FilePlan,
   MigrateOptions,
   MigratePlan,
-  PlannedComponentEdit,
   PlannedReplacement,
   SkippedReplacement,
   TokenSkipReason,
   UsageRef,
 } from "./plan.js";
 export { planMigration } from "./plan.js";
+export type {
+  ChosenTarget,
+  ComponentPlanSummary,
+  ComponentSkipReason,
+  HeldComponentEdit,
+  ModuleEnv,
+  PlannedComponentEdit,
+} from "./components.js";
+export { countComponentEdits, exportKindOf, loadModuleEnv, planComponentEdits, resolveChosenTargets } from "./components.js";
+export { specifierForModule } from "./specifier.js";
 export type { ApplyFileResult, ApplyResult } from "./apply.js";
 export { applyMigration } from "./apply.js";
 export type { RevertResult } from "./revert.js";

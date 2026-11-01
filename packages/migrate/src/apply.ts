@@ -12,14 +12,20 @@ import {
   type TextPatch,
 } from "@dsmith-dev/core";
 import type { Extractor } from "@dsmith-dev/extractor-api";
+import { countComponentEdits, loadModuleEnv } from "./components.js";
 import type { FilePlan, MigratePlan, TokenSkipReason } from "./plan.js";
-import { checkEdit } from "./verify.js";
+import { checkComponents, checkEdit } from "./verify.js";
 
 export interface ApplyFileResult {
   file: string;
   status: "applied" | "rolled-back" | "changed-since-plan";
   replacements: number;
+  /** 옮긴 컴포넌트 import 수((파일, 항목) 단위) */
   components: number;
+  /** 바뀐 prop 수 */
+  props: number;
+  /** 지역 정의에 붙인 주석 수 */
+  annotations: number;
   reason?: string;
 }
 
@@ -29,7 +35,12 @@ export interface ApplyResult {
   record: string;
   files: ApplyFileResult[];
   replaced: number;
+  /** 적용된 컴포넌트 import 수 */
   components: number;
+  props: number;
+  annotations: number;
+  /** 적용하지 못한 파일(검증 실패·계획 뒤 변경)에 있던 컴포넌트 import 수 */
+  componentsRolledBack: number;
   /** 적용하지 못한 파일의 계획 치환 수 — plan.skipped와 같은 이름("rolled-back")으로 보고한다 */
   skipped: Partial<Record<TokenSkipReason, number>>;
 }
@@ -56,14 +67,16 @@ export async function applyMigration(
   for (const extractor of opts.extractors) await extractor.prepare?.(root);
   const matchers = extractorMatchers(opts.extractors);
   const id = await newMigrationId(root, opts.now ?? new Date());
+  const env = await loadModuleEnv(root);
 
   const prepared: Prepared[] = [];
   for (const fp of plan.files) {
     const n = fp.replacements.length;
-    const c = fp.components.length;
+    const counts = countComponentEdits(fp.components);
+    const c = counts.imports;
     const reject = (status: "rolled-back" | "changed-since-plan", reason: string): Prepared => ({
       fp,
-      result: { file: fp.file, status, replacements: n, components: c, reason },
+      result: { file: fp.file, status, replacements: n, components: c, props: counts.props, annotations: counts.annotations, reason },
       entry: { file: fp.file, before: fp.sha256, after: fp.sha256, patches: [], status: "rolled-back", reason },
     });
 
@@ -85,7 +98,7 @@ export async function applyMigration(
       prepared.push(reject("rolled-back", `패치 적용 실패: ${(err as Error).message}`));
       continue;
     }
-    const mismatch = checkEdit(root, fp.file, current, after, n, matchers);
+    const mismatch = checkEdit(root, fp.file, current, after, n, matchers) ?? checkComponents(fp.file, after, fp.componentChecks, env);
     if (mismatch !== null) {
       prepared.push(reject("rolled-back", mismatch));
       continue;
@@ -94,7 +107,7 @@ export async function applyMigration(
     prepared.push({
       fp,
       after,
-      result: { file: fp.file, status: "applied", replacements: n, components: c },
+      result: { file: fp.file, status: "applied", replacements: n, components: c, props: counts.props, annotations: counts.annotations },
       entry: { file: fp.file, before: fp.sha256, after: sha256Text(after), patches, status: "pending" },
     });
   }
@@ -129,7 +142,10 @@ export async function applyMigration(
   const appliedFiles = files.filter((f) => f.status === "applied");
   const replaced = appliedFiles.reduce((n, f) => n + f.replacements, 0);
   const components = appliedFiles.reduce((n, f) => n + f.components, 0);
+  const props = appliedFiles.reduce((n, f) => n + f.props, 0);
+  const annotations = appliedFiles.reduce((n, f) => n + f.annotations, 0);
   const lost = files.filter((f) => f.status !== "applied").reduce((n, f) => n + f.replacements, 0);
+  const componentsLost = files.filter((f) => f.status !== "applied").reduce((n, f) => n + f.components, 0);
   record.status = "applied";
   record.summary = { tokens: replaced, components, files: appliedFiles.length };
   await writeMigration(root, record);
@@ -140,6 +156,9 @@ export async function applyMigration(
     files,
     replaced,
     components,
+    props,
+    annotations,
+    componentsRolledBack: componentsLost,
     skipped: lost > 0 ? { "rolled-back": lost } : {},
   };
 }

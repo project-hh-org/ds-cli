@@ -1,5 +1,6 @@
 import type { Token } from "@dsmith-dev/core";
 import type { ApplyResult } from "./apply.js";
+import type { ComponentPlanSummary, ComponentSkipReason } from "./components.js";
 import type { MigratePlan, TokenSkipReason } from "./plan.js";
 
 export interface AuditNumbers {
@@ -41,6 +42,39 @@ const SKIP_ORDER: TokenSkipReason[] = [
 
 export const pct = (share: number): string => `${(share * 100).toFixed(1)}%`;
 
+const HELD_EXPLAIN: Record<ComponentSkipReason, string> = {
+  "decision-pending": "결정이 끝나지 않은 항목 — `dsmith decide`로 결정하면 대상이 됨",
+  "mapping-missing": "대상 컴포넌트에 없는 prop(또는 허용하지 않는 값) — `decide --map <from>:<to>`로 대응을 주면 대상이 됨",
+  "spread-props": "{...props} 스프레드가 있어 prop 대응을 확인할 수 없음",
+  "export-unknown": "대상의 내보내기 방식(named·default)을 알 수 없음",
+  overlap: "토큰 치환과 소스 구간이 겹쳐 보류",
+  "rolled-back": "치환 뒤 재검증(재파싱·컴포넌트 재추출)에 실패해 무변경",
+};
+const HELD_ORDER: ComponentSkipReason[] = ["decision-pending", "mapping-missing", "spread-props", "export-unknown", "overlap", "rolled-back"];
+
+function heldSummary(held: ComponentPlanSummary["held"]): string {
+  return HELD_ORDER.filter((r) => (held[r] ?? 0) > 0)
+    .map((r) => `${r} ${held[r]}`)
+    .join(" · ");
+}
+
+/** 컴포넌트 결정이 하나라도 있을 때만 나오는 줄들 */
+function componentLines(plan: MigratePlan, limit: number): string[] {
+  const c = plan.components;
+  if (c.decided === 0 && c.pending === 0) return [];
+  const lines: string[] = [];
+  const done =
+    c.imports + c.props + c.annotations === 0
+      ? "치환할 것이 없음"
+      : `파일 ${c.files} · import ${c.imports} · prop ${c.props}${c.annotations > 0 ? ` · 지역 정의 주석 ${c.annotations}` : ""}`;
+  const held = heldSummary(c.held);
+  lines.push(`컴포넌트: 결정 ${c.decided}건 → ${done}${held === "" ? "" : `   |   보류 ${held}`}`);
+  for (const h of plan.componentHeld.slice(0, limit)) lines.push(`  보류 ${h.file}:${h.line} ${h.item} — ${h.reason}: ${h.detail}`);
+  if (plan.componentHeld.length > limit) lines.push(`  … 외 ${plan.componentHeld.length - limit}건`);
+  for (const p of plan.componentPending) lines.push(`  결정 대기 ${p.item} (${p.kind}, 파일 ${p.files})`);
+  return lines;
+}
+
 function skipSummary(skipped: MigratePlan["skipped"]): string {
   return SKIP_ORDER.filter((r) => (skipped[r] ?? 0) > 0)
     .map((r) => `${r} ${skipped[r]}`)
@@ -72,7 +106,7 @@ export function formatPlanSummary(
   opts: { hint?: boolean } = {},
 ): string {
   const lines: string[] = [tokenLine(plan)];
-  const planned = plan.planned === 0 ? "치환할 것이 없음" : `파일 ${plan.files.length} · 치환 ${plan.planned} (${categorySummary(plan.byCategory)})`;
+  const planned = plan.planned === 0 ? "치환할 것이 없음" : `파일 ${plan.files.filter((f) => f.replacements.length > 0).length} · 치환 ${plan.planned} (${categorySummary(plan.byCategory)})`;
   lines.push(`계획: ${planned}`);
   if (plan.planned > 0) {
     const c = plan.confidence;
@@ -87,8 +121,10 @@ export function formatPlanSummary(
   if (projected !== null && plan.planned > 0) {
     lines.push(`예상: 하드코딩 비율 ${pct(projected.before.hardcodedShare)} → ${pct(projected.after.hardcodedShare)}, 점수 ${projected.before.score} → ${projected.after.score}`);
   }
+  lines.push(...componentLines(plan, 8));
   for (const note of plan.notes) lines.push(`참고: ${note}`);
-  if (plan.planned > 0 && opts.hint !== false) lines.push("적용: dsmith migrate --apply   (되돌리기: dsmith migrate --revert <id>)");
+  const anything = plan.planned > 0 || plan.components.imports + plan.components.props + plan.components.annotations > 0;
+  if (anything && opts.hint !== false) lines.push("적용: dsmith migrate --apply   (되돌리기: dsmith migrate --revert <id>)");
   return lines.join("\n");
 }
 
@@ -119,6 +155,26 @@ export function renderMigrateReport(input: { plan: MigratePlan; applied: ApplyRe
     lines.push("| 파일 | 치환 |", "| --- | --- |");
     for (const f of top) lines.push(`| ${f.file} | ${f.replacements} |`);
     if (appliedFiles.length > top.length) lines.push("", `상위 ${top.length}개 파일만 표시(전체 ${appliedFiles.length}개).`);
+    lines.push("");
+  }
+
+  if (plan.components.decided > 0 || plan.components.pending > 0) {
+    lines.push("## 컴포넌트", "");
+    lines.push(`적용: import ${applied.components} · prop ${applied.props} · 지역 정의 주석 ${applied.annotations}${applied.componentsRolledBack > 0 ? ` (되돌린 파일의 import ${applied.componentsRolledBack})` : ""}`, "");
+    const edited = appliedFiles.filter((f) => f.components + f.props + f.annotations > 0);
+    if (edited.length > 0) {
+      lines.push("| 파일 | import | prop | 주석 |", "| --- | --- | --- | --- |");
+      for (const f of edited.slice(0, 20)) lines.push(`| ${f.file} | ${f.components} | ${f.props} | ${f.annotations} |`);
+      if (edited.length > 20) lines.push("", `상위 20개 파일만 표시(전체 ${edited.length}개).`);
+      lines.push("");
+    }
+    const held = heldSummary(plan.components.held);
+    lines.push(held === "" ? "보류: 없음" : `보류: ${held}`, "");
+    for (const r of HELD_ORDER) {
+      if ((plan.components.held[r] ?? 0) > 0) lines.push(`- ${r}: ${HELD_EXPLAIN[r]}`);
+    }
+    for (const h of plan.componentHeld) lines.push(`  - ${h.file}:${h.line} ${h.item} (${h.reason}) ${h.detail}`);
+    for (const p of plan.componentPending) lines.push(`  - 결정 대기 ${p.item} (${p.kind}, 파일 ${p.files})`);
     lines.push("");
   }
 
