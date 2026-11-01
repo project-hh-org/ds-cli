@@ -12,6 +12,7 @@ import {
   runDecideList,
 } from "./commands/decide.js";
 import { detectHints, formatDetectSummary, runDetect } from "./commands/detect.js";
+import { runInitCommand } from "./commands/init.js";
 import { formatInstallSummary, runInstall } from "./commands/install.js";
 import { runMcp } from "./commands/mcp.js";
 import { auditWarnings } from "./report/audit-report.js";
@@ -74,21 +75,14 @@ interface InstallCliOptions {
   mcpCommand?: string;
 }
 
-interface McpOptions {
-  root?: string;
-  budget?: string;
-  git: boolean;
-}
-
-interface InstallCliOptions {
+interface InitCliOptions {
   root: string;
   json?: boolean;
-  tool?: string[];
+  out?: string;
   all?: boolean;
-  global?: boolean;
+  top?: string;
   dryRun?: boolean;
   force?: boolean;
-  mcpCommand?: string;
 }
 
 /** `dsmith` 커맨드 트리. 실행(parse)은 bin.ts가 하고, 테스트는 이 트리를 직접 들여다본다. */
@@ -239,6 +233,23 @@ export function buildProgram(): Command {
         ...(opts.force === true ? { force: true } : {}),
       });
       process.stdout.write(opts.json ? `${JSON.stringify(result, null, 2)}\n` : `${formatAiSummary(result)}\n`);
+    });
+
+  program
+    .command("init")
+    .description(
+      "audit 결과로 W3C 토큰 파일(tokens.json·css·ts)과 컴포넌트 스캐폴드를 만들고 커버리지를 보고한다. 사용자가 고친 토큰 파일은 --force 없이 덮어쓰지 않고, 기존 스캐폴드는 --force여도 덮어쓰지 않음",
+    )
+    .option("--root <dir>", "대상 레포 경로", process.cwd())
+    .option("--json", "결과를 JSON으로만 stdout에 출력")
+    .option("--out <dir>", "산출 디렉터리(레포 안 상대 경로, 기본 design-system)")
+    .option("--all", "결정 없이 추천안으로 스캐폴드(상위 --top개)")
+    .option("--top <n>", "--all에서 스캐폴드할 컴포넌트 수(기본 10)")
+    .option("--dry-run", "아무것도 쓰지 않고 쓸 파일과 diff만 출력")
+    .option("--force", "사용자가 고친 토큰 파일도 덮어쓴다(스캐폴드는 제외)")
+    .action(async (opts: InitCliOptions) => {
+      const { result, text } = await runInitCommand(opts);
+      process.stdout.write(opts.json ? `${JSON.stringify(result, null, 2)}\n` : `${text}\n`);
     });
 
   return program;

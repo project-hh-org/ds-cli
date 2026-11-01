@@ -115,6 +115,9 @@ importers:
       '@dsmith-dev/extractor-tailwind':
         specifier: workspace:*
         version: link:../extractor-tailwind
+      '@dsmith-dev/init':
+        specifier: workspace:*
+        version: link:../init
       '@dsmith-dev/mcp-server':
         specifier: workspace:*
         version: link:../mcp-server
