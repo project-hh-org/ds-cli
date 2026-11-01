@@ -107,12 +107,18 @@ describe("cssExtractor.tokenRef + conformance write 왕복", () => {
       },
       {
         file: "a.css",
+        code: ".a { background: #fff; }",
+        expect: [],
+        writes: [{ target: { raw: "#fff" }, token: bg, ref: "var(--color-bg)", output: ".a { background: var(--color-bg); }", reextract: { source: "token", property: "background-color" } }],
+      },
+      {
+        file: "a.css",
         code: ".a { color: #fff; }",
         expect: [],
         writes: [{ target: { property: "color" }, token: { ...bg, name: "color.bg" }, ref: null, reextract: {} }],
       },
     ]);
     expect(report.failed).toEqual([]);
-    expect(report.passed).toBe(3);
+    expect(report.passed).toBe(4);
   });
 });

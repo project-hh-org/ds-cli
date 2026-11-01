@@ -118,7 +118,7 @@ describe("cssExtractor.extract", () => {
 
   it("축약의 var(--x) 전체 값은 token", () => {
     const [usage] = extractAll("a{background:var(--bg)}");
-    expect(usage).toMatchObject({ source: "token", property: "other" });
+    expect(usage).toMatchObject({ source: "token", property: "background-color" });
   });
 
   it("!important는 값에서 제외한다", () => {

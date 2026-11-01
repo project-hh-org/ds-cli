@@ -80,9 +80,10 @@ export function shorthandColorProperty(prop: string): StyleProperty | null {
   return SHORTHAND_COLOR_PROPERTY[camelToKebab(prop)] ?? null;
 }
 
-const HEX_COLOR =/^#[0-9a-fA-F]{3,8}(?![\w-])/;
+const HEX_COLOR = /^#[0-9a-fA-F]{3,8}(?![\w-])/;
 const COLOR_FUNCTION = /^(?:rgba?|hsla?)\(/i;
 const WORD = /^[A-Za-z][A-Za-z-]*/;
+const VARIABLE_PREFIX: ReadonlySet<string> = new Set(["$", "@", "."]);
 
 /** `text[open]`이 `(`일 때 짝이 맞는 `)` 다음 위치. 닫히지 않으면 text.length. */
 function skipParens(text: string, open: number): number {
@@ -132,6 +133,11 @@ export function splitShorthandColor(
     const word = WORD.exec(rest);
     if (word !== null) {
       const end = i + word[0].length;
+      // `$gray`·`@gray`·`theme.$gray`·`.gray`: scss/less 변수나 멤버 접근이지 색 이름이 아니다.
+      if (i > 0 && VARIABLE_PREFIX.has(value[i - 1]!)) {
+        i = value[end] === "(" ? skipParens(value, end) : end;
+        continue;
+      }
       if (value[end] === "(") {
         const close = skipParens(value, end);
         if (COLOR_FUNCTION.test(rest)) {

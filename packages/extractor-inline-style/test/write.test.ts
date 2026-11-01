@@ -96,12 +96,18 @@ describe("inlineStyleExtractor.tokenRef + conformance write 왕복", () => {
       },
       {
         file: "w.tsx",
+        code: 'const x = <div style={{ background: "#3b82f6" }} />;',
+        expect: [],
+        writes: [{ target: { raw: "#3b82f6" }, token: blue, ref: "var(--color-blue-500)", output: 'const x = <div style={{ background: "var(--color-blue-500)" }} />;', reextract: { source: "token", property: "background-color" } }],
+      },
+      {
+        file: "w.tsx",
         code: 'const x = <div style={{ color: "#3b82f6" }} />;',
         expect: [],
         writes: [{ target: { property: "color" }, token: { ...blue, name: "color.brand" }, ref: null, reextract: {} }],
       },
     ]);
     expect(report.failed).toEqual([]);
-    expect(report.passed).toBe(2);
+    expect(report.passed).toBe(3);
   });
 });

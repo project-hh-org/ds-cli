@@ -45,3 +45,46 @@ describe("StyleObjectPatch.literal", () => {
     expect(n?.patch?.literal).toBeUndefined();
   });
 });
+
+describe("단축 속성 var() 분류 보강", () => {
+  const one = (css: string) => classifyAll(css)[0];
+
+  it("값 전체가 var()뿐인 background/border도 색 속성으로 읽는다", () => {
+    expect(one(".a{background:var(--c)}")?.usage).toMatchObject({ property: "background-color", source: "token" });
+    expect(one(".a{border:var(--c)}")?.usage).toMatchObject({ property: "border-color", source: "token" });
+  });
+
+  it("border/outline은 마지막 var()가 색이다", () => {
+    expect(one(".a{border:var(--w) solid var(--c)}")?.usage).toMatchObject({
+      property: "border-color",
+      source: "token",
+      raw: "var(--c)",
+    });
+    expect(one(".a{outline:var(--w) solid var(--c)}")?.usage).toMatchObject({ property: "border-color", raw: "var(--c)" });
+  });
+
+  it("다른 피연산자가 색 키워드·url이거나 길이·스타일이 아니면 색 토큰이 아니다", () => {
+    for (const css of [
+      ".a{border:var(--w) solid currentColor}",
+      ".a{border:var(--w) solid inherit}",
+      ".a{background:var(--img) no-repeat}",
+      ".a{background:url(a.png) var(--c)}",
+      ".a{outline:var(--w) solid transparent}",
+    ]) {
+      expect(one(css)?.usage, css).not.toMatchObject({ property: "border-color", source: "token" });
+      expect(one(css)?.usage, css).not.toMatchObject({ property: "background-color", source: "token" });
+    }
+  });
+
+  it("scss·less 변수 이름이 색 단어와 같아도 색으로 보지 않는다", () => {
+    for (const css of [".a{border:1px solid $gray}", ".a{border:1px solid @gray}", ".a{border:1px solid theme.$gray}"]) {
+      const usage = one(css)?.usage;
+      expect(usage, css).not.toMatchObject({ source: "hardcoded", property: "border-color" });
+    }
+    expect(one(".a{border:1px solid $gray}")?.usage).toMatchObject({ property: "border-color", source: "token", raw: "$gray" });
+  });
+
+  it("#hex 앞 공백 없는 정규식 정리 후에도 hex 색은 읽는다", () => {
+    expect(one(".a{border:1px solid #abc}")?.usage).toMatchObject({ property: "border-color", source: "hardcoded", raw: "#abc" });
+  });
+});
