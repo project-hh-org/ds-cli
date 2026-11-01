@@ -38,5 +38,5 @@ export async function resolveDefinitionFile(root: string, module: string): Promi
  * 확장자(SOURCE_EXTENSION) 제거 → 끝 "/index" 제거(root index는 "index").
  */
 export function moduleOfFile(file: string): string {
-  return stripModulePath(file.split(path.sep).join("/"));
+  return stripModulePath(file.split(path.sep).join("/").replace(/\.d\.([cm]?ts)$/, ".$1"));
 }

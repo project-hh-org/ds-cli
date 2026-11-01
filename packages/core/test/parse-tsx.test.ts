@@ -37,3 +37,17 @@ describe("parseTsx", () => {
     expect(names).toEqual(["div"]);
   });
 });
+
+describe("parseTsx: 파일 종류별 플러그인", () => {
+  it(".d.ts는 ambient 문맥(dts)으로 파싱한다 — `const x: number;`는 .d.ts에서만 오류 없음", () => {
+    expect(parseTsx("declare const y: 1;\nexport const x: number;", "a.d.ts").errors ?? []).toHaveLength(0);
+    expect((parseTsx("export const x: number;", "a.ts").errors ?? []).length).toBeGreaterThan(0);
+  });
+
+  it(".mts/.cts는 jsx 없이 파싱한다(`<string>y` 단언)", () => {
+    for (const f of ["a.mts", "a.cts"]) {
+      expect(() => parseTsx("export const x = <string>y;", f)).not.toThrow();
+      expect(parseTsx("export const x = <string>y;", f).errors ?? []).toHaveLength(0);
+    }
+  });
+});

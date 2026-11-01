@@ -51,4 +51,19 @@ describe("catalog store", () => {
     fs.writeFileSync(f, "{ nope");
     await expect(readCatalog(root)).rejects.toThrow(CATALOG_FILE);
   });
+
+  it("컴포넌트 항목을 검증한다(name·module 문자열, props 배열)", async () => {
+    fs.mkdirSync(path.join(root, ".dsmith"));
+    const f = path.join(root, ".dsmith", "catalog.json");
+    for (const bad of [null, "x", { name: "A", module: "m" }, { name: 1, module: "m", props: [] }, { name: "A", props: [] }]) {
+      fs.writeFileSync(f, JSON.stringify({ version: 1, components: [bad] }));
+      await expect(readCatalog(root)).rejects.toThrow(/catalog\.json components\[0\]/);
+    }
+  });
+
+  it("JSON 파싱 에러는 원인을 포함한다", async () => {
+    fs.mkdirSync(path.join(root, ".dsmith"));
+    fs.writeFileSync(path.join(root, ".dsmith", "catalog.json"), "{ nope");
+    await expect(readCatalog(root)).rejects.toThrow(/catalog\.json.*(position|JSON|token)/i);
+  });
 });

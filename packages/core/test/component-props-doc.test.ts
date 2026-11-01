@@ -275,3 +275,58 @@ describe("readComponentDoc", () => {
     expect(readComponentDoc(`export function Z(){}`, "Z.tsx", "Q")).toBeNull();
   });
 });
+
+describe("keyof typeof: 부분 값 차단", () => {
+  const read = (decl: string): string[] | undefined => {
+    const code = `${decl}\ninterface P { v?: keyof typeof t }\nexport function X(p: P) { return null; }`;
+    return readComponentProps(code, "X.tsx", "X")?.props[0]?.values;
+  };
+  it("스프레드·계산된 키·숫자 키가 있으면 values 없음", () => {
+    expect(read(`const base = {}; const t = { ...base, ghost: 1 };`)).toBeUndefined();
+    expect(read(`const k = "a"; const t = { [k]: 1, ghost: 1 };`)).toBeUndefined();
+    expect(read(`const t = { 2: 3, ghost: 1 };`)).toBeUndefined();
+  });
+  it("const만 센다 — let·var는 values 없음", () => {
+    expect(read(`let t = { a: 1 };`)).toBeUndefined();
+    expect(read(`var t = { a: 1 };`)).toBeUndefined();
+    expect(read(`const t = { a: 1 };`)).toEqual(["a"]);
+  });
+  it("단일 문자열 리터럴 타입도 values를 낸다", () => {
+    const code = `interface P { v?: "only" }\nexport function X(p: P) { return null; }`;
+    expect(readComponentProps(code, "X.tsx", "X")?.props[0]?.values).toEqual(["only"]);
+  });
+});
+
+describe("타입 텍스트의 주석", () => {
+  it("블록·줄 주석을 빼고 문자열 리터럴의 //는 지키지 않는다", () => {
+    const code = [
+      `interface P extends StandardProps<`,
+      `  FormControlProps,`,
+      `  // event handlers`,
+      `  'onChange'`,
+      `> {`,
+      `  a?: 'x' /** inner */ | 'y' // line`,
+      `    | 'z';`,
+      `  u?: 'https://example.com/a' | 'b';`,
+      `}`,
+      `export function X(p: P) { return null; }`,
+    ].join("\n");
+    const r = readComponentProps(code, "X.tsx", "X");
+    expect(r?.inherits).toEqual(["StandardProps< FormControlProps, 'onChange' >"]);
+    expect(r?.props[0]?.type).toBe("'x' | 'y' | 'z'");
+    expect(r?.props[1]?.type).toBe("'https://example.com/a' | 'b'");
+    expect(r?.props[1]?.values).toEqual(["https://example.com/a", "b"]);
+  });
+});
+
+describe("JSDoc 태그 규칙", () => {
+  it("@ 다음에 공백이 없는 줄(@mui/material)은 태그가 아니다", () => {
+    const code = `interface P {\n  /**\n   * @mui/material based\n   */\n  a?: string;\n}\nexport function X(p: P) { return null; }`;
+    expect(readComponentProps(code, "X.tsx", "X")?.props[0]?.description).toBe("@mui/material based");
+  });
+  it("JSDoc과 선언 사이의 // 주석은 건너뛰고 마지막 JSDoc을 쓴다", () => {
+    const code = `interface P {\n  /** 설명 */\n  // todo\n  a?: string;\n}\nexport function X(p: P) { return null; }`;
+    expect(readComponentProps(code, "X.tsx", "X")?.props[0]?.description).toBe("설명");
+    expect(readComponentDoc(`/** 문서 */\n// note\nexport function Y(){}`, "Y.tsx", "Y")).toEqual({ description: "문서" });
+  });
+});

@@ -40,10 +40,23 @@ interface Members {
 interface Ctx {
   code: string;
   consts: Map<string, string[]>;
+  /** 파일 안 모든 주석의 [start, end) — 타입 텍스트에서 지운다 */
+  comments: [number, number][];
 }
 
-function textOf(code: string, node: Node): string {
-  return code.slice(node.start ?? 0, node.end ?? 0).replace(/\s+/g, " ").trim();
+/** 노드 소스 텍스트. 노드 범위 안의 주석(ast.comments 기준 — 문자열 리터럴 속 //는 건드리지 않는다)을 뺀다 */
+function textOf(ctx: Ctx, node: Node): string {
+  const start = node.start ?? 0;
+  const end = node.end ?? 0;
+  let out = "";
+  let pos = start;
+  for (const [cs, ce] of ctx.comments) {
+    if (cs < start || ce > end) continue;
+    out += ctx.code.slice(pos, cs);
+    pos = ce;
+  }
+  out += ctx.code.slice(pos, end);
+  return out.replace(/\s+/g, " ").trim();
 }
 
 const DESCRIPTION_MAX = 200;
@@ -58,8 +71,16 @@ interface JsDoc {
 function jsDocOf(node: { leadingComments?: readonly { type: string; value: string }[] | null }): JsDoc | null {
   const comments = node.leadingComments;
   if (!comments || comments.length === 0) return null;
-  const last = comments[comments.length - 1];
-  if (!last || last.type !== "CommentBlock" || !last.value.startsWith("*")) return null;
+  // 선언 사이에 // 주석이 끼어도 마지막 JSDoc 스타일 블록을 쓴다.
+  let last: { type: string; value: string } | undefined;
+  for (let i = comments.length - 1; i >= 0; i--) {
+    const c = comments[i];
+    if (c && c.type === "CommentBlock" && c.value.startsWith("*")) {
+      last = c;
+      break;
+    }
+  }
+  if (!last) return null;
   const lines = last.value
     .slice(1)
     .split("\n")
@@ -67,9 +88,9 @@ function jsDocOf(node: { leadingComments?: readonly { type: string; value: strin
   const body: string[] = [];
   const tags: { tag: string; text: string[] }[] = [];
   for (const line of lines) {
-    const m = /^\s*@(\w+)\s*(.*)$/.exec(line);
+    const m = /^\s*@(\w+)(?:\s+(.*))?$/.exec(line);
     if (m) {
-      tags.push({ tag: m[1] as string, text: [m[2] as string] });
+      tags.push({ tag: m[1] as string, text: [m[2] ?? ""] });
     } else if (tags.length > 0) {
       (tags[tags.length - 1] as { text: string[] }).text.push(line);
     } else {
@@ -160,7 +181,6 @@ function stringLiteralValues(t: TSType, ctx: Ctx): string[] | null {
 }
 
 function membersOf(ctx: Ctx, elements: TSTypeElement[]): PropInfo[] {
-  const { code } = ctx;
   const out: PropInfo[] = [];
   for (const m of elements) {
     const name = memberName(m);
@@ -169,7 +189,7 @@ function membersOf(ctx: Ctx, elements: TSTypeElement[]): PropInfo[] {
       const ann = m.typeAnnotation?.typeAnnotation;
       const info: PropInfo = { name };
       if (ann) {
-        info.type = textOf(code, ann);
+        info.type = textOf(ctx, ann);
       }
       info.required = m.optional !== true;
       const values = ann ? stringLiteralValues(ann, ctx) : null;
@@ -190,7 +210,7 @@ function collectConsts(body: Statement[]): Map<string, string[]> {
   const consts = new Map<string, string[]>();
   for (const raw of body) {
     const stmt = unwrapExport(raw);
-    if (!stmt || stmt.type !== "VariableDeclaration") continue;
+    if (!stmt || stmt.type !== "VariableDeclaration" || stmt.kind !== "const") continue;
     for (const d of stmt.declarations) {
       if (d.id.type !== "Identifier" || !d.init) continue;
       let init: Node = d.init;
@@ -198,14 +218,22 @@ function collectConsts(body: Statement[]): Map<string, string[]> {
         init = init.expression;
       }
       if (init.type !== "ObjectExpression") continue;
+      // 스프레드·계산된 키·숫자 키가 하나라도 있으면 키를 다 알 수 없다 — 일부만 내놓느니 기록하지 않는다.
       const keys: string[] = [];
+      let complete = true;
       for (const p of init.properties) {
-        if (p.type !== "ObjectProperty" && p.type !== "ObjectMethod") continue;
-        if (p.computed) continue;
+        if ((p.type !== "ObjectProperty" && p.type !== "ObjectMethod") || p.computed) {
+          complete = false;
+          break;
+        }
         if (p.key.type === "Identifier") keys.push(p.key.name);
         else if (p.key.type === "StringLiteral") keys.push(p.key.value);
+        else {
+          complete = false;
+          break;
+        }
       }
-      consts.set(d.id.name, keys);
+      if (complete) consts.set(d.id.name, keys);
     }
   }
   return consts;
@@ -242,7 +270,7 @@ function literalMembers(ctx: Ctx, t: TSType): Members | null {
     const result: Members = { props: [], inherits: [] };
     for (const part of t.types) {
       if (part.type === "TSTypeLiteral") result.props.push(...membersOf(ctx, part.members));
-      else result.inherits.push(textOf(ctx.code, part));
+      else result.inherits.push(textOf(ctx, part));
     }
     return result;
   }
@@ -262,7 +290,7 @@ function resolveType(ctx: Ctx, t: TSType, local: LocalTypes): Members | null {
     if (iface.typeParameters && iface.typeParameters.params.length > 0) return null;
     return {
       props: membersOf(ctx, iface.body.body),
-      inherits: (iface.extends ?? []).map((e) => textOf(ctx.code, e)),
+      inherits: (iface.extends ?? []).map((e) => textOf(ctx, e)),
     };
   }
   const alias = local.aliases.get(name);
@@ -405,12 +433,9 @@ function findSoleExportedTarget(body: Statement[]): Target | null {
  * `name`이 선언돼 있지 않으면 export default, 그다음 유일한 대문자 named export를 대신 읽는다.
  */
 export function readComponentProps(code: string, file: string, name: string): ComponentProps | null {
-  let body: Statement[];
-  try {
-    body = parseTsx(code, file).program.body;
-  } catch {
-    return null;
-  }
+  const parsed = parseBody(code, file);
+  if (!parsed) return null;
+  const { body } = parsed;
   // 이름이 선언돼 있지 않으면(`import { Badge as StatusBadge }`·다른 이름으로 default import) default export → 유일한 대문자 export 순으로 본다.
   // 선언은 있으나 읽을 수 없는 경우(null)는 대체하지 않는다.
   let target = findTarget(body, name);
@@ -419,17 +444,28 @@ export function readComponentProps(code: string, file: string, name: string): Co
   if (!target) return null;
   const typeNode = target.typeArg ?? target.paramType;
   if (!typeNode) return null;
-  const resolved = resolveType({ code, consts: collectConsts(body) }, typeNode, collectLocalTypes(body));
+  const resolved = resolveType(ctxOf(code, parsed), typeNode, collectLocalTypes(body));
   if (!resolved) return null;
   return { props: resolved.props, inherits: resolved.inherits };
 }
 
-function parseBody(code: string, file: string): Statement[] | null {
+interface Parsed {
+  body: Statement[];
+  comments: [number, number][];
+}
+
+function parseBody(code: string, file: string): Parsed | null {
   try {
-    return parseTsx(code, file).program.body;
+    const ast = parseTsx(code, file);
+    const comments: [number, number][] = (ast.comments ?? []).map((c) => [c.start ?? 0, c.end ?? 0]);
+    return { body: ast.program.body, comments };
   } catch {
     return null;
   }
+}
+
+function ctxOf(code: string, parsed: Parsed): Ctx {
+  return { code, consts: collectConsts(parsed.body), comments: parsed.comments };
 }
 
 /**
@@ -437,23 +473,23 @@ function parseBody(code: string, file: string): Statement[] | null {
  * (같은 파일만, 제네릭 선언은 따라가지 않음). 선언이 없거나 읽을 수 없으면 null.
  */
 export function readTypeProps(code: string, file: string, typeName: string): ComponentProps | null {
-  const body = parseBody(code, file);
-  if (!body) return null;
-  const local = collectLocalTypes(body);
+  const parsed = parseBody(code, file);
+  if (!parsed) return null;
+  const local = collectLocalTypes(parsed.body);
   if (!local.interfaces.has(typeName) && !local.aliases.has(typeName)) return null;
   const ref: TSType = {
     type: "TSTypeReference",
     typeName: { type: "Identifier", name: typeName },
   } as TSType;
-  const resolved = resolveType({ code, consts: collectConsts(body) }, ref, local);
+  const resolved = resolveType(ctxOf(code, parsed), ref, local);
   return resolved ? { props: resolved.props, inherits: resolved.inherits } : null;
 }
 
 /** 최상위 선언 `name`(export로 감싼 것 포함)의 JSDoc. 선언이 없거나 JSDoc이 없으면 null */
 export function readComponentDoc(code: string, file: string, name: string): ComponentDoc | null {
-  const body = parseBody(code, file);
-  if (!body) return null;
-  for (const raw of body) {
+  const parsed = parseBody(code, file);
+  if (!parsed) return null;
+  for (const raw of parsed.body) {
     const stmt = unwrapExport(raw);
     if (!stmt) continue;
     let declares = false;

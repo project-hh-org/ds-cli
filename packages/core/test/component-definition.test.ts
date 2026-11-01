@@ -50,6 +50,11 @@ describe("moduleOfFile", () => {
     expect(moduleOfFile("index.tsx")).toBe("index");
   });
 
+  it(".d.ts 계열은 .d까지 뗀다", () => {
+    expect(moduleOfFile("Button/Button.d.ts")).toBe("Button/Button");
+    expect(moduleOfFile("Button/index.d.mts")).toBe("Button");
+  });
+
   it("resolveDefinitionFile과 왕복한다", async () => {
     write("src/a/Button.tsx");
     write("src/b/index.ts");

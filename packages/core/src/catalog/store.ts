@@ -21,12 +21,24 @@ export async function readCatalog(root: string): Promise<Catalog | null> {
   let parsed: unknown;
   try {
     parsed = JSON.parse(text);
-  } catch {
-    throw new Error(`${CATALOG_FILE}을 JSON으로 읽을 수 없음`);
+  } catch (err) {
+    throw new Error(`${CATALOG_FILE}을 JSON으로 읽을 수 없음: ${(err as Error).message}`);
   }
   const c = parsed as Partial<Catalog> | null;
   if (c === null || typeof c !== "object" || c.version !== 1 || !Array.isArray(c.components)) {
     throw new Error(`${CATALOG_FILE} 형식이 올바르지 않음(version 1·components 배열 필요)`);
+  }
+  for (const [i, comp] of (c.components as unknown[]).entries()) {
+    const x = comp as Record<string, unknown> | null;
+    if (
+      x === null ||
+      typeof x !== "object" ||
+      typeof x.name !== "string" ||
+      typeof x.module !== "string" ||
+      !Array.isArray(x.props)
+    ) {
+      throw new Error(`${CATALOG_FILE} components[${i}] 형식이 올바르지 않음(name·module 문자열, props 배열 필요)`);
+    }
   }
   return c as Catalog;
 }
