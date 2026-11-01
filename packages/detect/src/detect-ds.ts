@@ -61,7 +61,10 @@ export async function detectDs(root: string, deps: string[]): Promise<DsDetectio
   return { kind: "none", tokenFiles };
 }
 
-/** import 지정자가 감지된 DS(npm 패키지 또는 로컬 디렉터리)를 가리키는지. */
+/**
+ * import 지정자(또는 ComponentUsage.module)가 감지된 DS(npm 패키지 또는 로컬 디렉터리)를 가리키는지.
+ * npm은 서브패스(`@mui/material/Button`)도 받으므로 원본 specifier와 서브패스를 뗀 module 모두에 쓸 수 있다.
+ */
 export function isDsSpecifier(spec: string, ds: DsDetection): boolean {
   if (ds.kind === "npm") {
     const names = ds.packageNames ?? (ds.packageName !== undefined ? [ds.packageName] : []);

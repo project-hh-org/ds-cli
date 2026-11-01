@@ -47,7 +47,23 @@ describe("indexRepo", () => {
       ["src/ui/Button.tsx", "color", "#ff0000"],
     ]);
     expect(index.components).toEqual([
-      { file: "src/App.tsx", line: 2, name: "Button", importedFrom: "src/ui/Button", props: ["size", "style"] },
+      {
+        file: "src/App.tsx",
+        line: 2,
+        name: "Button",
+        importedFrom: "src/ui/Button",
+        module: "src/ui/Button",
+        props: ["size", "style"],
+      },
+    ]);
+  });
+
+  it("root의 tsconfig paths를 읽어 컴포넌트 module 해석에 쓴다", async () => {
+    put("tsconfig.json", `{ "compilerOptions": { "paths": { "components/*": ["./src/components/*"] } } }`);
+    put("app/page.tsx", `import { Button } from "components/ui/button";\nexport const P = () => <Button />;`);
+    const index = await indexRepo(tmp, [inlineStyleExtractor]);
+    expect(index.components.map((c) => [c.importedFrom, c.module])).toEqual([
+      ["components/ui/button", "src/components/ui/button"],
     ]);
   });
 

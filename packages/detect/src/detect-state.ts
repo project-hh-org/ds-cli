@@ -39,7 +39,7 @@ export function sharesFromIndex(index: Index, ds: DsDetection): IndexShares {
   const fromDs =
     ds.kind === "none"
       ? 0
-      : index.components.filter((c) => c.importedFrom !== null && isDsSpecifier(c.importedFrom, ds)).length;
+      : index.components.filter((c) => c.module !== "" && isDsSpecifier(c.module, ds)).length;
   return {
     hardcodedShare: ratio(hardcoded, rated),
     dsImportShare: ratio(fromDs, index.components.length),

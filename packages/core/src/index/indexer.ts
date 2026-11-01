@@ -7,6 +7,7 @@ import type { ExtractContext, Extractor, StyleUsage } from "@dsmith/extractor-ap
 import type { ComponentUsage } from "../model/component-usage.js";
 import { parseTsx } from "../parse/tsx.js";
 import { extractComponentUsage } from "./component-usage.js";
+import { readTsconfigPaths } from "./specifier.js";
 
 export interface Index {
   root: string;
@@ -66,6 +67,9 @@ export async function indexRepo(
     }
   }
 
+  // 컴포넌트 import 해석에 쓸 tsconfig paths는 레포마다 한 번만 읽는다.
+  const tsPaths = await readTsconfigPaths(root);
+
   const matchers = extractors.map((e) => ({ extractor: e, matches: picomatch(e.files, { dot: false }) }));
 
   const index: Index = {
@@ -102,7 +106,7 @@ export async function indexRepo(
         }
       }
       stage = "components";
-      const components = JS_FILE.test(file) ? extractComponentUsage(file, parseTsx(code, file)) : [];
+      const components = JS_FILE.test(file) ? extractComponentUsage(file, parseTsx(code, file), tsPaths) : [];
       index.styles.push(...styles);
       index.components.push(...components);
       index.files.scanned += 1;

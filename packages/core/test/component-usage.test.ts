@@ -22,8 +22,15 @@ describe("extractComponentUsage", () => {
       ].join("\n"),
     );
     expect(result).toEqual([
-      { file: "src/App.tsx", line: 5, name: "Button", importedFrom: "src/ui/Button", props: ["size"] },
-      { file: "src/App.tsx", line: 6, name: "Dialog", importedFrom: "@radix-ui/react-dialog", props: [] },
+      { file: "src/App.tsx", line: 5, name: "Button", importedFrom: "src/ui/Button", module: "src/ui/Button", props: ["size"] },
+      {
+        file: "src/App.tsx",
+        line: 6,
+        name: "Dialog",
+        importedFrom: "@radix-ui/react-dialog",
+        module: "@radix-ui/react-dialog",
+        props: [],
+      },
     ]);
   });
 
@@ -61,6 +68,7 @@ describe("extractComponentUsage", () => {
         line: 1,
         name: "Dialog.Trigger",
         importedFrom: "@radix-ui/react-dialog",
+        module: "@radix-ui/react-dialog",
         props: ["asChild"],
       },
     ]);
@@ -71,7 +79,7 @@ describe("extractComponentUsage", () => {
       `const Local = () => <i />; const a = <Local b="1" {...rest} a={2} disabled />;`,
     );
     expect(result).toEqual([
-      { file: "src/App.tsx", line: 1, name: "Local", importedFrom: null, props: ["b", "a", "disabled"] },
+      { file: "src/App.tsx", line: 1, name: "Local", importedFrom: null, module: "", props: ["b", "a", "disabled"] },
     ]);
   });
 
@@ -99,6 +107,69 @@ describe("extractComponentUsage", () => {
   it("src/ 밖의 파일에서 쓴 @/ 별칭은 root 기준으로 해석한다", () => {
     const result = usages(`import { Nav } from "@/components/nav"; const a = <Nav />;`, "app/page.tsx");
     expect(result[0]?.importedFrom).toBe("components/nav");
+    expect(result[0]?.module).toBe("components/nav");
+  });
+});
+
+describe("extractComponentUsage — module", () => {
+  const tsPaths = { baseUrl: "", paths: { "@/*": ["./src/*"], "components/*": ["./src/components/*"] } };
+
+  it("패키지 서브패스 import와 루트 import는 같은 module(패키지명)이 된다. importedFrom은 그대로다", () => {
+    const result = usages(
+      [
+        `import { Button } from "@mui/material/Button";`,
+        `import { Button as B2 } from "@mui/material";`,
+        `import Link from "next/link";`,
+        `const a = <><Button /><B2 /><Link /></>;`,
+      ].join("\n"),
+    );
+    expect(result.map((u) => [u.importedFrom, u.module])).toEqual([
+      ["@mui/material/Button", "@mui/material"],
+      ["@mui/material", "@mui/material"],
+      ["next/link", "next"],
+    ]);
+  });
+
+  it("tsconfig paths 별칭과 상대 경로로 import한 같은 모듈은 같은 module이 된다", () => {
+    const alias = extractComponentUsage(
+      "app/page.tsx",
+      parseTsx(`import X from "@/components/X"; const a = <X />;`, "app/page.tsx"),
+      tsPaths,
+    );
+    const relative = extractComponentUsage(
+      "src/pages/a.tsx",
+      parseTsx(`import X from "../components/X"; const a = <X />;`, "src/pages/a.tsx"),
+      tsPaths,
+    );
+    expect(alias[0]?.module).toBe("src/components/X");
+    expect(relative[0]?.module).toBe("src/components/X");
+  });
+
+  it("bare 형태의 paths 별칭도 root 상대 경로 module로 푼다", () => {
+    const result = extractComponentUsage(
+      "app/page.tsx",
+      parseTsx(`import { Button } from "components/ui/button"; const a = <Button />;`, "app/page.tsx"),
+      tsPaths,
+    );
+    expect(result[0]?.importedFrom).toBe("components/ui/button");
+    expect(result[0]?.module).toBe("src/components/ui/button");
+  });
+
+  it("tsPaths가 없으면 기존 @/ 규칙으로 module을 정한다", () => {
+    const result = usages(`import X from "@/components/X"; const a = <X />;`, "src/pages/a.tsx");
+    expect(result[0]?.module).toBe("src/components/X");
+  });
+
+  it("상대 경로의 /index는 module에서 떼어 paths 결과와 같은 모양이 된다", () => {
+    const result = usages(`import UI from "./ui/index.ts"; const a = <UI />;`, "src/App.tsx");
+    expect(result[0]?.importedFrom).toBe("src/ui/index");
+    expect(result[0]?.module).toBe("src/ui");
+  });
+
+  it("import 없는 컴포넌트는 module이 빈 문자열이고 importedFrom은 null이다", () => {
+    const result = usages(`function Header() { return <div />; } const a = <Header />;`);
+    expect(result[0]?.importedFrom).toBeNull();
+    expect(result[0]?.module).toBe("");
   });
 });
 

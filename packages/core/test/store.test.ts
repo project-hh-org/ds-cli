@@ -30,7 +30,7 @@ const sample: Index = {
       extractor: "inline-style",
     },
   ],
-  components: [{ file: "a.tsx", line: 3, name: "Button", importedFrom: null, props: ["size"] }],
+  components: [{ file: "a.tsx", line: 3, name: "Button", importedFrom: null, module: "", props: ["size"] }],
 };
 
 describe("index store", () => {
@@ -39,6 +39,20 @@ describe("index store", () => {
     expect(written).toBe(path.join(tmp, ".dsmith", "index.json"));
     expect(fs.readFileSync(written, "utf-8")).toContain('\n  "root"');
     expect(await readIndex(tmp)).toEqual(sample);
+  });
+
+  it("module 필드가 없는 이전 index.json은 importedFrom(없으면 빈 문자열)으로 module을 채워 읽는다", async () => {
+    const old = {
+      ...sample,
+      components: [
+        { file: "a.tsx", line: 3, name: "Button", importedFrom: null, props: [] },
+        { file: "a.tsx", line: 4, name: "Card", importedFrom: "@acme/ui/card", props: [] },
+      ],
+    };
+    fs.mkdirSync(path.join(tmp, ".dsmith"), { recursive: true });
+    fs.writeFileSync(path.join(tmp, ".dsmith", "index.json"), JSON.stringify(old));
+    const loaded = await readIndex(tmp);
+    expect(loaded?.components.map((c) => c.module)).toEqual(["", "@acme/ui/card"]);
   });
 
   it("index.json이 없으면 null을 돌려준다", async () => {

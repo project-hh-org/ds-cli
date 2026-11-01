@@ -58,8 +58,9 @@ function layoutStyle(raw: string): StyleUsage {
   return { ...style("inline-style", "hardcoded"), property: "other", raw, normalized: { kind: "unknown" } };
 }
 
-function comp(name: string, importedFrom: string | null): ComponentUsage {
-  return { file: "a.tsx", line: 1, name, importedFrom, props: [] };
+/** module을 따로 주지 않으면 importedFrom을 그대로 쓴다(이전 index.json을 읽을 때와 같은 규칙). */
+function comp(name: string, importedFrom: string | null, module = importedFrom ?? ""): ComponentUsage {
+  return { file: "a.tsx", line: 1, name, importedFrom, module, props: [] };
 }
 
 function indexOf(styles: StyleUsage[], components: ComponentUsage[]): Index {
@@ -690,6 +691,15 @@ describe("index와 함께 감지", () => {
       ],
     );
     expect(sharesFromIndex(index, ds).dsImportShare).toBe(0.75);
+  });
+
+  it("sharesFromIndex: importedFrom이 아니라 module로 DS 여부를 본다 (tsconfig paths 별칭)", () => {
+    const ds = { kind: "local", dir: "src/components/ui", tokenFiles: [] } as const;
+    const index = indexOf(
+      [],
+      [comp("Button", "ui/button", "src/components/ui/button"), comp("Header", null, "")],
+    );
+    expect(sharesFromIndex(index, ds).dsImportShare).toBe(0.5);
   });
 
   it("sharesFromIndex: DS 없음이면 dsImportShare 0", () => {

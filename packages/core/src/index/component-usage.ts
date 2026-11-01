@@ -2,9 +2,15 @@ import { posix } from "node:path";
 import type { File, JSXMemberExpression, JSXOpeningElement } from "@babel/types";
 import type { ComponentUsage } from "../model/component-usage.js";
 import { traverse } from "../parse/tsx.js";
-import { normalizeSpecifier } from "./specifier.js";
+import {
+  normalizePackageSpecifier,
+  normalizeSpecifier,
+  resolveWithPaths,
+  SOURCE_EXTENSION,
+  stripModulePath,
+  type TsPaths,
+} from "./specifier.js";
 
-const SOURCE_EXTENSION = /\.(?:[cm]?[jt]sx?)$/;
 const PATH_ALIAS = /^[@~]\//;
 
 /**
@@ -19,6 +25,19 @@ function resolveSource(file: string, specifier: string): string {
     return `${base}${normalizeSpecifier(specifier)}`.replace(SOURCE_EXTENSION, "");
   }
   return specifier;
+}
+
+/**
+ * 같은 모듈이면 같은 값이 되는 비교 키.
+ * 상대 경로 → root 상대 경로, tsconfig paths 별칭 → paths로 푼 root 상대 경로, 그 밖의 `@/`·`~/` → resolveSource 규칙,
+ * 패키지 → 서브패스를 뗀 패키지명. 경로는 확장자와 끝의 `/index`를 뗀다.
+ */
+function moduleOf(file: string, specifier: string, tsPaths: TsPaths | null): string {
+  if (specifier.startsWith(".")) return stripModulePath(resolveSource(file, specifier));
+  const viaPaths = resolveWithPaths(specifier, file, tsPaths);
+  if (viaPaths !== null) return viaPaths;
+  if (PATH_ALIAS.test(specifier)) return stripModulePath(resolveSource(file, specifier));
+  return normalizePackageSpecifier(specifier);
 }
 
 function memberRoot(name: JSXMemberExpression): string | null {
@@ -45,11 +64,14 @@ function componentName(node: JSXOpeningElement): { name: string; root: string } 
   return null;
 }
 
-export function extractComponentUsage(file: string, ast: File): ComponentUsage[] {
-  const imports = new Map<string, string>();
+export function extractComponentUsage(file: string, ast: File, tsPaths: TsPaths | null = null): ComponentUsage[] {
+  const imports = new Map<string, { importedFrom: string; module: string }>();
   for (const stmt of ast.program.body) {
     if (stmt.type !== "ImportDeclaration") continue;
-    const source = resolveSource(file, stmt.source.value);
+    const source = {
+      importedFrom: resolveSource(file, stmt.source.value),
+      module: moduleOf(file, stmt.source.value, tsPaths),
+    };
     for (const spec of stmt.specifiers) imports.set(spec.local.name, source);
   }
 
@@ -64,11 +86,13 @@ export function extractComponentUsage(file: string, ast: File): ComponentUsage[]
         if (attr.type !== "JSXAttribute") continue;
         props.push(attr.name.type === "JSXIdentifier" ? attr.name.name : `${attr.name.namespace.name}:${attr.name.name.name}`);
       }
+      const source = imports.get(found.root);
       usages.push({
         file,
         line,
         name: found.name,
-        importedFrom: imports.get(found.root) ?? null,
+        importedFrom: source?.importedFrom ?? null,
+        module: source?.module ?? "",
         props,
       });
     },
