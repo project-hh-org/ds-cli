@@ -11,9 +11,14 @@
     "build": "pnpm -r --filter './packages/*' build",
     "test": "pnpm -r --filter './packages/*' test",
     "typecheck": "pnpm -r --filter './packages/*' typecheck",
-    "lint": "pnpm -r --filter './packages/*' lint"
+    "lint": "pnpm -r --filter './packages/*' lint",
+    "changeset": "changeset",
+    "version": "changeset version && pnpm install --lockfile-only",
+    "release": "pnpm build && changeset publish"
   },
   "devDependencies": {
+    "@changesets/changelog-github": "^1.0.1",
+    "@changesets/cli": "^3.0.3",
     "@types/node": "^22.10.0",
     "typescript": "^5.7.0",
     "vitest": "^3.0.0"
