@@ -11,6 +11,24 @@ export interface RenderContext {
   home: string;
   scope: "repo" | "global";
   mcp: McpLaunch;
+  /**
+   * 명령 본문과 AGENTS.md 블록이 부르는 CLI 실행 명령(기본 `npx dsmith`). 배포 전 로컬 빌드에서는
+   * `node /abs/packages/cli/dist/bin.js`처럼 MCP 실행 명령과 같은 빌드를 가리키게 한다.
+   */
+  cli?: string;
+}
+
+export const DEFAULT_CLI = "npx dsmith";
+
+/** 명령 소스의 본문에서 `npx dsmith`를 `cli`로 바꾼다. 기본값이면 입력을 그대로 돌려줘 출력이 바이트 동일하다. */
+export function withCli(commands: CommandSource[], cli: string | undefined): CommandSource[] {
+  if (cli === undefined || cli === DEFAULT_CLI) return commands;
+  return commands.map((c) => ({ ...c, body: c.body.replaceAll(DEFAULT_CLI, () => cli) }));
+}
+
+/** 사람에게 보이는 안내 문장의 `npx dsmith`를 `cli`로 바꾼다. */
+export function cliText(text: string, cli: string | undefined): string {
+  return cli === undefined || cli === DEFAULT_CLI ? text : text.replaceAll(DEFAULT_CLI, () => cli);
 }
 
 export interface RenderOutput {

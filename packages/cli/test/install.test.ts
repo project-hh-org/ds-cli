@@ -174,6 +174,17 @@ describe("runInstall: 사용자 수정 보존", () => {
     expect(mcp.mcpServers.dsmith).toEqual({ command: "npx", args: ["-y", "dsmith@0.2", "mcp"] });
   });
 
+  it("사용자가 만든 .mcp.json의 dsmith 항목이 있으면 건너뛰고 넣을 JSON을 알려 준다", async () => {
+    write(root, ".mcp.json", JSON.stringify({ mcpServers: { dsmith: { command: "mine" } } }));
+    const r = await install({ tools: ["claude-code"] });
+    expect(r.outcomes.find((o) => o.file === ".mcp.json")?.status).toBe("skipped-unowned");
+    expect(JSON.parse(read(root, ".mcp.json")).mcpServers.dsmith).toEqual({ command: "mine" });
+    const note = r.notes.find((n) => n.startsWith(".mcp.json을 건너뛰어"));
+    expect(note).toBeDefined();
+    const json = JSON.parse((note ?? "").split("\n").slice(1).join("\n"));
+    expect(json).toEqual({ mcpServers: { dsmith: { command: "npx", args: ["-y", "dsmith@0.2", "mcp"] } } });
+  });
+
   it("기존 AGENTS.md 본문은 블록 밖 바이트가 그대로다", async () => {
     const original = "# 팀 규칙\n\n- 한글 줄\n- 마지막 줄 (개행 없음)";
     write(root, "AGENTS.md", original);
@@ -287,14 +298,14 @@ describe("runInstall: --global", () => {
     fs.mkdirSync(path.join(root, ".claude"));
     fs.mkdirSync(path.join(home, ".codex"));
     const r = await install({ global: true });
-    expect(r.tools).toEqual(["codex", "agents-md"]);
+    expect(r.tools).toEqual(["codex"]);
     expect(r.detection?.evidence).toEqual({ codex: ["~/.codex/"] });
     expect(r.detection?.defaulted).toBe(false);
     expect(files(home)).toContain(".agents/skills/ds/SKILL.md");
     expect(files(home)).toContain(".codex/config.toml");
     // 레포 쪽은 손대지 않는다
     expect(files(root)).toEqual([]);
-    expect(r.notes.some((n) => n.includes("agents-md"))).toBe(true);
+    expect(r.notes.some((n) => n.includes("agents-md"))).toBe(false);
   });
 
   it("홈 흔적이 없으면 레포 흔적이 있어도 기본값(claude-code)으로 간다", async () => {
@@ -308,8 +319,22 @@ describe("runInstall: --global", () => {
     const r = await install({ global: true, tools: ["cursor", "gemini", "agents-md"] });
     expect(r.outcomes).toEqual([]);
     expect(r.notes).toHaveLength(3);
+    expect(r.unsupported).toEqual(["cursor", "gemini", "agents-md"]);
+    const text = formatInstallSummary(r);
+    expect(text).toContain("등록: cursor [미지원], gemini [미지원], agents-md [미지원] (--tool 지정)");
+    expect(text.split("\n").at(-1)).toBe("다음: 이 범위에서 쓴 파일이 없습니다 — 위 할 일을 확인하세요");
     expect(tree(home)).toEqual([]);
     expect(tree(root)).toEqual([]);
+  });
+
+  it("codex가 agents-md를 끌고 오는 것은 레포 모드뿐 — 글로벌에서는 붙이지 않고, --all이면 미지원으로 표시", async () => {
+    expect((await install({ global: true, tools: ["codex"], dryRun: true })).tools).toEqual(["codex"]);
+    expect((await install({ tools: ["codex"], dryRun: true })).tools).toEqual(["codex", "agents-md"]);
+    const all = await install({ global: true, all: true, dryRun: true });
+    expect(all.tools).toEqual([...AI_TOOLS]);
+    expect(all.unsupported).toEqual(["cursor", "gemini", "agents-md"]);
+    const text = formatInstallSummary(all);
+    expect(text).toContain("claude-code, codex, cursor [미지원], gemini [미지원], agents-md [미지원] (--all)");
   });
 
   it("home을 주지 않으면 HOME 환경변수의 홈을 쓴다 (os.homedir)", async () => {
@@ -331,6 +356,29 @@ describe("runInstall: MCP 실행 명령", () => {
     expect(r.notes[0]).toContain("커밋");
   });
 
+  it("--mcp-command는 슬래시 명령·AGENTS.md의 CLI 호출도 같은 빌드로 바꾼다 (npx dsmith 없음)", async () => {
+    const r = await install({ mcpCommand: "node /x/bin.js mcp" });
+    expect(r.cli).toBe("node /x/bin.js");
+    expect(r.mcp).toEqual({ command: "node", args: ["/x/bin.js", "mcp"] });
+    const skill = read(root, ".claude/skills/ds-audit/SKILL.md");
+    expect(skill).toContain("`node /x/bin.js audit --json $ARGUMENTS`");
+    for (const f of files(root).filter((f) => !f.startsWith(".dsmith/"))) {
+      expect(read(root, f), f).not.toContain("npx dsmith");
+    }
+    const agents = read(root, "AGENTS.md");
+    expect(agents).toContain("`node /x/bin.js detect --json`");
+    expect(agents).toContain("`node /x/bin.js decide --item");
+    expect(r.notes[0]).toContain("슬래시 명령");
+    expect(r.notes[0]).toContain("node /x/bin.js");
+    expect(formatInstallSummary(r)).toContain("AGENTS.md 섹션에 적힌 대로 `node /x/bin.js …` 호출");
+  });
+
+  it("--mcp-command가 없으면 기존처럼 npx dsmith 그대로(r.cli 기본값)", async () => {
+    const r = await install();
+    expect(r.cli).toBe("npx dsmith");
+    expect(read(root, ".claude/skills/ds-audit/SKILL.md")).toContain("`npx dsmith audit --json $ARGUMENTS`");
+  });
+
   it("글로벌 스코프에서는 커밋될 파일이 없으므로 경고하지 않는다", async () => {
     const r = await install({ mcpCommand: "node /x/bin.js", tools: ["claude-code"], global: true });
     expect(r.notes.some((n) => n.startsWith("경고:"))).toBe(false);
@@ -338,7 +386,7 @@ describe("runInstall: MCP 실행 명령", () => {
   });
 
   it("로컬 개발 빌드(0.0.0)에서는 --mcp-command가 필수이고 에러 전에 아무것도 쓰지 않는다", async () => {
-    await expect(install({ version: "0.0.0" })).rejects.toThrow(/--mcp-command/);
+    await expect(install({ version: "0.0.0" })).rejects.toThrow(/--mcp-command "node \S+bin\.js"/);
     expect(tree(root)).toEqual([]);
     const ok = await install({ version: "0.0.0", mcpCommand: "node /x/bin.js" });
     expect(ok.mcp).toEqual({ command: "node", args: ["/x/bin.js", "mcp"] });
@@ -359,7 +407,7 @@ describe("runInstall: Codex 중복 테이블 사전 점검", () => {
     "[mcp_servers] 안의 dsmith 키": '[mcp_servers]\ndsmith = { command = "mine" }\n',
     "[mcp_servers] 안의 점 키": '[mcp_servers]\ndsmith.command = "mine"\n',
     "테이블 배열": '[[mcp_servers.dsmith]]\ncommand = "mine"\n',
-    "인라인 mcp_servers": 'mcp_servers = { dsmith = { command = "mine" } }\n',
+    "인라인 mcp_servers(dsmith 포함)": 'mcp_servers = { dsmith = { command = "mine" } }\n',
   };
   const REASON = "config.toml에 dsmith가 관리하지 않는 [mcp_servers.dsmith]가 있음";
 
@@ -372,7 +420,7 @@ describe("runInstall: Codex 중복 테이블 사전 점검", () => {
         const r = await install(opts);
         const out = r.outcomes.find((o) => o.file.endsWith(".codex/config.toml"));
         expect(out?.status).toBe("skipped-invalid");
-        expect(out?.reason).toContain(label === "인라인 mcp_servers" ? "인라인" : REASON);
+        expect(out?.reason).toContain(REASON);
         expect(read(base(), ".codex/config.toml")).toBe(toml);
         // 나머지는 정상 설치: 스킬 8개 + (repo만) AGENTS.md 블록 — codex는 agents-md를 함께 설치한다
         expect(r.outcomes.filter((o) => o.status === "created")).toHaveLength(scope === "repo" ? 9 : 8);
@@ -385,6 +433,26 @@ describe("runInstall: Codex 중복 테이블 사전 점검", () => {
       });
     }
   }
+
+  it("dsmith가 없는 인라인 mcp_servers는 쓰지 않고 테이블 안에 넣을 내용을 알려 준다", async () => {
+    const toml = 'mcp_servers = { other = { command = "x" } }\n';
+    write(root, ".codex/config.toml", toml);
+    const r = await install({ tools: ["codex"] });
+    const out = r.outcomes.find((o) => o.file === ".codex/config.toml");
+    expect(out?.status).toBe("skipped-invalid");
+    expect(out?.reason).toContain("인라인");
+    expect(read(root, ".codex/config.toml")).toBe(toml);
+    const note = r.notes.find((n) => n.includes("인라인 테이블"));
+    expect(note).toContain('dsmith = { command = "npx", args = ["-y", "dsmith@0.2", "mcp"] }');
+  });
+
+  it("중복 테이블로 건너뛰면 넣을 TOML 블록을 note로 보인다", async () => {
+    write(root, ".codex/config.toml", '[mcp_servers.dsmith]\ncommand = "mine"\n');
+    const r = await install({ tools: ["codex"] });
+    const note = r.notes.find((n) => n.startsWith(".codex/config.toml에"));
+    expect(note).toContain("[mcp_servers.dsmith]\n  command = \"npx\"\n  args = [\"-y\", \"dsmith@0.2\", \"mcp\"]");
+    expect(formatInstallSummary(r)).toContain("- .codex/config.toml에 dsmith가 관리하지 않는 항목이 있어");
+  });
 
   it("[mcp_servers.dsmith.env]만 있으면 중복이 아니다 — 블록을 쓴다", async () => {
     const toml = '[mcp_servers.dsmith.env]\nFOO = "1"\n';
@@ -465,10 +533,26 @@ describe("formatInstallSummary", () => {
     expect(formatInstallSummary(await install({ dryRun: true, all: true }))).toContain("(--all)");
   });
 
+  it("다음 단계는 설치한 도구별로 나온다", async () => {
+    const text = formatInstallSummary(await install());
+    expect(text).toContain(
+      "다음: AI 도구를 다시 열고\n- claude-code: /ds 로 시작\n- agents-md: AGENTS.md 섹션에 적힌 대로 `npx dsmith …` 호출",
+    );
+    expect(formatInstallSummary(await install({ dryRun: true, tools: ["agents-md"] }))).toContain("다음: --dry-run");
+    const agentsOnly = formatInstallSummary(await install({ tools: ["agents-md"] }));
+    expect(agentsOnly.split("\n").at(-1)).toBe("다음: AGENTS.md 섹션에 적힌 대로 `npx dsmith …` 호출");
+    const codex = formatInstallSummary(await install({ tools: ["codex"] }));
+    expect(codex).toContain("- codex: $ds 로 시작 (또는 /skills 에서 ds 선택)");
+    const mixed = formatInstallSummary(await install({ tools: ["claude-code", "cursor", "gemini"] }));
+    expect(mixed.split("\n").at(-1)).toBe("다음: AI 도구를 다시 열고 /ds 로 시작");
+  });
+
   it("notes는 중복 없이 '할 일:' 아래 한 줄씩 나온다", () => {
     const r: InstallResult = {
       scope: "repo",
       tools: ["claude-code"],
+      unsupported: [],
+      cli: "npx dsmith",
       selection: "tool",
       detection: null,
       mcp: { command: "npx", args: ["-y", "dsmith@0.2", "mcp"] },

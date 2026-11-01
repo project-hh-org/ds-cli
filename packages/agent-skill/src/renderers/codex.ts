@@ -15,7 +15,7 @@
 import path from "node:path";
 import type { PlannedWrite } from "@dsmith-dev/core";
 import type { CommandSource } from "../commands.js";
-import { TOML_MARKERS, skillMarkdown, type RenderContext, type Renderer, type RenderOutput } from "./shared.js";
+import { TOML_MARKERS, skillMarkdown, withCli, type RenderContext, type Renderer, type RenderOutput } from "./shared.js";
 
 function mcpBlock(ctx: RenderContext): string {
   const args = ctx.mcp.args.map((a) => JSON.stringify(a)).join(", ");
@@ -31,7 +31,7 @@ export const codexRenderer: Renderer = {
   supportsGlobal: true,
   render(commands: CommandSource[], ctx: RenderContext): RenderOutput {
     const base = ctx.scope === "global" ? ctx.home : ctx.root;
-    const writes: PlannedWrite[] = commands.map((c) => ({
+    const writes: PlannedWrite[] = withCli(commands, ctx.cli).map((c) => ({
       file: path.join(base, ".agents", "skills", c.name, "SKILL.md"),
       region: { kind: "file" },
       content: skillMarkdown(c, "<사용자가 함께 준 인자, 없으면 생략>"),

@@ -11,7 +11,7 @@
 import path from "node:path";
 import type { PlannedWrite } from "@dsmith-dev/core";
 import type { CommandSource } from "../commands.js";
-import { launchLine, mcpJsonWrite, mcpServerEntry, skillMarkdown, type RenderContext, type Renderer, type RenderOutput } from "./shared.js";
+import { launchLine, mcpJsonWrite, mcpServerEntry, skillMarkdown, withCli, type RenderContext, type Renderer, type RenderOutput } from "./shared.js";
 
 export const claudeCodeRenderer: Renderer = {
   tool: "claude-code",
@@ -26,7 +26,7 @@ export const claudeCodeRenderer: Renderer = {
   supportsGlobal: true,
   render(commands: CommandSource[], ctx: RenderContext): RenderOutput {
     const base = ctx.scope === "global" ? ctx.home : ctx.root;
-    const writes: PlannedWrite[] = commands.map((c) => ({
+    const writes: PlannedWrite[] = withCli(commands, ctx.cli).map((c) => ({
       file: path.join(base, ".claude", "skills", c.name, "SKILL.md"),
       region: { kind: "file" },
       content: skillMarkdown(c, "$ARGUMENTS", { argumentHint: true }),

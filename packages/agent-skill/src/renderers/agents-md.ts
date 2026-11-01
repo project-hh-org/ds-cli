@@ -8,7 +8,7 @@
  */
 import path from "node:path";
 import type { CommandSource } from "../commands.js";
-import { MD_MARKERS, launchLine, unsupportedGlobal, type RenderContext, type Renderer, type RenderOutput } from "./shared.js";
+import { DEFAULT_CLI, MD_MARKERS, cliText, launchLine, unsupportedGlobal, type RenderContext, type Renderer, type RenderOutput } from "./shared.js";
 
 export const MCP_TOOL_NAMES = [
   "resolve_token",
@@ -26,18 +26,19 @@ function firstSentence(description: string): string {
 }
 
 /** "슬래시 없을 때" 칸: uses의 첫 `cli:` 항목 → npx 명령, 없으면 MCP 필요 또는 아직 없음. */
-function fallbackCell(c: CommandSource): string {
-  const cli = c.uses.find((u) => u.startsWith("cli:"));
-  if (cli !== undefined) {
-    const [cmd, ...flags] = cli.slice("cli:".length).split(" ");
+function fallbackCell(c: CommandSource, cliCmd: string): string {
+  const use = c.uses.find((u) => u.startsWith("cli:"));
+  if (use !== undefined) {
+    const [cmd, ...flags] = use.slice("cli:".length).split(" ");
     const all = flags.includes("--json") ? flags : [...flags, "--json"];
-    return `\`npx dsmith ${[cmd, ...all].join(" ")}\``;
+    return `\`${cliCmd} ${[cmd, ...all].join(" ")}\``;
   }
   return c.uses.some((u) => u.startsWith("mcp:")) ? "MCP 서버 필요" : "아직 없음";
 }
 
 function block(commands: CommandSource[], ctx: RenderContext): string {
-  const rows = commands.map((c) => `| \`/${c.name}\` | ${firstSentence(c.description)} | ${fallbackCell(c)} |`);
+  const cliCmd = ctx.cli ?? DEFAULT_CLI;
+  const rows = commands.map((c) => `| \`/${c.name}\` | ${firstSentence(c.description)} | ${fallbackCell(c, cliCmd)} |`);
   return [
     "## dsmith (디자인 시스템 도구)",
     "",
@@ -51,7 +52,7 @@ function block(commands: CommandSource[], ctx: RenderContext): string {
     "",
     "규칙:",
     "- 명령 출력 JSON에 없는 숫자는 말하지 않는다.",
-    '- 결정은 사람이 고른 뒤 `npx dsmith decide --item "<이름>" --choose "<id>"` 로 기록한다.',
+    `- 결정은 사람이 고른 뒤 \`${cliCmd} decide --item "<이름>" --choose "<id>"\` 로 기록한다.`,
     "- 스타일 값을 하드코딩하기 전에 `resolve_token`으로 토큰을 찾는다.",
   ].join("\n");
 }
@@ -62,7 +63,7 @@ export const agentsMdRenderer: Renderer = {
   supportsGlobal: false,
   render(commands: CommandSource[], ctx: RenderContext): RenderOutput {
     if (ctx.scope === "global") {
-      return unsupportedGlobal("agents-md", "레포에서 `npx dsmith install --tool agents-md`를 실행하세요.");
+      return unsupportedGlobal("agents-md", cliText("레포에서 `npx dsmith install --tool agents-md`를 실행하세요.", ctx.cli));
     }
     return {
       writes: [

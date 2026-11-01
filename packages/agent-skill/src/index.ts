@@ -13,7 +13,7 @@ export { AI_TOOLS, detectTools, normalizeTools } from "./detect-tools.js";
 export type { McpLaunch } from "./mcp-launch.js";
 export { defaultMcpLaunch, parseMcpCommand } from "./mcp-launch.js";
 export type { RenderContext, RenderOutput, Renderer } from "./renderers/shared.js";
-export { MANAGED_NOTICE, MD_MARKERS, TOML_MARKERS, mcpServerEntry, substituteArgs } from "./renderers/shared.js";
+export { DEFAULT_CLI, MANAGED_NOTICE, MD_MARKERS, TOML_MARKERS, mcpServerEntry, substituteArgs } from "./renderers/shared.js";
 
 export const renderers: Record<AiTool, Renderer> = {
   "claude-code": claudeCodeRenderer,

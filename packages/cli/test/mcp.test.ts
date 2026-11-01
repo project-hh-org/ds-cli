@@ -6,7 +6,9 @@ import { fileURLToPath } from "node:url";
 import { Client } from "@modelcontextprotocol/client";
 import { StdioClientTransport } from "@modelcontextprotocol/client/stdio";
 import { TOOL_NAMES } from "@dsmith-dev/mcp-server";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { runAudit } from "../src/commands/audit.js";
+import { runInstall } from "../src/commands/install.js";
 import { findProjectRoot } from "../src/commands/mcp.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -38,12 +40,62 @@ describe("findProjectRoot", () => {
     fs.mkdirSync(path.join(repo, ".git"));
     expect(findProjectRoot(deep)).toBe(repo);
 
+    // 빈 .dsmith/나 install.json만 있는 .dsmith/는 근거가 아니다
     fs.mkdirSync(path.join(repo, "packages", "app", ".dsmith"));
+    expect(findProjectRoot(deep)).toBe(repo);
+    fs.writeFileSync(path.join(repo, "packages", "app", ".dsmith", "install.json"), "{}");
+    expect(findProjectRoot(deep)).toBe(repo);
+    fs.writeFileSync(path.join(repo, "packages", "app", ".dsmith", "detect.json"), "{}");
     expect(findProjectRoot(deep)).toBe(path.join(repo, "packages", "app"));
 
     const lone = path.join(tmp, "lone", "x");
     fs.mkdirSync(lone, { recursive: true });
     expect(findProjectRoot(lone)).toBe(lone);
+  });
+
+  it("install --global이 홈에 남긴 .dsmith/install.json은 레포 근거가 아니다 — 홈 아래 폴더에서 띄우면 그 폴더", async () => {
+    const home = path.join(tmp, "home");
+    const other = path.join(tmp, "somewhere");
+    fs.mkdirSync(path.join(home, "notes", "proto"), { recursive: true });
+    fs.mkdirSync(other);
+    await runInstall({ root: other, home, global: true, tools: ["claude-code"], version: "0.2.0" });
+    expect(fs.existsSync(path.join(home, ".dsmith", "install.json"))).toBe(true);
+    const sub = path.join(home, "notes", "proto");
+    expect(findProjectRoot(sub, home)).toBe(sub);
+    // 홈에 detect.json·index.json이 있어도(예전에 홈에서 audit한 경우) .git이 없으면 홈을 고르지 않는다
+    fs.writeFileSync(path.join(home, ".dsmith", "index.json"), "{}");
+    fs.writeFileSync(path.join(home, ".dsmith", "detect.json"), "{}");
+    expect(findProjectRoot(sub, home)).toBe(sub);
+    // 홈이 .git 레포(dotfiles)면 레포로 본다
+    fs.mkdirSync(path.join(home, ".git"));
+    expect(findProjectRoot(sub, home)).toBe(home);
+  });
+
+  it("os.homedir() 기본값은 HOME 환경변수를 따른다", async () => {
+    const home = path.join(tmp, "envhome");
+    fs.mkdirSync(path.join(home, ".dsmith"), { recursive: true });
+    fs.writeFileSync(path.join(home, ".dsmith", "detect.json"), "{}");
+    fs.mkdirSync(path.join(home, "work"));
+    vi.stubEnv("HOME", home);
+    vi.stubEnv("USERPROFILE", home);
+    try {
+      expect(findProjectRoot(path.join(home, "work"))).toBe(path.join(home, "work"));
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it("레포 모드 install 뒤: audit 전에는 시작 디렉터리, audit(detect.json·index.json) 뒤에는 그 레포", async () => {
+    const repo = path.join(tmp, "plain");
+    const deep = path.join(repo, "src", "ui");
+    fs.mkdirSync(deep, { recursive: true });
+    fs.writeFileSync(path.join(repo, "package.json"), JSON.stringify({ name: "app", dependencies: { react: "^18" } }));
+    fs.writeFileSync(path.join(repo, "src", "A.tsx"), "export const A = () => <div />;\n");
+    await runInstall({ root: repo, home: path.join(tmp, "h"), tools: ["claude-code"], version: "0.2.0" });
+    expect(fs.existsSync(path.join(repo, ".dsmith", "install.json"))).toBe(true);
+    expect(findProjectRoot(deep, path.join(tmp, "h"))).toBe(deep);
+    await runAudit(repo);
+    expect(findProjectRoot(deep, path.join(tmp, "h"))).toBe(repo);
   });
 
   it(".git이 파일(워크트리·서브모듈)이어도 루트로 본다", () => {

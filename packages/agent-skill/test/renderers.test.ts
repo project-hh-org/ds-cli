@@ -374,3 +374,44 @@ describe("실제 렌더 결과 구조 검사", () => {
     await expect(content).toMatchFileSnapshot("./__snapshots__/agents-md.real.md");
   });
 });
+
+describe("ctx.cli (로컬 빌드로 CLI 호출 치환)", () => {
+  const DEV = "node /abs/dist/bin.js";
+  const devCtx: RenderContext = { ...repoCtx, cli: DEV };
+
+  it("cli를 주지 않거나 기본값(npx dsmith)이면 출력이 바이트 동일하다", async () => {
+    const commands = await loadCommands();
+    for (const tool of AI_TOOLS) {
+      const base = renderers[tool].render(commands, repoCtx);
+      expect(renderers[tool].render(commands, { ...repoCtx, cli: "npx dsmith" }), tool).toEqual(base);
+      expect(renderers[tool].render(commands, { ...globalCtx, cli: "npx dsmith" }), tool).toEqual(
+        renderers[tool].render(commands, globalCtx),
+      );
+    }
+  });
+
+  it("모든 도구의 명령 본문·AGENTS.md 블록이 npx dsmith 대신 cli를 쓴다", async () => {
+    const commands = await loadCommands();
+    expect(commands.some((c) => c.body.includes("npx dsmith"))).toBe(true);
+    for (const tool of AI_TOOLS) {
+      const writes = renderers[tool].render(commands, devCtx).writes;
+      expect(writes.length, tool).toBeGreaterThan(0);
+      for (const w of writes) {
+        expect(w.content, `${tool} ${w.file}`).not.toContain("npx dsmith");
+      }
+    }
+    const skill = renderers["claude-code"].render(commands, devCtx).writes.find((w) => w.file.endsWith("ds-audit/SKILL.md"));
+    expect(skill?.content).toContain(`\`${DEV} audit --json $ARGUMENTS\``);
+    const agents = renderers["agents-md"].render(commands, devCtx).writes[0]?.content ?? "";
+    expect(agents).toContain(`\`${DEV} detect --json\``);
+    expect(agents).toContain(`\`${DEV} decide --item "<이름>" --choose "<id>"\``);
+    // MCP 등록은 ctx.mcp를 따른다(cli와 독립)
+    expect(agents).toContain("npx -y dsmith@0.2 mcp");
+  });
+
+  it("글로벌 미지원 안내문도 cli를 쓴다", () => {
+    const out = renderers.cursor.render(FIXTURES, { ...globalCtx, cli: DEV });
+    expect(out.notes.join("\n")).toContain(`${DEV} install --tool cursor`);
+    expect(out.notes.join("\n")).not.toContain("npx dsmith");
+  });
+});

@@ -1,8 +1,10 @@
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import {
   AI_TOOLS,
+  DEFAULT_CLI,
   TOML_MARKERS,
   defaultMcpLaunch,
   detectTools,
@@ -36,12 +38,17 @@ export interface InstallOptions {
 
 export interface InstallResult {
   scope: "repo" | "global";
+  /** 선택된 도구(글로벌 미지원 도구도 포함) */
   tools: AiTool[];
+  /** 선택됐지만 이 스코프에서 쓸 파일이 없는 도구(예: --global의 cursor) */
+  unsupported: AiTool[];
   /** 도구를 어떻게 골랐는지: 감지 / --tool / --all */
   selection: "detected" | "tool" | "all";
   /** --tool/--all이면 null. --global이면 홈 흔적만 담는다 */
   detection: ToolDetection | null;
   mcp: McpLaunch;
+  /** 명령 본문과 AGENTS.md 블록이 부르는 CLI 실행 명령(기본 `npx dsmith`) */
+  cli: string;
   outcomes: WriteOutcome[];
   notes: string[];
   /** 표시용 매니페스트 경로 */
@@ -104,7 +111,9 @@ export function foreignDsmithMcpTable(text: string): "table" | "inline" | null {
     if (section.length > 1 || (section.length === 1 && section[0] !== "mcp_servers")) continue;
     const full = [...section, ...splitKey(key[1] as string)];
     if (full[0] === "mcp_servers" && full[1] === "dsmith") return "table";
-    if (section.length === 0 && full.length === 1 && full[0] === "mcp_servers") return "inline";
+    if (section.length === 0 && full.length === 1 && full[0] === "mcp_servers") {
+      return /(^|[{,\s])(["']?)dsmith\2\s*[=.]/.test(line.slice(key[0].length)) ? "table" : "inline";
+    }
   }
   return null;
 }
@@ -120,6 +129,13 @@ function validateTools(tools: readonly string[]): AiTool[] {
   return tools as AiTool[];
 }
 
+
+/** codex는 agents-md를 함께 설치한다. 단 `--global`에서는 agents-md가 미지원이라, 직접 요청하지 않았으면 붙이지 않는다. */
+function normalizeFor(scope: "repo" | "global", requested: AiTool[]): AiTool[] {
+  const normalized = normalizeTools(requested);
+  return scope === "global" && !requested.includes("agents-md") ? normalized.filter((t) => t !== "agents-md") : normalized;
+}
+
 /** --global은 홈의 흔적(`~/`로 시작하는 근거)만 센다. 홈에 흔적이 없으면 기본값 claude-code 하나. */
 async function detectFor(scope: "repo" | "global", root: string, home: string): Promise<ToolDetection> {
   const full = await detectTools(root, home);
@@ -131,7 +147,7 @@ async function detectFor(scope: "repo" | "global", root: string, home: string): 
   }
   const found = Object.keys(evidence) as AiTool[];
   if (found.length === 0) return { tools: ["claude-code"], evidence, defaulted: true };
-  return { tools: normalizeTools(found), evidence, defaulted: false };
+  return { tools: normalizeFor("global", found), evidence, defaulted: false };
 }
 
 // --- 실행 -----------------------------------------------------------------------------------------------
@@ -167,6 +183,21 @@ function displayPath(file: string, root: string, home: string): string {
   return posix(file);
 }
 
+/** 건너뛴 설정 파일에 사용자가 직접 넣을 내용(JSON 키 또는 TOML 항목). 설정 파일이 아니면 null. */
+function manualSnippet(w: PlannedWrite, mcp: McpLaunch, inlineToml: boolean): string | null {
+  if (w.region.kind === "json-key") {
+    let value: unknown = JSON.parse(w.content);
+    for (const key of [...w.region.keyPath].reverse()) value = { [key]: value };
+    return JSON.stringify(value, null, 2);
+  }
+  if (w.region.kind === "block" && w.region.start === TOML_MARKERS.start) {
+    if (!inlineToml) return w.content.trimEnd();
+    const args = mcp.args.map((a) => JSON.stringify(a)).join(", ");
+    return `dsmith = { command = ${JSON.stringify(mcp.command)}, args = [${args}] }`;
+  }
+  return null;
+}
+
 export async function runInstall(opts: InstallOptions): Promise<InstallResult> {
   const scope = opts.global === true ? "global" : "repo";
   const root = path.resolve(opts.root);
@@ -175,17 +206,20 @@ export async function runInstall(opts: InstallOptions): Promise<InstallResult> {
   const dryRun = opts.dryRun === true;
   const force = opts.force === true;
 
-  // 1. MCP 실행 명령 — 0.0.0(로컬 개발 빌드)이면 npx로 받을 배포판이 없으므로 --mcp-command가 필수
+  // 1. MCP·CLI 실행 명령 — 0.0.0(로컬 개발 빌드)이면 npx로 받을 배포판이 없으므로 --mcp-command가 필수
   if (opts.mcpCommand === undefined && version === "0.0.0") {
+    const bin = fileURLToPath(new URL("../bin.js", import.meta.url));
     throw new Error(
-      '로컬 개발 빌드(0.0.0)에는 npx로 받을 배포판이 없습니다. --mcp-command 를 주세요. 예: --mcp-command "node <절대경로>/packages/cli/dist/bin.js"',
+      `로컬 개발 빌드(0.0.0)에는 npx로 받을 배포판이 없습니다. 이 빌드를 쓰려면 --mcp-command 를 주세요: --mcp-command "node ${bin}"`,
     );
   }
   const mcp = opts.mcpCommand !== undefined ? parseMcpCommand(opts.mcpCommand) : defaultMcpLaunch(version);
+  // 슬래시 명령 본문의 CLI 호출도 같은 빌드를 쓴다: `node /abs/dist/bin.js mcp` → `node /abs/dist/bin.js`
+  const cli = opts.mcpCommand !== undefined ? [mcp.command, ...mcp.args.slice(0, -1)].join(" ") : DEFAULT_CLI;
   const notes: string[] = [];
   if (opts.mcpCommand !== undefined && scope === "repo") {
     notes.push(
-      `경고: --mcp-command(${launchText(mcp)})의 경로는 이 컴퓨터에만 있습니다. 레포에 쓰는 설정 파일(.mcp.json 등)을 커밋하면 다른 사람 환경에서 MCP가 뜨지 않습니다. 커밋하지 마세요.`,
+      `경고: --mcp-command(${cli})의 경로는 이 컴퓨터에만 있습니다. 슬래시 명령·AGENTS.md·MCP 설정 등 레포에 쓰는 파일에 이 경로가 들어가므로 커밋하면 다른 사람 환경에서 동작하지 않습니다. 커밋하지 마세요.`,
     );
   }
 
@@ -195,10 +229,10 @@ export async function runInstall(opts: InstallOptions): Promise<InstallResult> {
   let tools: AiTool[];
   if (opts.all === true) {
     selection = "all";
-    tools = normalizeTools([...AI_TOOLS]);
+    tools = normalizeFor(scope, [...AI_TOOLS]);
   } else if (opts.tools !== undefined && opts.tools.length > 0) {
     selection = "tool";
-    tools = normalizeTools(validateTools(opts.tools));
+    tools = normalizeFor(scope, validateTools(opts.tools));
   } else {
     selection = "detected";
     detection = await detectFor(scope, root, home);
@@ -208,8 +242,10 @@ export async function runInstall(opts: InstallOptions): Promise<InstallResult> {
   // 3. 전부 렌더한다 — 렌더러 하나라도 실패하면 아무것도 쓰기 전에 중단된다.
   const commands = await loadCommands();
   const planned: PlannedWrite[] = [];
+  const unsupported: AiTool[] = [];
   for (const tool of tools) {
-    const out = renderers[tool].render(commands, { root, home, scope, mcp });
+    const out = renderers[tool].render(commands, { root, home, scope, mcp, cli });
+    if (out.writes.length === 0) unsupported.push(tool);
     planned.push(...out.writes);
     notes.push(...out.notes);
   }
@@ -224,22 +260,22 @@ export async function runInstall(opts: InstallOptions): Promise<InstallResult> {
   }
 
   // 4. Codex config.toml에 dsmith가 관리하지 않는 [mcp_servers.dsmith]가 있으면 쓰지 않는다 — --force로도 넘지 못한다.
-  const preSkipped = new Map<PlannedWrite, WriteOutcome>();
+  const preSkipped = new Map<PlannedWrite, { outcome: WriteOutcome; inline: boolean }>();
   for (const w of planned) {
     if (w.region.kind !== "block" || w.region.start !== TOML_MARKERS.start) continue;
     const text = await readText(w.file);
     const found = text === null ? null : foreignDsmithMcpTable(text);
     if (found === null) continue;
     preSkipped.set(w, {
-      file: displayPath(w.file, root, home),
-      key: regionKey(w, manifestFile),
-      region: "block",
-      status: "skipped-invalid",
-      reason: found === "inline" ? CODEX_INLINE_REASON : CODEX_DUPLICATE_REASON,
+      inline: found === "inline",
+      outcome: {
+        file: displayPath(w.file, root, home),
+        key: regionKey(w, manifestFile),
+        region: "block",
+        status: "skipped-invalid",
+        reason: found === "inline" ? CODEX_INLINE_REASON : CODEX_DUPLICATE_REASON,
+      },
     });
-    notes.push(
-      `Codex MCP 등록을 건너뜀: ${displayPath(w.file, root, home)}의 기존 dsmith 설정이 \`${launchText(mcp)}\`를 가리키는지 직접 확인하세요.`,
-    );
   }
 
   // 5. 한 번의 safeWrite(매니페스트 하나)
@@ -260,14 +296,32 @@ export async function runInstall(opts: InstallOptions): Promise<InstallResult> {
           })
         ).outcomes;
   const queue = [...written];
-  const outcomes = planned.map((w) => preSkipped.get(w) ?? (queue.shift() as WriteOutcome));
+  const outcomes = planned.map((w) => preSkipped.get(w)?.outcome ?? (queue.shift() as WriteOutcome));
+
+  // 6. 건너뛴 설정 파일마다 사용자가 직접 넣을 내용을 알려 준다.
+  planned.forEach((w, i) => {
+    const o = outcomes[i] as WriteOutcome;
+    if (!o.status.startsWith("skipped")) return;
+    const pre = preSkipped.get(w);
+    const snippet = manualSnippet(w, mcp, pre?.inline === true);
+    if (snippet === null) return;
+    const intro =
+      pre === undefined
+        ? `${o.file}을 건너뛰어 dsmith MCP 항목이 등록되지 않았습니다. 직접 추가하세요:`
+        : pre.inline
+          ? `${o.file}의 mcp_servers가 인라인 테이블이라 쓰지 않았습니다. 테이블 안에 직접 추가하세요:`
+          : `${o.file}에 dsmith가 관리하지 않는 항목이 있어 쓰지 않았습니다. 아래 내용과 같은지 확인하세요:`;
+    notes.push(`${intro}\n${snippet.replace(/^/gm, "  ")}`);
+  });
 
   return {
     scope,
     tools,
+    unsupported,
     selection,
     detection,
     mcp,
+    cli,
     outcomes,
     notes: [...new Set(notes)],
     manifest: manifestShown,
@@ -289,15 +343,36 @@ function toolLabel(tool: AiTool, r: InstallResult): string {
 }
 
 function registeredLine(r: InstallResult): string {
-  if (r.selection === "all") return `등록: ${r.tools.join(", ")} (--all)`;
+  const tagged = (t: AiTool, label: string): string => (r.unsupported.includes(t) ? `${label} [미지원]` : label);
+  const plain = r.tools.map((t) => tagged(t, t)).join(", ");
+  if (r.selection === "all") return `등록: ${plain} (--all)`;
   if (r.selection === "tool") {
     const paired = r.tools.includes("codex") && r.tools.includes("agents-md") ? ", agents-md는 codex와 함께" : "";
-    return `등록: ${r.tools.join(", ")} (--tool 지정${paired})`;
+    return `등록: ${plain} (--tool 지정${paired})`;
   }
   if (r.detection?.defaulted === true) {
-    return `등록: ${r.tools.join(", ")} (감지: ${r.scope === "global" ? "홈에 " : ""}흔적 없음 → 기본값)`;
+    return `등록: ${plain} (감지: ${r.scope === "global" ? "홈에 " : ""}흔적 없음 → 기본값)`;
   }
-  return `등록: ${r.tools.map((t) => toolLabel(t, r)).join(", ")}`;
+  return `등록: ${r.tools.map((t) => tagged(t, toolLabel(t, r))).join(", ")}`;
+}
+
+/** 설치한 도구마다 어떻게 시작하는지. 같은 방법끼리 묶는다. */
+function nextLines(r: InstallResult): string[] {
+  if (r.dryRun) return ["다음: --dry-run 없이 다시 실행하면 위 내용을 씁니다"];
+  const active = r.tools.filter((t) => !r.unsupported.includes(t));
+  const slash = active.filter((t) => t === "claude-code" || t === "cursor" || t === "gemini");
+  const groups: { tools: AiTool[]; text: string }[] = [];
+  if (slash.length > 0) groups.push({ tools: slash, text: "/ds 로 시작" });
+  if (active.includes("codex")) groups.push({ tools: ["codex"], text: "$ds 로 시작 (또는 /skills 에서 ds 선택)" });
+  if (active.includes("agents-md")) {
+    groups.push({ tools: ["agents-md"], text: `AGENTS.md 섹션에 적힌 대로 \`${r.cli} …\` 호출` });
+  }
+  const [only] = groups;
+  if (only === undefined) return ["다음: 이 범위에서 쓴 파일이 없습니다 — 위 할 일을 확인하세요"];
+  if (groups.length === 1) {
+    return [only.tools[0] === "agents-md" ? `다음: ${only.text}` : `다음: AI 도구를 다시 열고 ${only.text}`];
+  }
+  return ["다음: AI 도구를 다시 열고", ...groups.map((g) => `- ${g.tools.join(", ")}: ${g.text}`)];
 }
 
 /** 사람이 읽는 요약. 등록한 도구와 근거, 파일 개수, 건너뜀 사유, 할 일, 다음 단계. */
@@ -318,7 +393,7 @@ export function formatInstallSummary(r: InstallResult): string {
     for (const o of r.outcomes) if (o.diff !== undefined && o.diff !== "") lines.push("", o.diff.trimEnd());
   }
   const notes = [...new Set(r.notes)];
-  if (notes.length > 0) lines.push("", "할 일:", ...notes.map((n) => `- ${n}`), "");
-  lines.push(r.dryRun ? "다음: --dry-run 없이 다시 실행하면 위 내용을 씁니다" : "다음: AI 도구를 다시 열고 /ds 로 시작");
+  if (notes.length > 0) lines.push("", "할 일:", ...notes.map((n) => `- ${n.replace(/\n/g, "\n  ")}`), "");
+  lines.push(...nextLines(r));
   return lines.join("\n");
 }
