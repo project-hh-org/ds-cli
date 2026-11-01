@@ -1,0 +1,413 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`스냅샷 (global scope) > claude-code 1`] = `
+{
+  "notes": [
+    "MCP는 직접 등록하세요: claude mcp add --scope user dsmith -- npx -y dsmith@0.2 mcp",
+  ],
+  "writes": [
+    {
+      "content": "---
+name: ds-sample
+description: '샘플: "따옴표"와 콜론이 있는 설명. 두 번째 문장.'
+argument-hint: "[--root <dir>]"
+---
+
+<!-- dsmith install이 관리하는 파일입니다. 직접 고치면 다음 install이 덮어쓰지 않습니다(--force로 덮어씀). -->
+
+\`npx dsmith audit --json $ARGUMENTS\` 를 실행한다.
+
+- 항목 하나
+",
+      "file": "/h/.claude/skills/ds-sample/SKILL.md",
+      "region": {
+        "kind": "file",
+      },
+    },
+    {
+      "content": "---
+name: ds-mcp-only
+description: MCP 도구만 쓰는 명령.
+---
+
+<!-- dsmith install이 관리하는 파일입니다. 직접 고치면 다음 install이 덮어쓰지 않습니다(--force로 덮어씀). -->
+
+lint_snippet을 부른다.
+",
+      "file": "/h/.claude/skills/ds-mcp-only/SKILL.md",
+      "region": {
+        "kind": "file",
+      },
+    },
+    {
+      "content": "---
+name: ds-todo
+description: 아직 없는 명령.
+---
+
+<!-- dsmith install이 관리하는 파일입니다. 직접 고치면 다음 install이 덮어쓰지 않습니다(--force로 덮어씀). -->
+
+아직 제공되지 않음.
+",
+      "file": "/h/.claude/skills/ds-todo/SKILL.md",
+      "region": {
+        "kind": "file",
+      },
+    },
+  ],
+}
+`;
+
+exports[`스냅샷 (global scope) > codex 1`] = `
+{
+  "notes": [],
+  "writes": [
+    {
+      "content": "---
+name: ds-sample
+description: '샘플: "따옴표"와 콜론이 있는 설명. 두 번째 문장.'
+---
+
+<!-- dsmith install이 관리하는 파일입니다. 직접 고치면 다음 install이 덮어쓰지 않습니다(--force로 덮어씀). -->
+
+\`npx dsmith audit --json 사용자가 함께 준 인자\` 를 실행한다.
+
+- 항목 하나
+",
+      "file": "/h/.agents/skills/ds-sample/SKILL.md",
+      "region": {
+        "kind": "file",
+      },
+    },
+    {
+      "content": "---
+name: ds-mcp-only
+description: MCP 도구만 쓰는 명령.
+---
+
+<!-- dsmith install이 관리하는 파일입니다. 직접 고치면 다음 install이 덮어쓰지 않습니다(--force로 덮어씀). -->
+
+lint_snippet을 부른다.
+",
+      "file": "/h/.agents/skills/ds-mcp-only/SKILL.md",
+      "region": {
+        "kind": "file",
+      },
+    },
+    {
+      "content": "---
+name: ds-todo
+description: 아직 없는 명령.
+---
+
+<!-- dsmith install이 관리하는 파일입니다. 직접 고치면 다음 install이 덮어쓰지 않습니다(--force로 덮어씀). -->
+
+아직 제공되지 않음.
+",
+      "file": "/h/.agents/skills/ds-todo/SKILL.md",
+      "region": {
+        "kind": "file",
+      },
+    },
+    {
+      "content": "[mcp_servers.dsmith]
+command = "npx"
+args = ["-y", "dsmith@0.2", "mcp"]
+",
+      "file": "/h/.codex/config.toml",
+      "region": {
+        "end": "# dsmith:end",
+        "kind": "block",
+        "start": "# dsmith:start",
+      },
+    },
+  ],
+}
+`;
+
+exports[`스냅샷 (repo scope) > agents-md 1`] = `
+{
+  "notes": [],
+  "writes": [
+    {
+      "content": "## dsmith (디자인 시스템 도구)
+
+이 레포의 디자인 시스템 진단·결정·검사를 \`dsmith\`로 한다. 슬래시 명령이 없으면 오른쪽 열의 명령을 실행하고 JSON 출력을 읽어 설명한다.
+
+| 명령 | 하는 일 | 슬래시 없을 때 |
+| --- | --- | --- |
+| \`/ds-sample\` | 샘플: "따옴표"와 콜론이 있는 설명 | \`npx dsmith audit --json\` |
+| \`/ds-mcp-only\` | MCP 도구만 쓰는 명령 | MCP 서버 필요 |
+| \`/ds-todo\` | 아직 없는 명령 | 아직 없음 |
+
+MCP 서버 dsmith(\`npx -y dsmith@0.2 mcp\`) 도구: resolve_token, lint_snippet, search_component, get_component, explain_decision, list_decisions
+
+규칙:
+- 명령 출력 JSON에 없는 숫자는 말하지 않는다.
+- 결정은 사람이 고른 뒤 \`npx dsmith decide --item <이름> --choose <id>\` 로 기록한다.
+- 스타일 값을 하드코딩하기 전에 \`resolve_token\`으로 토큰을 찾는다.",
+      "file": "/r/AGENTS.md",
+      "region": {
+        "end": "<!-- dsmith:end -->",
+        "kind": "block",
+        "start": "<!-- dsmith:start -->",
+      },
+    },
+  ],
+}
+`;
+
+exports[`스냅샷 (repo scope) > claude-code 1`] = `
+{
+  "notes": [
+    "Claude Code는 프로젝트 .mcp.json 서버를 처음 쓸 때 승인을 묻습니다. 승인하세요.",
+  ],
+  "writes": [
+    {
+      "content": "---
+name: ds-sample
+description: '샘플: "따옴표"와 콜론이 있는 설명. 두 번째 문장.'
+argument-hint: "[--root <dir>]"
+---
+
+<!-- dsmith install이 관리하는 파일입니다. 직접 고치면 다음 install이 덮어쓰지 않습니다(--force로 덮어씀). -->
+
+\`npx dsmith audit --json $ARGUMENTS\` 를 실행한다.
+
+- 항목 하나
+",
+      "file": "/r/.claude/skills/ds-sample/SKILL.md",
+      "region": {
+        "kind": "file",
+      },
+    },
+    {
+      "content": "---
+name: ds-mcp-only
+description: MCP 도구만 쓰는 명령.
+---
+
+<!-- dsmith install이 관리하는 파일입니다. 직접 고치면 다음 install이 덮어쓰지 않습니다(--force로 덮어씀). -->
+
+lint_snippet을 부른다.
+",
+      "file": "/r/.claude/skills/ds-mcp-only/SKILL.md",
+      "region": {
+        "kind": "file",
+      },
+    },
+    {
+      "content": "---
+name: ds-todo
+description: 아직 없는 명령.
+---
+
+<!-- dsmith install이 관리하는 파일입니다. 직접 고치면 다음 install이 덮어쓰지 않습니다(--force로 덮어씀). -->
+
+아직 제공되지 않음.
+",
+      "file": "/r/.claude/skills/ds-todo/SKILL.md",
+      "region": {
+        "kind": "file",
+      },
+    },
+    {
+      "content": "{"command":"npx","args":["-y","dsmith@0.2","mcp"]}",
+      "file": "/r/.mcp.json",
+      "region": {
+        "keyPath": [
+          "mcpServers",
+          "dsmith",
+        ],
+        "kind": "json-key",
+      },
+    },
+  ],
+}
+`;
+
+exports[`스냅샷 (repo scope) > codex 1`] = `
+{
+  "notes": [
+    "Codex는 신뢰한 프로젝트에서만 .codex/config.toml을 읽습니다. 이 레포를 신뢰 프로젝트로 지정하세요.",
+  ],
+  "writes": [
+    {
+      "content": "---
+name: ds-sample
+description: '샘플: "따옴표"와 콜론이 있는 설명. 두 번째 문장.'
+---
+
+<!-- dsmith install이 관리하는 파일입니다. 직접 고치면 다음 install이 덮어쓰지 않습니다(--force로 덮어씀). -->
+
+\`npx dsmith audit --json 사용자가 함께 준 인자\` 를 실행한다.
+
+- 항목 하나
+",
+      "file": "/r/.agents/skills/ds-sample/SKILL.md",
+      "region": {
+        "kind": "file",
+      },
+    },
+    {
+      "content": "---
+name: ds-mcp-only
+description: MCP 도구만 쓰는 명령.
+---
+
+<!-- dsmith install이 관리하는 파일입니다. 직접 고치면 다음 install이 덮어쓰지 않습니다(--force로 덮어씀). -->
+
+lint_snippet을 부른다.
+",
+      "file": "/r/.agents/skills/ds-mcp-only/SKILL.md",
+      "region": {
+        "kind": "file",
+      },
+    },
+    {
+      "content": "---
+name: ds-todo
+description: 아직 없는 명령.
+---
+
+<!-- dsmith install이 관리하는 파일입니다. 직접 고치면 다음 install이 덮어쓰지 않습니다(--force로 덮어씀). -->
+
+아직 제공되지 않음.
+",
+      "file": "/r/.agents/skills/ds-todo/SKILL.md",
+      "region": {
+        "kind": "file",
+      },
+    },
+    {
+      "content": "[mcp_servers.dsmith]
+command = "npx"
+args = ["-y", "dsmith@0.2", "mcp"]
+",
+      "file": "/r/.codex/config.toml",
+      "region": {
+        "end": "# dsmith:end",
+        "kind": "block",
+        "start": "# dsmith:start",
+      },
+    },
+  ],
+}
+`;
+
+exports[`스냅샷 (repo scope) > cursor 1`] = `
+{
+  "notes": [],
+  "writes": [
+    {
+      "content": "<!-- dsmith install이 관리하는 파일입니다. 직접 고치면 다음 install이 덮어쓰지 않습니다(--force로 덮어씀). -->
+# /ds-sample
+
+샘플: "따옴표"와 콜론이 있는 설명. 두 번째 문장.
+
+\`npx dsmith audit --json 명령 뒤에 적은 내용\` 를 실행한다.
+
+- 항목 하나
+",
+      "file": "/r/.cursor/commands/ds-sample.md",
+      "region": {
+        "kind": "file",
+      },
+    },
+    {
+      "content": "<!-- dsmith install이 관리하는 파일입니다. 직접 고치면 다음 install이 덮어쓰지 않습니다(--force로 덮어씀). -->
+# /ds-mcp-only
+
+MCP 도구만 쓰는 명령.
+
+lint_snippet을 부른다.
+",
+      "file": "/r/.cursor/commands/ds-mcp-only.md",
+      "region": {
+        "kind": "file",
+      },
+    },
+    {
+      "content": "<!-- dsmith install이 관리하는 파일입니다. 직접 고치면 다음 install이 덮어쓰지 않습니다(--force로 덮어씀). -->
+# /ds-todo
+
+아직 없는 명령.
+
+아직 제공되지 않음.
+",
+      "file": "/r/.cursor/commands/ds-todo.md",
+      "region": {
+        "kind": "file",
+      },
+    },
+    {
+      "content": "{"type":"stdio","command":"npx","args":["-y","dsmith@0.2","mcp"]}",
+      "file": "/r/.cursor/mcp.json",
+      "region": {
+        "keyPath": [
+          "mcpServers",
+          "dsmith",
+        ],
+        "kind": "json-key",
+      },
+    },
+  ],
+}
+`;
+
+exports[`스냅샷 (repo scope) > gemini 1`] = `
+{
+  "notes": [],
+  "writes": [
+    {
+      "content": "# dsmith install이 관리하는 파일입니다. 직접 고치면 다음 install이 덮어쓰지 않습니다(--force로 덮어씀).
+description = "샘플: \\"따옴표\\"와 콜론이 있는 설명. 두 번째 문장."
+prompt = '''
+\`npx dsmith audit --json {{args}}\` 를 실행한다.
+
+- 항목 하나
+'''
+",
+      "file": "/r/.gemini/commands/ds-sample.toml",
+      "region": {
+        "kind": "file",
+      },
+    },
+    {
+      "content": "# dsmith install이 관리하는 파일입니다. 직접 고치면 다음 install이 덮어쓰지 않습니다(--force로 덮어씀).
+description = "MCP 도구만 쓰는 명령."
+prompt = '''
+lint_snippet을 부른다.
+'''
+",
+      "file": "/r/.gemini/commands/ds-mcp-only.toml",
+      "region": {
+        "kind": "file",
+      },
+    },
+    {
+      "content": "# dsmith install이 관리하는 파일입니다. 직접 고치면 다음 install이 덮어쓰지 않습니다(--force로 덮어씀).
+description = "아직 없는 명령."
+prompt = '''
+아직 제공되지 않음.
+'''
+",
+      "file": "/r/.gemini/commands/ds-todo.toml",
+      "region": {
+        "kind": "file",
+      },
+    },
+    {
+      "content": "{"command":"npx","args":["-y","dsmith@0.2","mcp"]}",
+      "file": "/r/.gemini/settings.json",
+      "region": {
+        "keyPath": [
+          "mcpServers",
+          "dsmith",
+        ],
+        "kind": "json-key",
+      },
+    },
+  ],
+}
+`;
