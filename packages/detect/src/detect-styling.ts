@@ -22,12 +22,15 @@ export interface StylingDetection {
   methods: { name: StylingMethodName | (string & {}); evidence: string[]; share: number }[];
   /**
    * tailwind가 감지됐을 때만. package.json tailwindcss 범위의 첫 정수(^3.4.0 → 3, ~4.1 → 4; 숫자 없음·4 초과·3 미만 → 다음 근거)
-   * → `@tailwindcss/postcss`·`@tailwindcss/vite` 의존성 → `@import "tailwindcss"` 근거 → 4 → `@tailwind` 지시어·tailwind.config.* → 3 → 없음.
+   * → `@tailwindcss/postcss`·`@tailwindcss/vite` 의존성 → `@import "tailwindcss"`(bare·v4 서브패스 theme/preflight/utilities.css) 근거 → 4 → `@tailwind` 지시어·`@import "tailwindcss/(base|components|utilities)"`(.css 없음)·tailwind.config.* → 3 → 없음.
    */
   tailwindVersion?: 3 | 4;
 }
 
 const TAILWIND_CONFIGS = "**/tailwind.config.*";
+/** v3 전용 서브패스(`.css` 없음): `tailwindcss/base`·`/components`·`/utilities`. 4 근거가 아니다. */
+const TAILWIND_V3_IMPORT = /@import\s+(?:url\()?["'](tailwindcss\/(?:base|components|utilities))["']/;
+/** 그 밖의 `@import "tailwindcss"` — bare와 v4 서브패스(`tailwindcss/theme.css`·`preflight.css`·`utilities.css`) */
 const TAILWIND_CSS_IMPORT = /@import\s+(?:url\()?["']tailwindcss(?:\/[^"']*)?["']/;
 /** Tailwind v3 CSS 지시어 */
 const TAILWIND_DIRECTIVE = /@tailwind\s+(?:base|components|utilities)\b/;
@@ -61,6 +64,11 @@ async function tailwindEvidence(root: string, deps: string[], exclude: string[])
       content = await fs.readFile(path.join(root, css), "utf-8");
     } catch {
       continue;
+    }
+    const v3Import = TAILWIND_V3_IMPORT.exec(content);
+    if (v3Import !== null) {
+      evidence.push(`@import "${v3Import[1]}" in ${css}`);
+      break;
     }
     if (TAILWIND_CSS_IMPORT.test(content)) {
       evidence.push(`@import "tailwindcss" in ${css}`);
@@ -99,7 +107,7 @@ function tailwindVersionOf(deps: string[], ranges: Record<string, string>, evide
   if (fromRange !== null) return fromRange;
   if (deps.includes("@tailwindcss/postcss") || deps.includes("@tailwindcss/vite")) return 4;
   if (evidence.some((e) => e.startsWith('@import "tailwindcss"'))) return 4;
-  if (evidence.some((e) => e.startsWith("@tailwind directive") || /(?:^|\/)tailwind\.config\./.test(e))) return 3;
+  if (evidence.some((e) => e.startsWith("@tailwind directive") || e.startsWith('@import "tailwindcss/') || /(?:^|\/)tailwind\.config\./.test(e))) return 3;
   return undefined;
 }
 

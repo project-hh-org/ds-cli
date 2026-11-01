@@ -956,6 +956,32 @@ describe("Tailwind 주 버전 감지 (tailwindVersion)", () => {
     expect(await versionOf()).toBe(3);
   });
 
+  it("v3 서브패스 @import \"tailwindcss/base\"는 4 근거가 아니다(숫자 없는 범위 → 3)", async () => {
+    repo({
+      "package.json": pkg({}, { tailwindcss: "latest" }),
+      "src/app.css": '@import "tailwindcss/base";\n@import "tailwindcss/components";\n@import "tailwindcss/utilities";\n',
+    });
+    expect(await versionOf()).toBe(3);
+    fs.writeFileSync(path.join(tmp, "package.json"), pkg({}, { tailwindcss: "catalog:" }));
+    expect(await versionOf()).toBe(3);
+    fs.writeFileSync(path.join(tmp, "package.json"), pkg({}, { tailwindcss: "workspace:*" }));
+    expect(await versionOf()).toBe(3);
+  });
+
+  it("v4 전용 서브패스(tailwindcss/theme.css·preflight.css·utilities.css)와 bare는 4", async () => {
+    for (const spec of ["tailwindcss", "tailwindcss/theme.css", "tailwindcss/preflight.css", "tailwindcss/utilities.css"]) {
+      repo({ "package.json": pkg({}, { tailwindcss: "next" }), "src/app.css": `@import "${spec}";\n` });
+      expect(await versionOf(), spec).toBe(4);
+    }
+  });
+
+  it("의존성 없이 v3 서브패스 @import만 있어도 tailwind 근거가 되고 3", async () => {
+    repo({ "package.json": pkg(), "src/app.css": '@import "tailwindcss/base";\n' });
+    const r = await detect(tmp);
+    expect(r.styling.methods.find((m) => m.name === "tailwind")?.evidence).toEqual(['@import "tailwindcss/base" in src/app.css']);
+    expect(r.styling.tailwindVersion).toBe(3);
+  });
+
   it("범위 밖 숫자(5, 2)는 건너뛰고 다음 근거를 본다", async () => {
     repo({ "package.json": pkg({}, { tailwindcss: "^5.0.0" }), "tailwind.config.js": "module.exports = {}" });
     expect(await versionOf()).toBe(3);

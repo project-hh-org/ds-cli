@@ -19,6 +19,10 @@ Docs: https://github.com/project-hh-org/dsmith#readme
 - `--dry-run`은 `.dsmith/` 포함 어떤 파일도 쓰지 않고 쓸 파일과 diff만 낸다.
 - 결정 시드: audit의 중복·지역 재정의 컴포넌트와, 구성원이 둘 이상인 색 클러스터가 `.dsmith/decisions.json`에 `pending`으로 들어간다. 다시 실행하면 구성원이 바뀐 `pending` token-cluster 기록의 선택지를 갱신하고, `decided` 기록은 건드리지 않는다.
 
+## 알려진 제한
+
+- **Tailwind 4 변수 충돌**: Tailwind 4 레포에서 `tokens.css`의 `:root { --color-blue-400; --text-xs; --radius-sm … }`는 Tailwind 4 기본 테마의 같은 이름 변수를 덮는다(실제 빌드로 확인). 기존 `bg-blue-400`·`text-xs`·`rounded-sm` 클래스의 값이 레포 전체에서 바뀔 수 있어, v4에서는 요약에 경고를 낸다. `--color-*`·`--text-*`·`--radius-*` 이름에 `--ds-` 접두를 붙이는 근본 수정은 Plan 4b에서 한다. Tailwind 3은 프리셋 키가 `ds-` 접두라 영향이 없다.
+
 ## 옵션
 
 - `--all`: 결정 없이 추천안으로 스캐폴드한다. 대상은 `duplicate` → `local-definition` 후보 순서의 **앞에서 `--top`개**(기본 10). 이미 DS에 있는 컴포넌트와 이름이 겹치는 항목은 건너뛴다.

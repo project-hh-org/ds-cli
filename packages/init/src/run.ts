@@ -12,7 +12,7 @@ import {
   emitTokensTs,
   explainDecision,
   findTailwindConfig,
-  listCssFiles,
+  isPresetLinked,
   listDecisions,
   localDate,
   managedFileHash,
@@ -23,7 +23,6 @@ import {
   readComponentProps,
   readDecisions,
   readIndex,
-  readTailwindPreset,
   recordDecision,
   regionKey,
   safeWrite,
@@ -511,11 +510,20 @@ export async function runInit(opts: InitOptions): Promise<InitResult> {
     presetWrite = tokenWrite(name, emitTailwindPreset(draft, format, { outDir }));
     // 확장자 없는 import는 .cjs와 .ts가 함께 있으면 .cjs를 먼저 집는다 — 다른 형식의 옛 파일은 지우지 않고 알린다.
     if (tailwindVersion === 3) {
+      // config가 확장자를 명시해 가리키면(`…/tailwind.preset.cjs`) 어느 파일을 집을지 모호하지 않으니 경고하지 않는다.
+      const configFile = await findTailwindConfig(root);
+      const configText = configFile === null ? "" : await fs.readFile(path.join(root, configFile), "utf-8").catch(() => "");
+      const explicit = /tailwind\.preset\.(?:ts|cjs)["'`]/.test(configText);
       for (const other of ["tailwind.preset.ts", "tailwind.preset.cjs"]) {
-        if (other !== name && (await fileExists(path.join(root, outDir, other)))) {
+        if (other !== name && !explicit && (await fileExists(path.join(root, outDir, other)))) {
           warnings.push(`옛 프리셋 ${outDir}/${other}이 남아 있음 — 확장자 없는 import가 그 파일을 먼저 집을 수 있으니 지우세요`);
         }
       }
+    }
+    if (tailwindVersion === 4) {
+      warnings.push(
+        "Tailwind 4: tokens.css의 --color-*·--text-*·--radius-* 변수가 Tailwind 4 기본 테마 변수와 이름이 같아 기존 bg-blue-400·text-xs·rounded-sm 등의 값이 레포 전체에서 바뀔 수 있음 (--ds- 접두 적용 예정)",
+      );
     }
   }
 
@@ -529,12 +537,8 @@ export async function runInit(opts: InitOptions): Promise<InitResult> {
   );
   let tailwindPreset: InitResult["tailwindPreset"] = null;
   if (presetVersion !== null && presetRel !== null) {
-    const read = await readTailwindPreset(root, {
-      initDir: outDir,
-      tailwindVersion: presetVersion,
-      cssFiles: presetVersion === 4 ? await listCssFiles(root) : [],
-    });
-    tailwindPreset = { version: presetVersion, file: presetRel, linked: read?.linked ?? false };
+    // 프리셋 파일의 존재와 무관하게 판정한다(첫 dry-run에서는 파일이 아직 없다).
+    tailwindPreset = { version: presetVersion, file: presetRel, linked: await isPresetLinked(root, outDir, presetVersion) };
   }
 
   // 7. 커버리지

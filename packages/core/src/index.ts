@@ -16,7 +16,7 @@ export { parseTsx, traverse } from "./parse/tsx.js";
 export type { Index, IndexOptions } from "./index/indexer.js";
 export type { ExtractorMatcher, FileStyles } from "./index/extract-file.js";
 export { extractFileStyles, extractorMatchers } from "./index/extract-file.js";
-export { DEFAULT_EXCLUDE, indexRepo } from "./index/indexer.js";
+export { DEFAULT_EXCLUDE, collectModuleContext, indexRepo } from "./index/indexer.js";
 export type { ModuleContext } from "./index/component-usage.js";
 export { extractComponentUsage, moduleKeyOf } from "./index/component-usage.js";
 export type { TsPaths } from "./index/specifier.js";
@@ -153,6 +153,7 @@ export type { PresetFormat } from "./tokens/tailwind-preset.js";
 export {
   emitTailwindPreset,
   findTailwindConfig,
+  isPresetLinked,
   listCssFiles,
   parsePresetKeys,
   presetFileName,

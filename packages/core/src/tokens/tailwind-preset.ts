@@ -142,34 +142,121 @@ async function readText(abs: string): Promise<string | null> {
   }
 }
 
-/** 블록 주석과 줄 전체 `//` 주석을 뺀다(생성 파일의 안내 주석이 연결로 오인되지 않게). */
-function stripComments(text: string): string {
-  return text.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+const STRING_LITERAL = String.raw`"(?:\\.|[^"\\\n])*"|'(?:\\.|[^'\\\n])*'|` + "`(?:\\\\.|[^`\\\\])*`";
+const JS_COMMENTS = new RegExp(`(${STRING_LITERAL})|\\/\\*[\\s\\S]*?\\*\\/|\\/\\/[^\\n]*`, "g");
+const CSS_COMMENTS = new RegExp(`(${STRING_LITERAL})|\\/\\*[\\s\\S]*?\\*\\/`, "g");
+
+/**
+ * 블록 주석과 `//` 주석(js)을 뺀다(생성 파일의 안내 주석이 연결로 오인되지 않게).
+ * 문자열 리터럴을 먼저 잡아 그대로 두므로 글롭 `"./src/*.tsx"`나 `"http://…"`는 주석으로 오인되지 않는다. CSS는 블록 주석만.
+ */
+function stripComments(text: string, lang: "js" | "css" = "js"): string {
+  return text.replace(lang === "js" ? JS_COMMENTS : CSS_COMMENTS, (_m, str: string | undefined) => str ?? "");
 }
 
-async function linkedV3(root: string, initDir: string): Promise<boolean> {
-  const dir = initDir === "." ? "" : `${escapeRe(initDir)}/`;
-  const importRe = new RegExp(`["'](?:\\./)?${dir}tailwind\\.preset(?:\\.(?:ts|cjs|js|mjs|mts|cts))?["']`);
-  for (const ext of CONFIG_EXTENSIONS) {
-    const raw = await readText(path.join(root, `tailwind.config.${ext}`));
-    const text = raw === null ? null : stripComments(raw);
-    if (text !== null && /\bpresets\b/.test(text) && importRe.test(text)) return true;
+/** `open`(여는 `[`) 위치에서 짝이 맞는 `]` 앞까지의 내용. 문자열 안의 괄호는 세지 않는다. 닫히지 않으면 끝까지. */
+function bracketContent(text: string, open: number): string {
+  let depth = 0;
+  const strRe = new RegExp(`^(?:${STRING_LITERAL})`);
+  for (let i = open; i < text.length; i++) {
+    const ch = text[i] as string;
+    if (ch === '"' || ch === "'" || ch === "`") {
+      const m = strRe.exec(text.slice(i));
+      if (m !== null) i += m[0].length - 1;
+      continue;
+    }
+    if (ch === "[") depth++;
+    else if (ch === "]" && --depth === 0) return text.slice(open + 1, i);
+  }
+  return text.slice(open + 1);
+}
+
+const NOT_IDENTIFIERS: ReadonlySet<string> = new Set(["default", "as", "type", "typeof", "from"]);
+const identifiersOf = (clause: string): string[] =>
+  (clause.match(/[A-Za-z_$][\w$]*/g) ?? []).filter((id) => !NOT_IDENTIFIERS.has(id));
+
+/**
+ * 주석을 뺀 config 텍스트의 어느 `presets: [ … ]` 배열 안에 프리셋 지정자가 직접(인라인 require) 있거나,
+ * 그 지정자를 import/require해 만든 식별자가 있으면 true.
+ */
+function presetsArrayLinks(text: string, spec: string): boolean {
+  const quoted = `(?<q>["'])${spec}\\k<q>`;
+  const inlineRe = new RegExp(quoted);
+  const bound = new Set<string>();
+  const importRe = new RegExp(`\\bimport\\s+([^;"'\`]+?)\\s*from\\s*${quoted}`, "g");
+  for (const m of text.matchAll(importRe)) for (const id of identifiersOf(m[1] ?? "")) bound.add(id);
+  const requireRe = new RegExp(`\\b(?:const|let|var)\\s+([^=;]+?)\\s*=\\s*(?:await\\s+)?require\\(\\s*${quoted}\\s*\\)`, "g");
+  for (const m of text.matchAll(requireRe)) for (const id of identifiersOf(m[1] ?? "")) bound.add(id);
+
+  for (const m of text.matchAll(/\bpresets\s*:\s*\[/g)) {
+    const body = bracketContent(text, m.index + m[0].length - 1);
+    if (inlineRe.test(body)) return true;
+    for (const id of bound) if (new RegExp(`(?<![\\w$.])${escapeRe(id)}(?![\\w$])`).test(body)) return true;
   }
   return false;
 }
 
-async function linkedV4(root: string, cssFiles: string[]): Promise<boolean> {
+async function linkedV3(root: string, initDir: string): Promise<boolean> {
+  const dir = initDir === "." ? "" : `${escapeRe(initDir)}/`;
+  const spec = `(?:\\./)?${dir}tailwind\\.preset(?:\\.(?:ts|cjs|js|mjs|mts|cts))?`;
+  for (const ext of CONFIG_EXTENSIONS) {
+    const raw = await readText(path.join(root, `tailwind.config.${ext}`));
+    if (raw !== null && presetsArrayLinks(stripComments(raw), spec)) return true;
+  }
+  return false;
+}
+
+/** 존재하는 가장 가까운 부모 디렉터리를 realpath로 풀어 정규화(파일이 아직 없어도 동작). */
+async function canonical(abs: string): Promise<string> {
+  try {
+    return path.join(await fs.realpath(path.dirname(abs)), path.basename(abs));
+  } catch {
+    return path.resolve(abs);
+  }
+}
+
+const CSS_IMPORT = /@import\s+(?:url\(\s*)?(?:"([^"]*)"|'([^']*)'|([^\s"')]+))/g;
+const TAILWIND_ENTRY = /^tailwindcss(?:\/|$)/;
+
+/** CSS 텍스트(주석 제거됨)의 `@import` 지정자(따옴표·url() 제거) 목록 */
+function cssImportSpecifiers(text: string): string[] {
+  return [...text.matchAll(CSS_IMPORT)].map((m) => m[1] ?? m[2] ?? m[3] ?? "");
+}
+
+/**
+ * v4: 진입 CSS(같은 파일에 `@import "tailwindcss"`가 있음)가 CSS 파일 기준 상대 경로로
+ * `<root>/<initDir>/tailwind.theme.css`를 `@import`하면 true. 패키지 지정자·다른 디렉터리 기준 경로는 아니다.
+ */
+async function linkedV4(root: string, initDir: string, cssFiles: string[]): Promise<boolean> {
+  const target = await canonical(path.join(root, initDir, presetFileName("v4-css")));
   for (const css of cssFiles) {
     const raw = await readText(path.join(root, css));
-    if (raw !== null && /@import[^\n]*tailwind\.theme\.css/.test(stripComments(raw))) return true;
+    if (raw === null) continue;
+    const specs = cssImportSpecifiers(stripComments(raw, "css"));
+    if (!specs.some((s) => TAILWIND_ENTRY.test(s))) continue;
+    const dir = path.dirname(path.join(root, css));
+    for (const spec of specs) {
+      if (!spec.startsWith(".")) continue;
+      if ((await canonical(path.resolve(dir, spec))) === target) return true;
+    }
   }
   return false;
 }
 
 /**
+ * 프리셋이 연결돼 있는가 — 프리셋 파일의 존재와 무관하게(dry-run 첫 실행에도) 판정한다.
+ * v3: 루트 tailwind.config.{ts,mts,cts,js,mjs,cjs} 중 하나의 `presets: [ … ]` 배열 안에
+ *     `<initDir>/tailwind.preset`(확장자 생략·./ 접두 허용) require 식 또는 그 import/require 식별자가 있음. 주석·문자열 인식.
+ * v4: cssFiles(root 상대, 기본 listCssFiles) 중 `@import "tailwindcss"`를 가진 파일이 자기 디렉터리 기준 상대 경로로
+ *     `<initDir>/tailwind.theme.css`를 `@import`함.
+ */
+export async function isPresetLinked(root: string, initDir: string, version: 3 | 4, cssFiles?: string[]): Promise<boolean> {
+  return version === 4 ? linkedV4(root, initDir, cssFiles ?? (await listCssFiles(root))) : linkedV3(root, initDir);
+}
+
+/**
  * initDir 아래 세 이름 중 있는 파일 하나(v4-css > v3-ts > v3-cjs 순, tailwindVersion이 있으면 그 버전 것만)를 읽어 TailwindPreset으로.
- * linked — v3: 루트 tailwind.config.{ts,mts,cts,js,mjs,cjs} 중 하나의 텍스트에 `presets`가 있고 `<initDir>/tailwind.preset`(확장자 생략 허용, ./ 접두 허용)이 있음.
- *          v4: cssFiles(root 상대) 중 하나에 `@import`와 `tailwind.theme.css` 경로 끝이 같은 줄에 있음.
+ * linked — isPresetLinked 참고(v3: config의 `presets: [ … ]`에 프리셋 지정자·식별자, v4: 같은 진입 CSS가 `@import "tailwindcss"`와 상대 경로 `<initDir>/tailwind.theme.css`를 가짐).
  * 프리셋 파일이 없으면 null.
  */
 export async function readTailwindPreset(
@@ -186,7 +273,7 @@ export async function readTailwindPreset(
     const text = await readText(path.join(root, file));
     if (text === null) continue;
     const version = format === "v4-css" ? 4 : 3;
-    const linked = version === 4 ? await linkedV4(root, opts.cssFiles) : await linkedV3(root, initDir);
+    const linked = await isPresetLinked(root, initDir, version, opts.cssFiles);
     return { version, file, linked, keys: parsePresetKeys(text, format) };
   }
   return null;
