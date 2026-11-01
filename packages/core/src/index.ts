@@ -46,3 +46,13 @@ export type { ClassifyOptions } from "./parse/css-decl-usage.js";
 export { classifyDeclaration, lineLocator } from "./parse/css-decl-usage.js";
 export type { StyleObjectContext, StyleObjectPatch, StyleObjectUsage } from "./parse/object-style.js";
 export { usagesFromStyleObject } from "./parse/object-style.js";
+export type {
+  ManagedRegion,
+  PlannedWrite,
+  SafeWriteOptions,
+  SafeWriteResult,
+  WriteManifest,
+  WriteOutcome,
+  WriteStatus,
+} from "./fs/safe-write.js";
+export { regionKey, safeWrite } from "./fs/safe-write.js";

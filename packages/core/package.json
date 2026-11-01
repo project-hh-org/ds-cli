@@ -34,6 +34,7 @@
     "@babel/types": "^7.29.11",
     "@dsmith-dev/extractor-api": "workspace:*",
     "culori": "^4.0.1",
+    "diff": "^9.0.0",
     "fast-glob": "^3.3.3",
     "picomatch": "^4.0.7"
   },
