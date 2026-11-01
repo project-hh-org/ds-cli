@@ -24,6 +24,19 @@ importers:
         specifier: ^3.0.0
         version: 3.2.7(@types/node@22.20.5)(yaml@2.9.1)
 
+  packages/agent-skill:
+    dependencies:
+      '@dsmith-dev/core':
+        specifier: workspace:*
+        version: link:../core
+      yaml:
+        specifier: ^2.9.0
+        version: 2.9.1
+    devDependencies:
+      vitest:
+        specifier: ^3.0.0
+        version: 3.2.7(@types/node@22.20.5)(yaml@2.9.1)
+
   packages/cli:
     dependencies:
       '@dsmith-dev/core':
