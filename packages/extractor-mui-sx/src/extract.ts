@@ -3,13 +3,14 @@ import type { StyleObjectContext, StyleObjectUsage } from "@dsmith/core";
 import { JS_FILES } from "@dsmith/extractor-api";
 import type { ExtractContext, Extractor, StyleUsage } from "@dsmith/extractor-api";
 import type { Expression, ObjectExpression, ObjectProperty } from "@babel/types";
-import { MUI_KEY_MAP, SHAPE_BORDER_RADIUS_PX, SPACING_PROPS, isPalettePath, spacingToPx } from "./theme-scale.js";
+import { MUI_KEY_MAP, SHAPE_BORDER_RADIUS_PX, isPalettePath, isSpacingProp, spacingToPx } from "./theme-scale.js";
 import { registerPatchTarget, write } from "./write.js";
 
 export const EXTRACTOR_NAME = "mui-sx";
 
 const JS_FILE = /\.[cm]?[jt]sx?$/;
-const SPACING_KEYS: ReadonlySet<string> = new Set(SPACING_PROPS);
+/** 숫자 0 초과 1 이하가 비율(`1` = 100%)로 읽히는 크기 키. */
+const SIZE_KEYS: ReadonlySet<string> = new Set(["width", "height", "minWidth", "minHeight", "maxWidth", "maxHeight"]);
 const PALETTE_KEYS: ReadonlySet<string> = new Set(["color", "bgcolor", "backgroundColor", "borderColor"]);
 /** `p: { xs: 1, md: 2 }`처럼 브레이크포인트로 값을 나누는 객체의 키. */
 const BREAKPOINTS: ReadonlySet<string> = new Set(["xs", "sm", "md", "lg", "xl"]);
@@ -41,13 +42,20 @@ const classify: Classify = (key, value, defaultClassify) => {
   const base = (): StyleObjectUsage | null => defaultClassify(cssName);
 
   if (isNumeric(value)) {
-    const scale = SPACING_KEYS.has(key) ? "spacing" : key === "borderRadius" ? "radius" : null;
+    const scale = isSpacingProp(key) ? "spacing" : key === "borderRadius" ? "radius" : null;
     if (scale !== null) {
       const result = base();
       const n = result?.usage.normalized;
       if (n?.kind !== "length") return result;
       return asToken(result, { kind: "length", px: scale === "spacing" ? spacingToPx(n.px) : spacingToPx(n.px, SHAPE_BORDER_RADIUS_PX) });
     }
+  }
+  if (SIZE_KEYS.has(key) && isNumeric(value)) {
+    const result = base();
+    const n = result?.usage.normalized;
+    if (result === null || n?.kind !== "length" || n.px <= 0 || n.px > 1) return result;
+    // 비율 값은 hardcoded로 두되 px 길이로 세지 않는다.
+    return { ...result, usage: { ...result.usage, normalized: { kind: "unknown" } } };
   }
   // `grey`는 팔레트 경로이기 전에 CSS 색 이름이다.
   if (PALETTE_KEYS.has(key) && value.type === "StringLiteral" && isPalettePath(value.value) && normalizeColor(value.value) === null) {

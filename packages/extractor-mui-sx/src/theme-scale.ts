@@ -4,13 +4,29 @@ export const SPACING_UNIT_PX = 8;
 /** MUI 기본 테마 `theme.shape.borderRadius`(px). `sx={{ borderRadius: 1 }}`은 이 값의 배수다. */
 export const SHAPE_BORDER_RADIUS_PX = 4;
 
-/** 숫자 값이 `theme.spacing()` 배수로 해석되는 sx 키(약어와 CSS 이름). */
-export const SPACING_PROPS = [
+/** 숫자 값이 `theme.spacing()` 배수로 해석되는 sx 키 중 짧은 약어와 gap 계열. */
+const SHORT_SPACING_PROPS = [
   "p", "px", "py", "pt", "pr", "pb", "pl",
   "m", "mx", "my", "mt", "mr", "mb", "ml",
   "gap", "rowGap", "columnGap",
-  "padding", "margin",
 ] as const;
+
+const SPACING_SIDES = ["Top", "Right", "Bottom", "Left", "X", "Y", "Inline", "InlineStart", "InlineEnd", "Block", "BlockStart", "BlockEnd"];
+
+/** 숫자 값이 `theme.spacing()` 배수로 해석되는 sx 키(약어, gap 계열, `padding*`/`margin*` 장문 키). 판정은 `isSpacingProp`. */
+export const SPACING_PROPS: readonly string[] = [
+  ...SHORT_SPACING_PROPS,
+  "padding",
+  "margin",
+  ...["padding", "margin"].flatMap((base) => SPACING_SIDES.map((side) => `${base}${side}`)),
+];
+
+const SHORT_SPACING: ReadonlySet<string> = new Set(SHORT_SPACING_PROPS);
+
+/** MUI는 모든 `padding*`/`margin*` 키와 약어·gap 계열에 spacing 변환을 적용한다. */
+export function isSpacingProp(key: string): boolean {
+  return SHORT_SPACING.has(key) || /^(padding|margin)/.test(key);
+}
 
 /** `sx={{ p: 2 }}`의 2를 px로 바꾼다. */
 export function spacingToPx(n: number, unit: number = SPACING_UNIT_PX): number {

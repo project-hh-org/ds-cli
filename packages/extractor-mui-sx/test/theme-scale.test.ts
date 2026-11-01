@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { MUI_KEY_MAP, SPACING_PROPS, isPalettePath, spacingToPx } from "../src/index.js";
+import { MUI_KEY_MAP, SPACING_PROPS, isPalettePath, isSpacingProp, spacingToPx } from "../src/index.js";
 
 describe("spacingToPx", () => {
   it("MUI 기본 간격 단위(8px)를 곱한다", () => {
@@ -44,6 +44,20 @@ describe("MUI_KEY_MAP / SPACING_PROPS", () => {
   it("간격 키 목록에 약어와 CSS 이름이 모두 있다", () => {
     for (const key of ["p", "px", "mb", "gap", "rowGap", "padding", "margin"]) {
       expect(SPACING_PROPS).toContain(key);
+    }
+  });
+});
+
+describe("isSpacingProp", () => {
+  it("짧은 약어와 padding*/margin* 장문 키는 true", () => {
+    for (const key of ["p", "mx", "gap", "rowGap", "paddingTop", "paddingX", "marginY", "paddingInlineStart", "marginBlockEnd", "padding", "margin"]) {
+      expect(isSpacingProp(key)).toBe(true);
+    }
+  });
+
+  it("그 밖의 키는 false", () => {
+    for (const key of ["width", "fontSize", "borderRadius", "color", "pad", "display"]) {
+      expect(isSpacingProp(key)).toBe(false);
     }
   });
 });

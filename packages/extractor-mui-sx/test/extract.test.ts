@@ -100,6 +100,45 @@ describe("muiSxExtractor extract", () => {
     ]);
   });
 
+  it("장문 padding*/margin* 키의 숫자도 테마 간격 token", () => {
+    const usages = extractAll(
+      JSX(`{ paddingTop: 2, marginX: 1, paddingY: 2, marginInline: 1, paddingInlineStart: 1, marginBlockEnd: 3 }`),
+    );
+    expect(usages.map((u) => [u.property, u.raw, u.source, u.normalized])).toEqual([
+      ["padding", "2", "token", { kind: "length", px: 16 }],
+      ["margin", "1", "token", { kind: "length", px: 8 }],
+      ["padding", "2", "token", { kind: "length", px: 16 }],
+      ["margin", "1", "token", { kind: "length", px: 8 }],
+      ["padding", "1", "token", { kind: "length", px: 8 }],
+      ["margin", "3", "token", { kind: "length", px: 24 }],
+    ]);
+  });
+
+  it("장문 키라도 문자열 값은 hardcoded", () => {
+    const usages = extractAll(JSX(`{ paddingTop: "16px" }`));
+    expect(usages.map((u) => [u.property, u.source, u.normalized])).toEqual([
+      ["padding", "hardcoded", { kind: "length", px: 16 }],
+    ]);
+  });
+
+  it("크기 숫자 0 초과 1 이하는 비율이라 hardcoded unknown, 그 밖은 px 길이", () => {
+    const usages = extractAll(JSX(`{ width: 1, height: 0.5, minWidth: 0.25, maxWidth: 240, width: 0, height: 1.5 }`));
+    expect(usages.map((u) => [u.property, u.raw, u.source, u.normalized])).toEqual([
+      ["width", "1", "hardcoded", { kind: "unknown" }],
+      ["height", "0.5", "hardcoded", { kind: "unknown" }],
+      ["width", "0.25", "hardcoded", { kind: "unknown" }],
+      ["width", "240", "hardcoded", { kind: "length", px: 240 }],
+      ["width", "0", "hardcoded", { kind: "length", px: 0 }],
+      ["height", "1.5", "hardcoded", { kind: "length", px: 1.5 }],
+    ]);
+  });
+
+  it("비율 크기도 write 패치는 유지된다", () => {
+    const code = JSX(`{ width: 0.5 }`);
+    const [u] = muiSxExtractor.extract({ root: "/", file: "a.tsx", code });
+    expect(muiSxExtractor.write(u!, "var(--w)")).not.toBeNull();
+  });
+
   it("간격 키라도 문자열 값은 hardcoded", () => {
     expect(summary(JSX(`{ p: "12px", m: "auto" }`))).toEqual([
       ["padding", "12px", "hardcoded"],
