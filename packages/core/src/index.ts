@@ -58,3 +58,8 @@ export type {
   WriteStatus,
 } from "./fs/safe-write.js";
 export { regionKey, safeWrite } from "./fs/safe-write.js";
+export { DEFINITION_EXTENSIONS, resolveDefinitionFile } from "./component/definition.js";
+export type { ComponentProps, PropInfo } from "./component/props.js";
+export { readComponentProps } from "./component/props.js";
+export type { ComponentMatch } from "./component/search.js";
+export { COMPONENT_SYNONYMS, searchComponents } from "./component/search.js";
