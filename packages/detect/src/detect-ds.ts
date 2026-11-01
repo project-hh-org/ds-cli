@@ -1,5 +1,5 @@
 import path from "node:path";
-import { normalizeSpecifier } from "@dsmith/core";
+import { normalizeSpecifier } from "@dsmith-dev/core";
 import { isDir, listFiles } from "./fs-utils.js";
 
 export interface DsDetection {

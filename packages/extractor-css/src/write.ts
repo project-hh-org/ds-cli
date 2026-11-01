@@ -1,5 +1,5 @@
-import type { StyleUsage, WritePatch } from "@dsmith/extractor-api";
-import { isRatedUsage } from "@dsmith/core";
+import type { StyleUsage, WritePatch } from "@dsmith-dev/extractor-api";
+import { isRatedUsage } from "@dsmith-dev/core";
 
 /** 치환 패치에 필요한 값(또는 축약 안의 색 토큰) 구간. */
 interface PatchTarget {

@@ -1,6 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import { DEFAULT_EXCLUDE } from "@dsmith/core";
+import { DEFAULT_EXCLUDE } from "@dsmith-dev/core";
 import fg from "fast-glob";
 
 /** core 인덱서와 같은 스캔 대상. */

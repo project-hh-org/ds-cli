@@ -1,4 +1,4 @@
-import type { StyleProperty } from "@dsmith/extractor-api";
+import type { StyleProperty } from "@dsmith-dev/extractor-api";
 import { normalizeColor } from "../normalize/color.js";
 
 /** 길이로 정규화하는 속성. 단위 없는 숫자는 이 속성에서만 px로 본다. */

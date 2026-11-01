@@ -1,5 +1,5 @@
 {
-  "name": "@dsmith/extractor-css",
+  "name": "@dsmith-dev/extractor-css",
   "version": "0.0.0",
   "description": "dsmith .css/.scss 파일 추출기",
   "type": "module",
@@ -16,8 +16,8 @@
     "dist"
   ],
   "dependencies": {
-    "@dsmith/core": "workspace:*",
-    "@dsmith/extractor-api": "workspace:*"
+    "@dsmith-dev/core": "workspace:*",
+    "@dsmith-dev/extractor-api": "workspace:*"
   },
   "devDependencies": {
     "vitest": "^3.0.0"

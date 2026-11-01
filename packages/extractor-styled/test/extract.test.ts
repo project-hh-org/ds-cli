@@ -1,6 +1,6 @@
-import { parseTsx } from "@dsmith/core";
-import type { StyleUsage } from "@dsmith/extractor-api";
-import { JS_FILES, runConformance } from "@dsmith/extractor-api";
+import { parseTsx } from "@dsmith-dev/core";
+import type { StyleUsage } from "@dsmith-dev/extractor-api";
+import { JS_FILES, runConformance } from "@dsmith-dev/extractor-api";
 import type { TaggedTemplateExpression } from "@babel/types";
 import { describe, expect, it } from "vitest";
 import { declarationsFromTemplate, styledExtractor } from "../src/index.js";

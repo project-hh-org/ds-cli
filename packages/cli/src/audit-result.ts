@@ -1,5 +1,5 @@
-import type { ColorCluster, Index, SpacingCandidate } from "@dsmith/core";
-import type { DetectResult } from "@dsmith/detect";
+import type { ColorCluster, Index, SpacingCandidate } from "@dsmith-dev/core";
+import type { DetectResult } from "@dsmith-dev/detect";
 
 export interface AuditResult {
   detect: DetectResult;

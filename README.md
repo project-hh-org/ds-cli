@@ -1,6 +1,6 @@
 # dsmith
 
-도구 이름: dsmith (DS + smith — 디자인 시스템을 만들고 다듬는 도구). npm: `dsmith`, 스코프 `@dsmith/*`.
+도구 이름: dsmith (DS + smith — 디자인 시스템을 만들고 다듬는 도구). npm: `dsmith`, 스코프 `@dsmith-dev/*`.
 
 운영 중인 코드베이스를 대상으로 디자인시스템(DS)을 진단 → 생성 → 정리 → 운영 → AI 연동까지 끌고 가는 CLI.
 
@@ -103,7 +103,7 @@ node packages/cli/dist/bin.js audit --root fixtures/tailwind-app
 
 ## Extractor 추가하기
 
-1. `@dsmith/extractor-api`의 `Extractor`를 구현한다 — 메타 `ExtractorMeta`(`name`: 소문자 kebab-case, detect 방식 이름이 된다 / `files`: 읽을 glob, 소스를 읽으면 `JS_FILES` / `parses`: `"tsx"` 또는 `"none"` / `signals`: detect가 이 방식을 감지할 근거 — `dependencies`(package.json 패키지 이름), `files`(첫 매칭 파일이 근거인 glob), `code`(JS/TS·CSS 소스 내용에 대한 정규식 소스) 중 하나 이상, 하나라도 맞으면 감지)와 `appliesTo`·`extract`·`write`. `signals`가 없으면 detect가 감지하지 못해 켜지지 않는다.
+1. `@dsmith-dev/extractor-api`의 `Extractor`를 구현한다 — 메타 `ExtractorMeta`(`name`: 소문자 kebab-case, detect 방식 이름이 된다 / `files`: 읽을 glob, 소스를 읽으면 `JS_FILES` / `parses`: `"tsx"` 또는 `"none"` / `signals`: detect가 이 방식을 감지할 근거 — `dependencies`(package.json 패키지 이름), `files`(첫 매칭 파일이 근거인 glob), `code`(JS/TS·CSS 소스 내용에 대한 정규식 소스) 중 하나 이상, 하나라도 맞으면 감지)와 `appliesTo`·`extract`·`write`. `signals`가 없으면 detect가 감지하지 못해 켜지지 않는다.
 2. 패키지 테스트에서 `runConformance(name, make, cases)`로 계약 검사(메타·`signals` 모양 포함)를 돌리고 `failed`가 비었는지 확인한다.
 3. 패키지 구성은 `packages/extractor-css`를 따른다(`package.json`의 `exports`·`scripts`, `tsconfig.json`의 `references`).
 4. `packages/cli/src/registry.ts`에 `이름: () => extractor` 한 줄을 더한다(`packages/cli/package.json` 의존성과 `tsconfig.json` 참조도 함께). `metas()`가 메타(`signals` 포함)를 detect에 넘기고, `signals`가 맞은 방식 중 레지스트리에 있는 것만 `activeExtractors`로 켜진다. core·detect 소스는 고치지 않는다.

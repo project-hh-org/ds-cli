@@ -1,7 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import type { Index } from "@dsmith/core";
-import type { ExtractorMeta, ExtractorSignals } from "@dsmith/extractor-api";
+import type { Index } from "@dsmith-dev/core";
+import type { ExtractorMeta, ExtractorSignals } from "@dsmith-dev/extractor-api";
 import { isMonorepoRoot, listFiles, loadFiles, type SourceFile } from "./fs-utils.js";
 
 /** detect가 직접 감지하는 방식 이름. 그 밖의 이름은 Extractor가 선언한 `signals`로 감지된다. */

@@ -1,4 +1,4 @@
-import type { StyleProperty, StyleUsage } from "@dsmith/extractor-api";
+import type { StyleProperty, StyleUsage } from "@dsmith-dev/extractor-api";
 import {
   cssPropertyToStyleProperty,
   isColorProperty,

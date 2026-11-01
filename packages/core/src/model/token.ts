@@ -1,4 +1,4 @@
-import type { StyleUsage } from "@dsmith/extractor-api";
+import type { StyleUsage } from "@dsmith-dev/extractor-api";
 
 export interface Token {
   name: string;

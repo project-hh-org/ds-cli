@@ -1,5 +1,5 @@
 {
-  "name": "@dsmith/core",
+  "name": "@dsmith-dev/core",
   "version": "0.0.0",
   "description": "dsmith 공통 모델과 색·길이 정규화",
   "type": "module",
@@ -19,13 +19,13 @@
     "@babel/parser": "^7.29.12",
     "@babel/traverse": "^7.29.12",
     "@babel/types": "^7.29.11",
-    "@dsmith/extractor-api": "workspace:*",
+    "@dsmith-dev/extractor-api": "workspace:*",
     "culori": "^4.0.1",
     "fast-glob": "^3.3.3",
     "picomatch": "^4.0.7"
   },
   "devDependencies": {
-    "@dsmith/extractor-inline-style": "workspace:*",
+    "@dsmith-dev/extractor-inline-style": "workspace:*",
     "@types/babel__traverse": "^7.28.0",
     "@types/culori": "^2.1.1",
     "@types/picomatch": "^4.0.3",

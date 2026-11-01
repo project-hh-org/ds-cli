@@ -1,4 +1,4 @@
-import { parseTsx } from "@dsmith/core";
+import { parseTsx } from "@dsmith-dev/core";
 import type { TemplateLiteral } from "@babel/types";
 import { describe, expect, it } from "vitest";
 import { declarationsFromTemplate } from "../src/index.js";

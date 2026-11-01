@@ -2,8 +2,8 @@ import fs from "node:fs";
 import fsp from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { JS_FILES } from "@dsmith/extractor-api";
-import { inlineStyleExtractor } from "@dsmith/extractor-inline-style";
+import { JS_FILES } from "@dsmith-dev/extractor-api";
+import { inlineStyleExtractor } from "@dsmith-dev/extractor-inline-style";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DEFAULT_EXCLUDE, indexRepo } from "../src/index/indexer.js";
 

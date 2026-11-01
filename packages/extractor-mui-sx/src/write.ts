@@ -1,5 +1,5 @@
-import type { StyleUsage, WritePatch } from "@dsmith/extractor-api";
-import { isRatedUsage } from "@dsmith/core";
+import type { StyleUsage, WritePatch } from "@dsmith-dev/extractor-api";
+import { isRatedUsage } from "@dsmith-dev/core";
 
 /** 치환할 소스 구간. 문자열 값은 따옴표 안 하위 구간(`quote: false`), 숫자 값은 노드 전체(`quote: true`). */
 export interface PatchTarget {

@@ -1,5 +1,5 @@
 {
-  "name": "@dsmith/extractor-styled",
+  "name": "@dsmith-dev/extractor-styled",
   "version": "0.0.0",
   "description": "dsmith styled-components 추출기",
   "type": "module",
@@ -17,8 +17,8 @@
   ],
   "dependencies": {
     "@babel/types": "^7.29.11",
-    "@dsmith/core": "workspace:*",
-    "@dsmith/extractor-api": "workspace:*"
+    "@dsmith-dev/core": "workspace:*",
+    "@dsmith-dev/extractor-api": "workspace:*"
   },
   "devDependencies": {
     "vitest": "^3.0.0"

@@ -1,4 +1,4 @@
-import type { StyleUsage, WritePatch } from "@dsmith/extractor-api";
+import type { StyleUsage, WritePatch } from "@dsmith-dev/extractor-api";
 import { describe, expect, it } from "vitest";
 import { cssExtractor } from "../src/index.js";
 

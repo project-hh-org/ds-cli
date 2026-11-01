@@ -1,10 +1,10 @@
-import { metaOf, type Extractor, type ExtractorMeta } from "@dsmith/extractor-api";
-import { cssExtractor } from "@dsmith/extractor-css";
-import { emotionExtractor } from "@dsmith/extractor-emotion";
-import { inlineStyleExtractor } from "@dsmith/extractor-inline-style";
-import { muiSxExtractor } from "@dsmith/extractor-mui-sx";
-import { styledExtractor } from "@dsmith/extractor-styled";
-import { tailwindExtractor } from "@dsmith/extractor-tailwind";
+import { metaOf, type Extractor, type ExtractorMeta } from "@dsmith-dev/extractor-api";
+import { cssExtractor } from "@dsmith-dev/extractor-css";
+import { emotionExtractor } from "@dsmith-dev/extractor-emotion";
+import { inlineStyleExtractor } from "@dsmith-dev/extractor-inline-style";
+import { muiSxExtractor } from "@dsmith-dev/extractor-mui-sx";
+import { styledExtractor } from "@dsmith-dev/extractor-styled";
+import { tailwindExtractor } from "@dsmith-dev/extractor-tailwind";
 
 /** detect.activeExtractors의 이름 → Extractor. 키는 Extractor.name과 같아야 한다. */
 export const registry: Record<string, () => Extractor> = {

@@ -1,5 +1,5 @@
-import type { StyleUsage, WritePatch } from "@dsmith/extractor-api";
-import { isRatedUsage } from "@dsmith/core";
+import type { StyleUsage, WritePatch } from "@dsmith-dev/extractor-api";
+import { isRatedUsage } from "@dsmith-dev/core";
 
 /** 치환할 소스 구간. `quote`면 객체 문법의 숫자 리터럴 노드 자리라 `tokenRef`를 따옴표로 감싼다(문자열 값은 따옴표 안 하위 구간이라 false). */
 export interface PatchTarget {

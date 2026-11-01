@@ -1,6 +1,6 @@
 import path from "node:path";
-import type { Index } from "@dsmith/core";
-import type { ExtractorMeta } from "@dsmith/extractor-api";
+import type { Index } from "@dsmith-dev/core";
+import type { ExtractorMeta } from "@dsmith-dev/extractor-api";
 import { detectDs, type DsDetection } from "./detect-ds.js";
 import { detectFramework, type FrameworkDetection } from "./detect-framework.js";
 import { detectLint, type LintDetection } from "./detect-lint.js";

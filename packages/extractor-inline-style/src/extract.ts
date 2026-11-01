@@ -1,6 +1,6 @@
-import { parseTsx, traverse, usagesFromStyleObject } from "@dsmith/core";
-import { JS_FILES } from "@dsmith/extractor-api";
-import type { ExtractContext, Extractor, StyleUsage } from "@dsmith/extractor-api";
+import { parseTsx, traverse, usagesFromStyleObject } from "@dsmith-dev/core";
+import { JS_FILES } from "@dsmith-dev/extractor-api";
+import type { ExtractContext, Extractor, StyleUsage } from "@dsmith-dev/extractor-api";
 import { registerPatchTarget, write } from "./write.js";
 
 export const EXTRACTOR_NAME = "inline-style";

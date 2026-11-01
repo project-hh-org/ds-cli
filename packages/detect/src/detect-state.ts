@@ -1,4 +1,4 @@
-import { isRatedUsage, type Index } from "@dsmith/core";
+import { isRatedUsage, type Index } from "@dsmith-dev/core";
 import { isDsSpecifier, type DsDetection } from "./detect-ds.js";
 import type { SourceFile } from "./fs-utils.js";
 

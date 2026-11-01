@@ -1,5 +1,5 @@
 {
-  "name": "@dsmith/extractor-api",
+  "name": "@dsmith-dev/extractor-api",
   "version": "0.0.0",
   "description": "dsmith Extractor 플러그인 계약과 conformance 러너",
   "type": "module",

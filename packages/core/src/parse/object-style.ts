@@ -1,4 +1,4 @@
-import type { StyleProperty, StyleUsage } from "@dsmith/extractor-api";
+import type { StyleProperty, StyleUsage } from "@dsmith-dev/extractor-api";
 import type { Expression, NumericLiteral, ObjectExpression, ObjectProperty, PatternLike, StringLiteral } from "@babel/types";
 import { cssPropertyToStyleProperty, isLengthProperty } from "../model/css-property.js";
 import { classifyDeclaration, lineLocator } from "./css-decl-usage.js";

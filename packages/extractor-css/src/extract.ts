@@ -1,5 +1,5 @@
-import { classifyDeclaration, lineLocator, parseCssDeclarations } from "@dsmith/core";
-import type { ExtractContext, Extractor, StyleUsage } from "@dsmith/extractor-api";
+import { classifyDeclaration, lineLocator, parseCssDeclarations } from "@dsmith-dev/core";
+import type { ExtractContext, Extractor, StyleUsage } from "@dsmith-dev/extractor-api";
 import { registerPatchTarget, write } from "./write.js";
 
 export const EXTRACTOR_NAME = "css";

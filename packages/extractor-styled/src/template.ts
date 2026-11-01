@@ -1,6 +1,6 @@
-import { classifyDeclaration, lineLocator, parseCssDeclarations, usagesFromStyleObject } from "@dsmith/core";
-import type { CssDecl } from "@dsmith/core";
-import type { ExtractContext, StyleUsage } from "@dsmith/extractor-api";
+import { classifyDeclaration, lineLocator, parseCssDeclarations, usagesFromStyleObject } from "@dsmith-dev/core";
+import type { CssDecl } from "@dsmith-dev/core";
+import type { ExtractContext, StyleUsage } from "@dsmith-dev/extractor-api";
 import type { ObjectExpression, TemplateLiteral } from "@babel/types";
 import { registerPatchTarget } from "./write.js";
 

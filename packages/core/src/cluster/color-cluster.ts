@@ -1,4 +1,4 @@
-import type { StyleUsage } from "@dsmith/extractor-api";
+import type { StyleUsage } from "@dsmith-dev/extractor-api";
 import { colorDistance } from "../match/distance.js";
 import type { NormalizedColor } from "../model/style-usage.js";
 

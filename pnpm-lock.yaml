@@ -20,31 +20,31 @@ importers:
 
   packages/cli:
     dependencies:
-      '@dsmith/core':
+      '@dsmith-dev/core':
         specifier: workspace:*
         version: link:../core
-      '@dsmith/detect':
+      '@dsmith-dev/detect':
         specifier: workspace:*
         version: link:../detect
-      '@dsmith/extractor-api':
+      '@dsmith-dev/extractor-api':
         specifier: workspace:*
         version: link:../extractor-api
-      '@dsmith/extractor-css':
+      '@dsmith-dev/extractor-css':
         specifier: workspace:*
         version: link:../extractor-css
-      '@dsmith/extractor-emotion':
+      '@dsmith-dev/extractor-emotion':
         specifier: workspace:*
         version: link:../extractor-emotion
-      '@dsmith/extractor-inline-style':
+      '@dsmith-dev/extractor-inline-style':
         specifier: workspace:*
         version: link:../extractor-inline-style
-      '@dsmith/extractor-mui-sx':
+      '@dsmith-dev/extractor-mui-sx':
         specifier: workspace:*
         version: link:../extractor-mui-sx
-      '@dsmith/extractor-styled':
+      '@dsmith-dev/extractor-styled':
         specifier: workspace:*
         version: link:../extractor-styled
-      '@dsmith/extractor-tailwind':
+      '@dsmith-dev/extractor-tailwind':
         specifier: workspace:*
         version: link:../extractor-tailwind
       commander:
@@ -66,7 +66,7 @@ importers:
       '@babel/types':
         specifier: ^7.29.11
         version: 7.29.11
-      '@dsmith/extractor-api':
+      '@dsmith-dev/extractor-api':
         specifier: workspace:*
         version: link:../extractor-api
       culori:
@@ -79,7 +79,7 @@ importers:
         specifier: ^4.0.7
         version: 4.0.7
     devDependencies:
-      '@dsmith/extractor-inline-style':
+      '@dsmith-dev/extractor-inline-style':
         specifier: workspace:*
         version: link:../extractor-inline-style
       '@types/babel__traverse':
@@ -97,10 +97,10 @@ importers:
 
   packages/detect:
     dependencies:
-      '@dsmith/core':
+      '@dsmith-dev/core':
         specifier: workspace:*
         version: link:../core
-      '@dsmith/extractor-api':
+      '@dsmith-dev/extractor-api':
         specifier: workspace:*
         version: link:../extractor-api
       fast-glob:
@@ -119,10 +119,10 @@ importers:
 
   packages/extractor-css:
     dependencies:
-      '@dsmith/core':
+      '@dsmith-dev/core':
         specifier: workspace:*
         version: link:../core
-      '@dsmith/extractor-api':
+      '@dsmith-dev/extractor-api':
         specifier: workspace:*
         version: link:../extractor-api
     devDependencies:
@@ -132,10 +132,10 @@ importers:
 
   packages/extractor-emotion:
     dependencies:
-      '@dsmith/extractor-api':
+      '@dsmith-dev/extractor-api':
         specifier: workspace:*
         version: link:../extractor-api
-      '@dsmith/extractor-styled':
+      '@dsmith-dev/extractor-styled':
         specifier: workspace:*
         version: link:../extractor-styled
     devDependencies:
@@ -145,10 +145,10 @@ importers:
 
   packages/extractor-inline-style:
     dependencies:
-      '@dsmith/core':
+      '@dsmith-dev/core':
         specifier: workspace:*
         version: link:../core
-      '@dsmith/extractor-api':
+      '@dsmith-dev/extractor-api':
         specifier: workspace:*
         version: link:../extractor-api
     devDependencies:
@@ -161,10 +161,10 @@ importers:
       '@babel/types':
         specifier: ^7.29.11
         version: 7.29.11
-      '@dsmith/core':
+      '@dsmith-dev/core':
         specifier: workspace:*
         version: link:../core
-      '@dsmith/extractor-api':
+      '@dsmith-dev/extractor-api':
         specifier: workspace:*
         version: link:../extractor-api
     devDependencies:
@@ -177,10 +177,10 @@ importers:
       '@babel/types':
         specifier: ^7.29.11
         version: 7.29.11
-      '@dsmith/core':
+      '@dsmith-dev/core':
         specifier: workspace:*
         version: link:../core
-      '@dsmith/extractor-api':
+      '@dsmith-dev/extractor-api':
         specifier: workspace:*
         version: link:../extractor-api
     devDependencies:
@@ -190,10 +190,10 @@ importers:
 
   packages/extractor-tailwind:
     dependencies:
-      '@dsmith/core':
+      '@dsmith-dev/core':
         specifier: workspace:*
         version: link:../core
-      '@dsmith/extractor-api':
+      '@dsmith-dev/extractor-api':
         specifier: workspace:*
         version: link:../extractor-api
     devDependencies:

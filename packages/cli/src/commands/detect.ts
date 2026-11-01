@@ -1,5 +1,5 @@
 import path from "node:path";
-import { detect, MONOREPO_ROOT_EVIDENCE, writeDetect, type DetectResult } from "@dsmith/detect";
+import { detect, MONOREPO_ROOT_EVIDENCE, writeDetect, type DetectResult } from "@dsmith-dev/detect";
 import { metas } from "../registry.js";
 
 export interface RunOptions {

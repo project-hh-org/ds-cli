@@ -1,6 +1,6 @@
-import type { StyleUsage } from "@dsmith/extractor-api";
-import { JS_FILES, runConformance } from "@dsmith/extractor-api";
-import { styledExtractor } from "@dsmith/extractor-styled";
+import type { StyleUsage } from "@dsmith-dev/extractor-api";
+import { JS_FILES, runConformance } from "@dsmith-dev/extractor-api";
+import { styledExtractor } from "@dsmith-dev/extractor-styled";
 import { describe, expect, it } from "vitest";
 import { emotionExtractor } from "../src/index.js";
 

@@ -1,5 +1,5 @@
-import type { StyleUsage, WritePatch } from "@dsmith/extractor-api";
-import { isRatedUsage } from "@dsmith/core";
+import type { StyleUsage, WritePatch } from "@dsmith-dev/extractor-api";
+import { isRatedUsage } from "@dsmith-dev/core";
 
 /** 치환할 클래스 토큰의 소스 구간(variant 접두 포함)과 보존할 variant 목록. */
 interface PatchTarget {

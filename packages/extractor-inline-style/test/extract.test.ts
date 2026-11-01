@@ -1,5 +1,5 @@
-import { JS_FILES, metaOf, runConformance, type ConformanceCase } from "@dsmith/extractor-api";
-import { parseTsx } from "@dsmith/core";
+import { JS_FILES, metaOf, runConformance, type ConformanceCase } from "@dsmith-dev/extractor-api";
+import { parseTsx } from "@dsmith-dev/core";
 import { describe, expect, it } from "vitest";
 import { cssPropertyToStyleProperty, inlineStyleExtractor } from "../src/index.js";
 

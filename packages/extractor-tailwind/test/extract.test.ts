@@ -1,5 +1,5 @@
-import { parseTsx } from "@dsmith/core";
-import { JS_FILES, metaOf, runConformance, type ConformanceCase } from "@dsmith/extractor-api";
+import { parseTsx } from "@dsmith-dev/core";
+import { JS_FILES, metaOf, runConformance, type ConformanceCase } from "@dsmith-dev/extractor-api";
 import { describe, expect, it } from "vitest";
 import { KNOWN_UTILITIES } from "../src/class-parser.js";
 import { RULES } from "../src/extract.js";

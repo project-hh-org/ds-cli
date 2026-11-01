@@ -8,8 +8,8 @@ import {
   writeIndex,
   type ComponentUsage,
   type Index,
-} from "@dsmith/core";
-import { detect, excludeGlobs, sharesFromIndex, writeDetect, type DetectResult } from "@dsmith/detect";
+} from "@dsmith-dev/core";
+import { detect, excludeGlobs, sharesFromIndex, writeDetect, type DetectResult } from "@dsmith-dev/detect";
 import type { AuditResult } from "../audit-result.js";
 import { buildExtractors, metas } from "../registry.js";
 import type { RunOptions } from "./detect.js";

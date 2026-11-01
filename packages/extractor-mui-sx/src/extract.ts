@@ -1,7 +1,7 @@
-import { normalizeColor, parseTsx, traverse, usagesFromStyleObject } from "@dsmith/core";
-import type { StyleObjectContext, StyleObjectUsage } from "@dsmith/core";
-import { JS_FILES } from "@dsmith/extractor-api";
-import type { ExtractContext, Extractor, StyleUsage } from "@dsmith/extractor-api";
+import { normalizeColor, parseTsx, traverse, usagesFromStyleObject } from "@dsmith-dev/core";
+import type { StyleObjectContext, StyleObjectUsage } from "@dsmith-dev/core";
+import { JS_FILES } from "@dsmith-dev/extractor-api";
+import type { ExtractContext, Extractor, StyleUsage } from "@dsmith-dev/extractor-api";
 import type { Expression, ObjectExpression, ObjectProperty } from "@babel/types";
 import { MUI_KEY_MAP, SHAPE_BORDER_RADIUS_PX, isPalettePath, isSpacingProp, spacingToPx } from "./theme-scale.js";
 import { registerPatchTarget, write } from "./write.js";

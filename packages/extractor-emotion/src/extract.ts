@@ -1,6 +1,6 @@
-import { JS_FILES } from "@dsmith/extractor-api";
-import type { Extractor } from "@dsmith/extractor-api";
-import { extractCssInJs, type Owned, type StyleImports } from "@dsmith/extractor-styled";
+import { JS_FILES } from "@dsmith-dev/extractor-api";
+import type { Extractor } from "@dsmith-dev/extractor-api";
+import { extractCssInJs, type Owned, type StyleImports } from "@dsmith-dev/extractor-styled";
 import { write } from "./write.js";
 
 export const EXTRACTOR_NAME = "emotion";
