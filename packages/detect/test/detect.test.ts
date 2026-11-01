@@ -291,6 +291,81 @@ describe("styling 감지", () => {
   });
 });
 
+describe("Extractor signals로 감지·활성화 (플러그인 경계)", () => {
+  /** 서드파티 Extractor: .txt 파일을 읽는다. detect 소스에 이름이 없다. */
+  const TXT: ExtractorMeta = { name: "txt", files: ["**/*.txt"], parses: "none", signals: { files: ["**/*.txt"] } };
+
+  it("signals.files의 첫 매칭 파일이 근거가 되고, available에 있으면 activeExtractors에 들어간다", async () => {
+    repo({ "package.json": pkg(), "notes.txt": "hello", "docs/b.txt": "b", "src/A.tsx": "export const A = 1;" });
+    const r = await detect(tmp, undefined, { available: [...AVAILABLE, TXT] });
+    expect(r.styling.methods).toContainEqual({ name: "txt", evidence: ["docs/b.txt"], share: 0 });
+    expect(r.activeExtractors).toEqual(["txt"]);
+  });
+
+  it("signals가 매칭되지 않으면 방식도 활성화도 없다 (기존 inline-style 폴백 유지)", async () => {
+    repo({ "package.json": pkg(), "src/A.tsx": "export const A = 1;" });
+    const r = await detect(tmp, undefined, { available: [...AVAILABLE, TXT] });
+    expect(r.styling.methods.map((m) => m.name)).toEqual(["inline-style"]);
+    expect(r.activeExtractors).toEqual(["inline-style"]);
+  });
+
+  it("signals가 없는 메타는 감지 근거가 없으므로 켜지지 않는다", async () => {
+    repo({ "package.json": pkg(), "notes.txt": "hello" });
+    const r = await detect(tmp, undefined, { available: [...AVAILABLE, { name: "txt", files: ["**/*.txt"], parses: "none" }] });
+    expect(r.activeExtractors).toEqual(["inline-style"]);
+  });
+
+  it("signals.dependencies는 dependencies·devDependencies 이름이 근거이고 share는 0", async () => {
+    repo({ "package.json": pkg({ "linaria": "^6" }, { "@linaria/core": "^6" }), "src/A.tsx": "export const A = 1;" });
+    const linaria: ExtractorMeta = { ...meta("linaria"), signals: { dependencies: ["@linaria/core", "linaria", "other"] } };
+    const r = await detect(tmp, undefined, { available: [linaria] });
+    expect(r.styling.methods).toEqual([
+      { name: "linaria", evidence: ["package.json: @linaria/core", "package.json: linaria"], share: 0 },
+    ]);
+    expect(r.activeExtractors).toEqual(["linaria"]);
+  });
+
+  it("signals.code는 JS·CSS 소스 내용에 대한 정규식이고, share는 매칭 파일 / 샘플 파일, 근거는 최대 3개", async () => {
+    repo({
+      "package.json": pkg(),
+      "src/a.tsx": "const a = vstyle({ color: 'red' });",
+      "src/b.tsx": "const b = vstyle({});",
+      "src/c.ts": "const c = 1;",
+      "src/d.js": "const d = vstyle();",
+      "src/e.css": "/* vstyle( */ a { color: red }",
+    });
+    const vanilla: ExtractorMeta = { ...meta("vanilla"), signals: { code: "\\bvstyle\\(" } };
+    const r = await detect(tmp, undefined, { available: [vanilla] });
+    const m = r.styling.methods.find((x) => x.name === "vanilla");
+    expect(m?.evidence).toEqual(["/\\bvstyle\\(/ in src/a.tsx", "/\\bvstyle\\(/ in src/b.tsx", "/\\bvstyle\\(/ in src/d.js"]);
+    // 샘플 5개(JS 4 + CSS 1) 중 4개가 매칭
+    expect(m?.share).toBe(0.8);
+    expect(r.activeExtractors).toEqual(["vanilla"]);
+  });
+
+  it("내장 방식 이름(tailwind 등)의 signals는 이번 판에서 평가하지 않는다 — 내장 감지가 우선한다", async () => {
+    repo({ "package.json": pkg(), "notes.txt": "hello" });
+    const fakeTailwind: ExtractorMeta = { ...meta("tailwind"), signals: { files: ["**/*.txt"] } };
+    const r = await detect(tmp, undefined, { available: [fakeTailwind, meta("inline-style")] });
+    expect(r.styling.methods.map((m) => m.name)).not.toContain("tailwind");
+    expect(r.activeExtractors).toEqual(["inline-style"]);
+  });
+
+  it("내장 방식과 signals 방식을 합치되 내장 방식이 먼저 온다", async () => {
+    repo({ "package.json": pkg({}, { tailwindcss: "^3" }), "tailwind.config.ts": "", "notes.txt": "hello" });
+    const r = await detect(tmp, undefined, { available: [TXT, ...AVAILABLE] });
+    expect(r.styling.methods.map((m) => m.name)).toEqual(["tailwind", "txt"]);
+    expect(r.activeExtractors).toEqual(["tailwind", "txt"]);
+  });
+
+  it("signals 방식도 index.extractors에 있으면 share를 index 비율로 덮어쓴다", async () => {
+    repo({ "package.json": pkg(), "notes.txt": "hello" });
+    const index: Index = { ...indexOf([style("txt", "hardcoded"), style("inline-style", "hardcoded")], []), extractors: ["txt"] };
+    const r = await detect(tmp, index, { available: [...AVAILABLE, TXT] });
+    expect(r.styling.methods.find((m) => m.name === "txt")?.share).toBe(0.5);
+  });
+});
+
 describe("ds 감지", () => {
   it("components/ui 디렉터리와 tokens.css가 있으면 local DS와 토큰 파일을 보고한다", async () => {
     repo({ "package.json": pkg(), "components/ui": null, "tokens.css": ":root{}" });

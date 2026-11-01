@@ -61,6 +61,7 @@ export const inlineStyleExtractor: Extractor = {
   name: EXTRACTOR_NAME,
   files: JS_FILES,
   parses: "tsx",
+  signals: { code: "style=\\{\\{" },
   appliesTo: (ctx) => /\.[cm]?[jt]sx?$/.test(ctx.file) && ctx.code.includes("style="),
   extract,
   write,

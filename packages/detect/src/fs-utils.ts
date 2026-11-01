@@ -87,7 +87,12 @@ const READ_BATCH = 64;
 
 /** 인덱서와 같은 glob의 소스 파일을 텍스트로 읽는다. 읽을 수 없는 파일은 건너뛴다. */
 export async function loadSources(root: string): Promise<SourceFile[]> {
-  const files = await listFiles(root, SOURCE_INCLUDE);
+  return loadFiles(root, SOURCE_INCLUDE);
+}
+
+/** glob에 맞는 파일을 텍스트로 읽는다(경로 정렬순). 읽을 수 없는 파일은 건너뛴다. */
+export async function loadFiles(root: string, patterns: string[]): Promise<SourceFile[]> {
+  const files = await listFiles(root, patterns);
   const out: SourceFile[] = [];
   for (let i = 0; i < files.length; i += READ_BATCH) {
     const batch = files.slice(i, i + READ_BATCH);

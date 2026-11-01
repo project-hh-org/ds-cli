@@ -99,11 +99,12 @@ describe("inlineStyleExtractor", () => {
     expect(inlineStyleExtractor.name).toBe("inline-style");
   });
 
-  it("메타는 JS_FILES를 대상으로 하고 tsx를 파싱한다", () => {
+  it("메타는 JS_FILES를 대상으로 하고 tsx를 파싱하며, detect 신호는 소스의 style={{ 다", () => {
     expect(metaOf(inlineStyleExtractor)).toEqual({
       name: "inline-style",
       files: JS_FILES,
       parses: "tsx",
+      signals: { code: "style=\\{\\{" },
     });
   });
 

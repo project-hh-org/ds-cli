@@ -1,13 +1,25 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import type { Index } from "@dsmith/core";
-import type { ExtractorMeta } from "@dsmith/extractor-api";
-import { isMonorepoRoot, listFiles, type SourceFile } from "./fs-utils.js";
+import type { ExtractorMeta, ExtractorSignals } from "@dsmith/extractor-api";
+import { isMonorepoRoot, listFiles, loadFiles, type SourceFile } from "./fs-utils.js";
 
+/** detect가 직접 감지하는 방식 이름. 그 밖의 이름은 Extractor가 선언한 `signals`로 감지된다. */
 export type StylingMethodName = "tailwind" | "inline-style" | "css" | "css-modules" | "styled" | "emotion" | "mui-sx";
 
+const BUILTIN_METHODS: ReadonlySet<string> = new Set<StylingMethodName>([
+  "tailwind",
+  "inline-style",
+  "css",
+  "css-modules",
+  "styled",
+  "emotion",
+  "mui-sx",
+]);
+
 export interface StylingDetection {
-  methods: { name: StylingMethodName; evidence: string[]; share: number }[];
+  /** 내장 방식(`StylingMethodName`) 다음에 Extractor `signals`로 감지한 방식이 온다. */
+  methods: { name: StylingMethodName | (string & {}); evidence: string[]; share: number }[];
 }
 
 const TAILWIND_CONFIGS = "**/tailwind.config.*";
@@ -19,6 +31,8 @@ export const MONOREPO_ROOT_EVIDENCE = "monorepo-root";
 /** 감지된 방식이 없을 때 inline-style을 대신 켜는 근거. */
 const FALLBACK_EVIDENCE = "fallback";
 const EVIDENCE_FILE_CAP = 3;
+/** signals.code를 검사할 스타일시트. */
+const STYLESHEETS = ["**/*.{css,scss}"];
 
 const INLINE_STYLE = /style=\{\{/;
 const CSS_MODULE_IMPORT = /\.module\.(?:css|scss)["']/;
@@ -139,6 +153,74 @@ export async function detectStyling(root: string, input: StylingInput): Promise<
   }
 
   return { methods };
+}
+
+/**
+ * `available` 메타가 선언한 `signals`로 방식을 감지한다. 신호 하나라도 맞으면 방식 하나다.
+ * - dependencies: `package.json: <이름>` 근거, share 0.
+ * - files: glob 목록(`!` 부정 포함)의 첫 매칭 파일이 근거, share 0.
+ * - code: JS/TS 소스(`sources`)와 CSS/SCSS 파일 내용에 정규식을 검사. 근거는 최대 3개, share = 매칭 파일 / 검사한 파일.
+ * 내장 방식 이름(`StylingMethodName`)은 detectStyling이 판정하므로 이번 판에서는 signals를 평가하지 않는다
+ * (내장 블록을 signals로 옮기는 것은 다음 계획). 같은 이름의 메타가 여럿이면 처음 것만 쓴다.
+ */
+export async function detectSignalMethods(
+  root: string,
+  input: StylingInput,
+  available: ExtractorMeta[] | undefined,
+): Promise<StylingDetection["methods"]> {
+  const { deps, sources } = input;
+  const candidates: { name: string; signals: ExtractorSignals }[] = [];
+  for (const { name, signals } of available ?? []) {
+    if (signals === undefined || BUILTIN_METHODS.has(name) || candidates.some((c) => c.name === name)) continue;
+    candidates.push({ name, signals });
+  }
+  if (candidates.length === 0) return [];
+
+  // code 신호가 있을 때만 스타일시트를 읽는다. JS/TS 소스는 detect가 이미 읽은 것을 쓴다.
+  const codeSamples = candidates.some((c) => c.signals.code !== undefined)
+    ? [...sources, ...(await loadFiles(root, STYLESHEETS))]
+    : sources;
+
+  const methods: StylingDetection["methods"] = [];
+  for (const { name, signals } of candidates) {
+    const evidence: string[] = [];
+    let share = 0;
+
+    for (const dep of signals.dependencies ?? []) {
+      if (deps.includes(dep)) evidence.push(`package.json: ${dep}`);
+    }
+    if (signals.files !== undefined) {
+      // glob 목록을 한 번에 넘겨 `!` 부정 패턴이 나머지 패턴에 적용되게 한다.
+      const first = (await listFiles(root, signals.files))[0];
+      if (first !== undefined) evidence.push(first);
+    }
+    if (signals.code !== undefined) {
+      let pattern: RegExp;
+      try {
+        pattern = new RegExp(signals.code);
+      } catch (err) {
+        throw new Error(`Extractor "${name}"의 signals.code:${err instanceof Error ? err.message : String(err)}`, {
+          cause: err,
+        });
+      }
+      const matched = codeSamples.filter((s) => pattern.test(s.content)).map((s) => s.file);
+      evidence.push(...cap(matched, (f) => `/${signals.code}/ in ${f}`));
+      if (codeSamples.length > 0) share = matched.length / codeSamples.length;
+    }
+
+    if (evidence.length > 0) methods.push({ name, evidence, share });
+  }
+  return methods;
+}
+
+/** 내장 방식 뒤에 signals 방식을 붙인다. 이름이 이미 있으면 내장 방식을 남긴다. */
+export function mergeMethods(styling: StylingDetection, extra: StylingDetection["methods"]): void {
+  const names = new Set(styling.methods.map((m) => m.name));
+  for (const m of extra) {
+    if (names.has(m.name)) continue;
+    names.add(m.name);
+    styling.methods.push(m);
+  }
 }
 
 /** 예전 이름 → 현재 Extractor 이름. MUI sx 방식은 한때 `"sx"`로 보고됐다. */

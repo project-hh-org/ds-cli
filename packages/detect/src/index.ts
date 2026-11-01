@@ -9,8 +9,10 @@ import { detectStorybook } from "./detect-storybook.js";
 import {
   activeExtractorsOf,
   applyIndexShares,
+  detectSignalMethods,
   detectStyling,
   markMonorepoRoot,
+  mergeMethods,
   normalizeExtractorNames,
   type StylingDetection,
 } from "./detect-styling.js";
@@ -46,7 +48,10 @@ export interface DetectResult {
 }
 
 export interface DetectOptions {
-  /** 호출자가 가진 Extractor 메타. 주면 activeExtractors를 이 목록과의 교집합으로 해석한다. */
+  /**
+   * 호출자가 가진 Extractor 메타. 주면 activeExtractors를 이 목록과의 교집합으로 해석한다.
+   * 메타의 `signals`가 맞으면 그 이름의 방식도 감지한다(내장 방식 이름 제외) — 활성화는 감지 ∧ 이 목록에 있음.
+   */
   available?: ExtractorMeta[];
 }
 
@@ -65,6 +70,8 @@ export async function detect(rootArg: string, index?: Index, opts: DetectOptions
   const sources = await loadSources(root);
 
   const styling = await detectStyling(root, { deps, sources });
+  // Extractor가 선언한 signals로 감지한 방식(서드파티 포함)을 내장 방식 뒤에 붙인다.
+  mergeMethods(styling, await detectSignalMethods(root, { deps, sources }, opts.available));
   // 폴백이 방식 목록에 inline-style을 더할 수 있으므로 index share·모노레포 표시는 그 뒤에 적용한다.
   const resolvedExtractors = activeExtractorsOf(styling, opts.available);
   if (index) applyIndexShares(styling, index);

@@ -2,6 +2,7 @@ export type {
   ExtractContext,
   Extractor,
   ExtractorMeta,
+  ExtractorSignals,
   StyleProperty,
   StyleSource,
   StyleUsage,

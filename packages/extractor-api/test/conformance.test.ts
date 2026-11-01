@@ -178,11 +178,58 @@ describe("runConformance 메타 검사", () => {
     const report = runConformance("dummy", () => makeExtractor(() => [], { files: [] }), []);
     expect(report.failed.map((f) => f.case)).toEqual([-1]);
   });
+
+  it("signals가 있으면 모양을 검사한다: dependencies·files는 비지 않은 문자열 배열, code는 정규식 소스", () => {
+    const bad: unknown[] = [
+      null,
+      "x",
+      { dependencies: "tailwindcss" },
+      { dependencies: [""] },
+      { files: [] },
+      { files: [1] },
+      { code: 1 },
+      { code: "(" },
+      { code: "" },
+      {},
+    ];
+    for (const signals of bad) {
+      const report = runConformance(
+        "dummy",
+        () => makeExtractor(() => [], { signals } as unknown as Partial<ExtractorMeta>),
+        okCases,
+      );
+      expect(report.failed[0]?.case, JSON.stringify(signals)).toBe(-1);
+      expect(report.failed[0]?.reason).toContain("signals");
+    }
+  });
+
+  it("정상 signals와 signals 없음은 meta 실패가 아니다", () => {
+    const good: ExtractorMeta["signals"][] = [
+      undefined,
+      { dependencies: ["tailwindcss"] },
+      { files: ["**/*.txt", "!**/skip/**"] },
+      { code: "style=\\{\\{" },
+      { dependencies: ["a"], files: ["b/**"], code: "c" },
+    ];
+    for (const signals of good) {
+      const meta: Partial<ExtractorMeta> = signals === undefined ? {} : { signals };
+      const report = runConformance("dummy", () => makeExtractor(() => [], meta), okCases);
+      expect(report).toEqual({ passed: 1, failed: [] });
+    }
+  });
 });
 
 describe("metaOf", () => {
-  it("name·files·parses만 추려 반환한다", () => {
+  it("name·files·parses만 추려 반환한다 (signals가 없으면 키도 없다)", () => {
     const e = makeExtractor(() => [], { name: "dummy-x", parses: "none" });
-    expect(metaOf(e)).toEqual({ name: "dummy-x", files: JS_FILES, parses: "none" });
+    const meta = metaOf(e);
+    expect(meta).toEqual({ name: "dummy-x", files: JS_FILES, parses: "none" });
+    expect(Object.keys(meta)).not.toContain("signals");
+  });
+
+  it("signals가 있으면 함께 복사한다", () => {
+    const signals = { dependencies: ["x"], files: ["**/*.txt"], code: "y" };
+    const e = makeExtractor(() => [], { name: "dummy-x", signals });
+    expect(metaOf(e)).toEqual({ name: "dummy-x", files: JS_FILES, parses: "tsx", signals });
   });
 });

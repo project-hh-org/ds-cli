@@ -340,6 +340,11 @@ export const tailwindExtractor: Extractor = {
   name: EXTRACTOR_NAME,
   files: JS_FILES,
   parses: "tsx",
+  signals: {
+    dependencies: ["tailwindcss"],
+    files: ["**/tailwind.config.*"],
+    code: "@import\\s+(?:url\\()?[\"']tailwindcss(?:/[^\"']*)?[\"']|@tailwind\\s+(?:base|components|utilities)\\b",
+  },
   appliesTo: (ctx) => /\.[cm]?[jt]sx?$/.test(ctx.file) && ctx.code.includes("className"),
   extract,
   write,

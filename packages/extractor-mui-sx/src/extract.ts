@@ -183,6 +183,8 @@ export const muiSxExtractor: Extractor = {
   name: EXTRACTOR_NAME,
   files: JS_FILES,
   parses: "tsx",
+  // detect 내장 감지는 의존성 ∧ `sx={{`를 요구하지만 signals는 OR이다. 내장 감지가 우선하므로 지금은 결과가 같다.
+  signals: { dependencies: ["@mui/material", "@mui/joy"], code: "sx=\\{\\{" },
   appliesTo: (ctx) =>
     JS_FILE.test(ctx.file) && ctx.code.includes("sx=") && (ctx.code.includes("@mui/") || ctx.code.includes("sx={")),
   extract,

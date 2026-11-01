@@ -45,6 +45,39 @@ function metaProblems(extractor: Extractor): string[] {
   if (extractor.parses !== "tsx" && extractor.parses !== "none") {
     problems.push(`parses는 "tsx" | "none"이어야 함: ${JSON.stringify(extractor.parses)}`);
   }
+  if (extractor.signals !== undefined) problems.push(...signalsProblems(extractor.signals));
+  return problems;
+}
+
+function isNonEmptyStringArray(value: unknown): value is string[] {
+  return Array.isArray(value) && value.length > 0 && value.every((v) => typeof v === "string" && v !== "");
+}
+
+/** `signals` 모양 검사: 항목이 하나 이상, dependencies·files는 비지 않은 문자열 배열, code는 컴파일되는 정규식 소스. */
+function signalsProblems(signals: unknown): string[] {
+  if (!isPlainObject(signals)) return [`signals는 객체여야 함: ${JSON.stringify(signals)}`];
+  const problems: string[] = [];
+  const { dependencies, files, code } = signals;
+  if (dependencies === undefined && files === undefined && code === undefined) {
+    problems.push("signals에 dependencies·files·code 중 하나는 있어야 함");
+  }
+  if (dependencies !== undefined && !isNonEmptyStringArray(dependencies)) {
+    problems.push(`signals.dependencies는 비지 않은 문자열 배열이어야 함: ${JSON.stringify(dependencies)}`);
+  }
+  if (files !== undefined && !isNonEmptyStringArray(files)) {
+    problems.push(`signals.files는 비지 않은 문자열 배열이어야 함: ${JSON.stringify(files)}`);
+  }
+  if (code !== undefined) {
+    if (typeof code !== "string" || code === "") {
+      problems.push(`signals.code는 비지 않은 정규식 소스 문자열이어야 함: ${JSON.stringify(code)}`);
+    } else {
+      try {
+        new RegExp(code);
+      } catch (error) {
+        problems.push(`signals.code가 정규식으로 컴파일되지 않음: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    }
+  }
   return problems;
 }
 
@@ -72,7 +105,7 @@ function checkCase(extractor: Extractor, testCase: ConformanceCase): string | nu
 /**
  * Extractor 구현체가 계약을 지키는지 동기적으로 검사한다. vitest `it`를 등록하지 않고 결과만 돌려준다.
  * 케이스마다 `make()`로 새 인스턴스를 만들어 케이스 간 상태 공유를 막는다.
- * 케이스 실행 전에 메타(name·files·parses)를 먼저 검사하며, 위반은 `case: -1`로 기록하되 케이스는 계속 실행한다.
+ * 케이스 실행 전에 메타(name·files·parses, 있으면 signals)를 먼저 검사하며, 위반은 `case: -1`로 기록하되 케이스는 계속 실행한다.
  * 메타는 첫 케이스용 인스턴스로 검사하고(케이스가 없으면 `make()`를 한 번 호출), 인스턴스 수는 케이스 수와 같다.
  */
 export function runConformance(

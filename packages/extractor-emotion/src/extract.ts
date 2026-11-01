@@ -25,6 +25,7 @@ export const emotionExtractor: Extractor = {
   name: EXTRACTOR_NAME,
   files: JS_FILES,
   parses: "tsx",
+  signals: { dependencies: ["@emotion/react", "@emotion/styled", "@emotion/css"] },
   appliesTo: (ctx) => JS_FILE.test(ctx.file) && (ctx.code.includes("@emotion/") || ctx.code.includes("css={")),
   extract: (ctx) => extractCssInJs(ctx, EXTRACTOR_NAME, ownedByEmotion),
   write,

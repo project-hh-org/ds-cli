@@ -5,9 +5,10 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { auditWarnings, localDate } from "../src/report/audit-report.js";
 import type { Index } from "@dsmith/core";
 import type { DetectResult } from "@dsmith/detect";
-import type { StyleUsage } from "@dsmith/extractor-api";
+import type { Extractor, StyleUsage } from "@dsmith/extractor-api";
 import { computeAudit, runAudit } from "../src/commands/audit.js";
 import { detectHints, runDetect } from "../src/commands/detect.js";
+import { registry } from "../src/registry.js";
 
 let tmp: string;
 beforeEach(() => {
@@ -263,5 +264,58 @@ describe("건강 점수", () => {
     const { health } = computeAudit(detectResult, index);
     expect(health.hardcodedShare).toBe(0.01);
     expect(health.score).toBe(69);
+  });
+});
+
+describe("플러그인 경계 (CLI)", () => {
+  /** 서드파티 Extractor: `.txt`의 `#rrggbb`를 하드코딩 색으로 센다. core·detect·cli 소스는 이 이름을 모른다. */
+  const txtExtractor: Extractor = {
+    name: "txt",
+    files: ["**/*.txt"],
+    parses: "none",
+    signals: { files: ["**/*.txt"] },
+    appliesTo: () => true,
+    extract: (ctx) =>
+      [...ctx.code.matchAll(/#[0-9a-f]{6}/gi)].map((m) => ({
+        file: ctx.file,
+        line: 1,
+        column: m.index ?? 0,
+        property: "color" as const,
+        raw: m[0],
+        normalized: { kind: "unknown" as const },
+        source: "hardcoded" as const,
+        extractor: "txt",
+      })),
+    write: () => null,
+  };
+
+  afterEach(() => {
+    delete registry.txt;
+  });
+
+  it("레지스트리에 한 줄 더한 Extractor가 signals로 감지·활성화되고 audit 인덱스까지 이어진다", async () => {
+    write("package.json", JSON.stringify({ name: "app", dependencies: { react: "^18" } }));
+    write("notes.txt", "brand #3b82f6\n");
+    write("src/A.tsx", "export const A = () => <div />;\n");
+    registry.txt = () => txtExtractor;
+
+    const detected = await runDetect(tmp);
+    expect(detected.styling.methods).toContainEqual({ name: "txt", evidence: ["notes.txt"], share: 0 });
+    expect(detected.activeExtractors).toEqual(["txt"]);
+
+    const { result } = await runAudit(tmp);
+    expect(result.detect.activeExtractors).toEqual(["txt"]);
+    const index = JSON.parse(fs.readFileSync(path.join(tmp, ".dsmith", "index.json"), "utf-8"));
+    expect(index.extractors).toEqual(["txt"]);
+    expect(index.styles).toEqual([expect.objectContaining({ file: "notes.txt", raw: "#3b82f6", extractor: "txt" })]);
+    // .txt는 컴포넌트 파싱 대상이 아니라 skipped가 없다.
+    expect(result.index.files.skipped).toEqual([]);
+  });
+
+  it("레지스트리에 없으면 signals가 맞아도 켜지지 않는다 (활성화 = detect 신호 ∧ 레지스트리 등록)", async () => {
+    write("package.json", JSON.stringify({ name: "app", dependencies: { react: "^18" } }));
+    write("notes.txt", "brand #3b82f6\n");
+    const detected = await runDetect(tmp);
+    expect(detected.activeExtractors).toEqual(["inline-style"]);
   });
 });

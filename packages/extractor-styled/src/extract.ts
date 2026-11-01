@@ -249,6 +249,7 @@ export const styledExtractor: Extractor = {
   name: EXTRACTOR_NAME,
   files: JS_FILES,
   parses: "tsx",
+  signals: { dependencies: ["styled-components"] },
   appliesTo: (ctx) =>
     JS_FILE.test(ctx.file) &&
     (ctx.code.includes("styled") || ctx.code.includes("createGlobalStyle") || ctx.code.includes("css`")),

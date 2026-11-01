@@ -33,6 +33,7 @@ export const cssExtractor: Extractor = {
   name: EXTRACTOR_NAME,
   files: ["**/*.{css,scss}"],
   parses: "none",
+  signals: { files: ["**/*.{css,scss}", "!**/*.module.{css,scss}"] },
   appliesTo,
   extract,
   write,
