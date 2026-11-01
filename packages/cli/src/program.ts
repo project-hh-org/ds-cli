@@ -15,6 +15,7 @@ import { detectHints, formatDetectSummary, runDetect } from "./commands/detect.j
 import { runInitCommand } from "./commands/init.js";
 import { formatInstallSummary, runInstall } from "./commands/install.js";
 import { runMcp } from "./commands/mcp.js";
+import { runMigrateCommand } from "./commands/migrate.js";
 import { auditWarnings } from "./report/audit-report.js";
 
 interface CommonOptions {
@@ -83,6 +84,20 @@ interface InitCliOptions {
   top?: string;
   dryRun?: boolean;
   force?: boolean;
+}
+
+interface MigrateCliOptions {
+  root: string;
+  json?: boolean;
+  files?: string[];
+  category?: string;
+  only?: string;
+  minConfidence?: string;
+  maxFiles?: string;
+  apply?: boolean;
+  branch?: string;
+  revert?: string;
+  list?: boolean;
 }
 
 /** `dsmith` 커맨드 트리. 실행(parse)은 bin.ts가 하고, 테스트는 이 트리를 직접 들여다본다. */
@@ -250,6 +265,27 @@ export function buildProgram(): Command {
     .action(async (opts: InitCliOptions) => {
       const { result, text } = await runInitCommand(opts);
       process.stdout.write(opts.json ? `${JSON.stringify(result, null, 2)}\n` : `${text}\n`);
+    });
+
+  program
+    .command("migrate")
+    .description(
+      "하드코딩된 스타일 값을 토큰 참조로 바꾼다. 기본은 계획만 출력(아무것도 쓰지 않음), --apply가 파일 단위로 검증하며 적용하고 .dsmith/migrations에 기록, --revert로 되돌림",
+    )
+    .option("--root <dir>", "대상 레포 경로", process.cwd())
+    .option("--json", "결과를 JSON으로만 stdout에 출력")
+    .option("--files <glob...>", "치환할 파일 glob(root 상대). 여러 개 줄 수 있다")
+    .option("--category <name>", "카테고리만: color | spacing | radius | font-size")
+    .option("--only <kind>", "tokens | components")
+    .option("--min-confidence <level>", "exact면 가장 가까운 토큰이 close인 값은 건너뜀(기본 close)")
+    .option("--max-files <n>", "파일 순으로 앞에서 n개 파일만")
+    .option("--apply", "계획을 적용(파일을 쓴다)")
+    .option("--branch <name>", "적용을 새 git 브랜치에 커밋(--apply와 함께)")
+    .option("--revert <id>", "기록된 마이그레이션을 되돌린다(적용 뒤 고친 파일은 건너뜀)")
+    .option("--list", "마이그레이션 기록 목록")
+    .action(async (opts: MigrateCliOptions) => {
+      const { json, text } = await runMigrateCommand(opts);
+      process.stdout.write(opts.json ? `${JSON.stringify(json, null, 2)}\n` : `${text}\n`);
     });
 
   return program;

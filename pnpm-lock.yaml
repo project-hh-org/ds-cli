@@ -121,6 +121,9 @@ importers:
       '@dsmith-dev/mcp-server':
         specifier: workspace:*
         version: link:../mcp-server
+      '@dsmith-dev/migrate':
+        specifier: workspace:*
+        version: link:../migrate
       commander:
         specifier: ^12.1.0
         version: 12.1.0

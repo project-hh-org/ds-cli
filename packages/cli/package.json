@@ -39,6 +39,7 @@
     "@dsmith-dev/extractor-tailwind": "workspace:*",
     "@dsmith-dev/init": "workspace:*",
     "@dsmith-dev/mcp-server": "workspace:*",
+    "@dsmith-dev/migrate": "workspace:*",
     "commander": "^12.1.0"
   },
   "devDependencies": {
