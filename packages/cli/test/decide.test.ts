@@ -138,6 +138,49 @@ describe("runDecideList / runDecideChoose: examples/legacy-demo", () => {
   });
 });
 
+/** Button이 duplicate(a/Button vs b/Button)이면서 local-definition(src/x.tsx, src/y.tsx)이기도 한 작은 레포 */
+async function bothKindsRepo(): Promise<string> {
+  const root = path.join(tmp, "both");
+  const put = (rel: string, code: string): void => {
+    fs.mkdirSync(path.dirname(path.join(root, rel)), { recursive: true });
+    fs.writeFileSync(path.join(root, rel), code);
+  };
+  put("package.json", JSON.stringify({ name: "both", dependencies: { react: "^18" } }));
+  put("src/a/Button.tsx", `export const Button = () => <button style={{ color: "#111111" }} />;\n`);
+  put("src/b/Button.tsx", `export const Button = () => <button style={{ color: "#222222" }} />;\n`);
+  put("src/PageA.tsx", `import { Button } from "./a/Button";\nexport const PageA = () => <Button />;\n`);
+  put("src/PageB.tsx", `import { Button } from "./b/Button";\nexport const PageB = () => <Button />;\n`);
+  put("src/x.tsx", `const Button = () => <button />;\nexport const X = () => <Button />;\n`);
+  put("src/y.tsx", `const Button = () => <button />;\nexport const Y = () => <Button />;\n`);
+  await runAudit(root);
+  return root;
+}
+
+describe("같은 이름이 duplicate이면서 local-definition", { timeout: 30_000 }, () => {
+  it("kind 없이 explain하면 ambiguous-kind, kind를 주면 각각 열린다", async () => {
+    const root = await bothKindsRepo();
+    expect(await runDecideExplain(root, "Button", { git: false })).toEqual({
+      error: "ambiguous-kind",
+      kinds: ["duplicate", "local-definition"],
+    });
+    const local = await runDecideExplain(root, "Button", { git: false, kind: "local-definition" });
+    if (!("card" in local)) throw new Error("card 아님");
+    expect(local.card.options.map((o) => o.id)).toEqual(["src/x.tsx", "src/y.tsx"]);
+  });
+
+  it("choose는 id가 속한 후보를 골라 기록하므로 지역 정의도 결정할 수 있다", async () => {
+    const root = await bothKindsRepo();
+    await runDecideChoose(root, "Button", "src/x.tsx");
+    await runDecideChoose(root, "Button", "src/a/Button");
+    const items = (await runDecideList(root)).map((i) => [i.item, i.kind, i.status]);
+    expect(items).toEqual([
+      ["Button", "duplicate", "decided"],
+      ["Button", "local-definition", "decided"],
+    ]);
+    await expect(runDecideChoose(root, "Button", "src/x.tsx", undefined, { kind: "duplicate" })).rejects.toThrow("선택지 아님");
+  });
+});
+
 describe("dsmith decide (bin)", { timeout: 30_000 }, () => {
   const run = (root: string, ...args: string[]) =>
     spawnSync(process.execPath, [bin, "decide", ...args, "--root", root], { encoding: "utf-8" });
@@ -160,6 +203,55 @@ describe("dsmith decide (bin)", { timeout: 30_000 }, () => {
     );
     expect(run(root, "--list").stdout).toMatch(/^pending 1건 \/ decided 1건\n/);
     expect(run(root, "--list", "--status", "decided", "--json").stdout).toContain('"decided": "src/components/Badge"');
+  });
+
+  it("--list --limit은 앞의 N개만 보이고 나머지를 건수로 알린다", async () => {
+    const root = await audited("examples", "legacy-demo");
+    const human = run(root, "--list", "--limit", "1").stdout.trimEnd().split("\n");
+    expect(human[0]).toBe("pending 2건 / decided 0건");
+    expect(human).toHaveLength(3);
+    expect(human[2]).toMatch(/^… 외 1건/);
+    expect(JSON.parse(run(root, "--list", "--limit", "1", "--json").stdout)).toHaveLength(1);
+    expect(run(root, "--list", "--limit", "0").status).toBe(1);
+    expect(run(root, "--explain", "Button", "--limit", "1").status).toBe(1);
+  });
+
+  it("--explain --json은 카드 자체를 쓴다({card} 래퍼 없음)", async () => {
+    const root = await audited("examples", "legacy-demo");
+    const r = run(root, "--explain", "Button", "--no-git", "--json");
+    expect(r.status).toBe(0);
+    const card = JSON.parse(r.stdout);
+    expect(card).toMatchObject({ item: "Button", kind: "duplicate", styleScope: "file" });
+    expect(card).not.toHaveProperty("card");
+    expect(card.ruleCheck).toHaveProperty("tokenUsageRate");
+  });
+
+  it("없는 항목 --explain --json은 stdout에 JSON 에러를 쓰고 종료 코드 1", async () => {
+    const root = await audited("fixtures", "with-ds-app");
+    const r = run(root, "--explain", "Butto", "--no-git", "--json");
+    expect(r.status).toBe(1);
+    expect(JSON.parse(r.stdout)).toEqual({ error: "not-found", candidates: ["Button"] });
+  });
+
+  it("모호한 항목은 --kind로 지정한다 — ambiguous-kind는 JSON 에러·종료 코드 1", async () => {
+    const root = await bothKindsRepo();
+    const amb = run(root, "--explain", "Button", "--no-git", "--json");
+    expect(amb.status).toBe(1);
+    expect(JSON.parse(amb.stdout)).toEqual({ error: "ambiguous-kind", kinds: ["duplicate", "local-definition"] });
+    expect(run(root, "--explain", "Button", "--no-git").stdout).toContain("--kind");
+    const ok = run(root, "--explain", "Button", "--no-git", "--kind", "local-definition", "--json");
+    expect(JSON.parse(ok.stdout).kind).toBe("local-definition");
+    expect(run(root, "--explain", "Button", "--kind", "token-cluster").status).toBe(1);
+    expect(run(root, "--item", "Button", "--choose", "src/y.tsx").stdout).toContain("결정 기록: Button → src/y.tsx");
+  });
+
+  it("같은 선택을 다시 기록해도 decisions.json이 바이트 동일하다", async () => {
+    const root = await audited("examples", "legacy-demo");
+    run(root, "--item", "Badge", "--choose", "src/components/Badge", "--note", "통일");
+    const file = path.join(root, ".dsmith", "decisions.json");
+    const before = fs.readFileSync(file, "utf-8");
+    run(root, "--item", "Badge", "--choose", "src/components/Badge", "--note", "통일");
+    expect(fs.readFileSync(file, "utf-8")).toBe(before);
   });
 
   it("모드가 정확히 하나가 아니면 에러(종료 코드 1)", async () => {

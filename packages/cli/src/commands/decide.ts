@@ -63,15 +63,22 @@ export async function runDecideChoose(
   });
 }
 
-/** `pending N건 / decided M건` + 항목 한 줄씩 */
-export function formatDecideList(items: DecisionListItem[]): string {
+/** `pending N건 / decided M건`(전체 기준) + 항목 한 줄씩. `limit`이 있으면 앞의 limit개만 보이고 나머지는 건수로 알린다. */
+export function formatDecideList(items: DecisionListItem[], limit?: number): string {
   const pending = items.filter((i) => i.status === "pending").length;
   const lines = [`pending ${pending}건 / decided ${items.length - pending}건`];
-  for (const i of items) {
+  const shown = limit === undefined ? items : items.slice(0, limit);
+  for (const i of shown) {
     const tail = i.status === "decided" ? `결정: ${i.decided ?? ""}` : `선택지 ${i.options.length}개`;
     lines.push(`- [${i.status}] ${i.item} (${i.kind}) — ${tail}`);
   }
+  if (shown.length < items.length) lines.push(`… 외 ${items.length - shown.length}건 (--limit 조정)`);
   return lines.join("\n");
+}
+
+/** `--explain --json`이 stdout에 쓰는 값: 카드 자체, 또는 에러 객체(MCP 응답과 같은 모양). */
+export function explainJson(result: ExplainResult): unknown {
+  return "card" in result ? result.card : result;
 }
 
 /** 옵션·추천을 한 줄씩 */
@@ -85,6 +92,10 @@ export function formatDecideExplain(result: ExplainResult): string {
   const lines = [`${card.item} (${card.kind})`];
   for (const o of card.options) {
     lines.push(`- ${o.id}${o.isDs ? " [DS]" : ""} — 사용 ${o.usageCount}회, 파일 ${o.files.length}개`);
+  }
+  if (card.omittedOptions) {
+    const o = card.omittedOptions;
+    lines.push(`… 외 ${o.count}개 옵션 (사용 ${o.callSites}회, 파일 ${o.files}개)`);
   }
   const { recommendation: r } = card;
   lines.push(`추천: ${r.optionId} (${r.rule}, ${r.confidence}) — ${r.reason}`);
