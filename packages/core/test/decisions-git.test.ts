@@ -75,9 +75,19 @@ describe("readGitHistory", () => {
 });
 
 describe("readGitHistory 타임아웃", () => {
-  it("timeoutMs 안에 끝나지 않으면 null", async () => {
-    git("init", "-q");
-    commit("a@t", "2025-01-01T00:00:00+00:00", "one");
-    expect(await readGitHistory(tmp, "Button.tsx", { timeoutMs: 1 })).toBeNull();
+  it("git이 timeoutMs 안에 끝나지 않으면 null (가짜 git으로 결정적으로 검증)", async () => {
+    const bin = path.join(tmp, "slow-bin");
+    fs.mkdirSync(bin);
+    fs.writeFileSync(path.join(bin, "git"), "#!/bin/sh\nexec sleep 5\n", { mode: 0o755 });
+    const saved = process.env.PATH;
+    process.env.PATH = bin;
+    try {
+      const started = Date.now();
+      expect(await readGitHistory(tmp, "Button.tsx", { timeoutMs: 100 })).toBeNull();
+      expect(Date.now() - started).toBeLessThan(4000);
+    } finally {
+      if (saved === undefined) delete process.env.PATH;
+      else process.env.PATH = saved;
+    }
   });
 });
