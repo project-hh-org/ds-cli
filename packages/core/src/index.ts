@@ -121,3 +121,4 @@ export { DSMITH_EXTENSION, draftToW3c, readW3cTokens, serializeW3c } from "./tok
 export { GENERATED_NOTICE, emitTokensCss, emitTokensTs } from "./tokens/emit.js";
 export type { ComponentDeclaration } from "./component/declarations.js";
 export { componentDeclarations } from "./component/declarations.js";
+export { FULL_RADIUS_MIN_PX } from "./tokens/draft.js";

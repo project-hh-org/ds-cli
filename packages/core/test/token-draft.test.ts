@@ -59,7 +59,7 @@ describe("buildTokenDraft", () => {
     expect(space.map((t) => t.name)).toEqual(["space-2", "space-4"]);
     expect(space[0]).toMatchObject({ value: "8px", usageCount: 2, category: "spacing" });
     expect(draft.mappings).toEqual([
-      { category: "spacing", px: 13, count: 1, token: "space-4", distancePx: 3 },
+      { category: "spacing", px: 13, count: 1, token: "space-4", distancePx: 3, scaleStep: 12, scaleName: "space-3" },
     ]);
   });
 
@@ -91,14 +91,14 @@ describe("buildTokenDraft", () => {
     });
     expect(draft.tokens.map((t) => t.name)).toEqual(["space-1", "space-2"]);
     expect(draft.mappings).toEqual([
-      { category: "spacing", px: 12, count: 1, token: "space-2", distancePx: 4 },
+      { category: "spacing", px: 12, count: 1, token: "space-2", distancePx: 4, scaleStep: 12, scaleName: "space-3" },
     ]);
   });
 
   it("그 카테고리 토큰이 없으면 mapping.token은 null", () => {
     const draft = buildTokenDraft([len(13, "padding")]);
     expect(draft.tokens).toEqual([]);
-    expect(draft.mappings).toEqual([{ category: "spacing", px: 13, count: 1, token: null, distancePx: null }]);
+    expect(draft.mappings).toEqual([{ category: "spacing", px: 13, count: 1, token: null, distancePx: null, scaleStep: 12, scaleName: "space-3" }]);
   });
 
   it("excludeDirs 아래 usage는 입력에서 뺀다", () => {
@@ -126,7 +126,64 @@ describe("buildTokenDraft", () => {
   });
 });
 
+describe("buildTokenDraft 추론·사다리·대소문자", () => {
+  it("오프스케일 합계가 3 이상이면 가장 가까운 4px 스텝을 inferred 토큰으로 넣는다", () => {
+    const usages = [...Array(9).fill(18), 16, 16].map((px: number) => len(px, "padding"));
+    const draft = buildTokenDraft(usages);
+    const space = draft.tokens.filter((t) => t.group === "space");
+    expect(space).toHaveLength(1);
+    expect(space[0]).toMatchObject({ name: "space-4", value: "16px", usageCount: 2 });
+    const usages2 = [...Array(9).fill(18)].map((px: number) => len(px, "padding"));
+    const inferred = buildTokenDraft(usages2).tokens.find((t) => t.name === "space-4");
+    expect(inferred).toMatchObject({ inferred: true, usageCount: 9, members: ["18px"], unit: "px" });
+    expect(buildTokenDraft(usages2).mappings[0]).toMatchObject({ px: 18, token: "space-4", scaleStep: 16, scaleName: "space-4" });
+  });
+
+  it("합계가 3 미만이면 추론하지 않는다", () => {
+    expect(buildTokenDraft([18, 18].map((px) => len(px, "padding"))).tokens).toEqual([]);
+  });
+
+  it("동률(6px)은 작은 스텝으로 간다", () => {
+    expect(buildTokenDraft([len(6, "padding")]).mappings[0]).toMatchObject({ scaleStep: 4, scaleName: "space-1" });
+  });
+
+  it("확장된 사다리는 흔한 집합에서 접미사 없이 이름이 나온다", () => {
+    const r = buildTokenDraft([2, 4, 8].map((px) => len(px, "border-radius"))).tokens.map((t) => t.name);
+    expect(r).toEqual(["radius-2xs", "radius-sm", "radius-lg"]);
+    const f = buildTokenDraft([10, 72].map((px) => len(px, "font-size"))).tokens.map((t) => t.name);
+    expect(f).toEqual(["text-2xs", "text-7xl"]);
+  });
+
+  it("colorChoices hex 비교는 대소문자를 구분하지 않는다", () => {
+    const usages = [color("#3b82f6"), color("#3b82f6"), color("#3c83f7")];
+    const key = colorTokenNames(clusterColors(usages))[0]!;
+    const t = buildTokenDraft(usages, { colorChoices: { [key]: "#3C83F7" } }).tokens[0]!;
+    expect(t.value).toBe("#3c83f7");
+    expect(t.chosen).toBe("#3c83f7");
+    expect(t.unit).toBeUndefined();
+  });
+});
+
 describe("draftCoverage", () => {
+  it("999px 이상 모서리는 radius-full이 있으면 바꿀 수 있다", () => {
+    const usages = [999, 9999, 4].map((px) => len(px, "border-radius"));
+    const tokens = draftToTokens(buildTokenDraft(usages));
+    const cov = draftCoverage(usages, tokens);
+    expect(cov.byCategory.radius).toEqual({ replaceable: 3, total: 3 });
+    const none = draftCoverage([len(999, "border-radius")], []);
+    expect(none.replaceable).toBe(0);
+  });
+
+  it("0 이하 간격은 분모에서 빼고 zeroOrNegative로 센다", () => {
+    const usages = [len(0, "margin"), len(-4, "margin"), len(8, "padding"), len(0, "border-radius")];
+    const cov = draftCoverage(usages, [
+      { name: "--space-2", value: "8px", normalized: { kind: "length", px: 8 }, category: "spacing" },
+    ]);
+    expect(cov.zeroOrNegative).toBe(2);
+    expect(cov.byCategory.spacing).toEqual({ replaceable: 1, total: 1 });
+    expect(cov.total).toBe(2);
+  });
+
   const tokens: Token[] = [
     { name: "--color-blue-400", value: "#3b82f6", normalized: normalizeColor("#3b82f6")!, category: "color" },
     { name: "--space-2", value: "8px", normalized: { kind: "length", px: 8 }, category: "spacing" },

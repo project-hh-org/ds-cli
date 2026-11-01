@@ -28,15 +28,23 @@ export interface DraftToken {
   members: string[];
   /** token-cluster 결정으로 값을 정했으면 그 hex */
   chosen?: string;
+  /** 길이 토큰의 단위 (색 토큰에는 없다) */
+  unit?: "px";
+  /** 오프스케일 값들의 가장 가까운 4px 스텝으로 추론해 넣은 간격 토큰 */
+  inferred?: true;
 }
 
 export interface ScaleMapping {
   category: "spacing" | "radius" | "font-size";
   px: number;
   count: number;
-  /** 가장 가까운 토큰 name, 그 카테고리 토큰이 없으면 null */
+  /** 가장 가까운 초안 토큰 name, 그 카테고리 토큰이 없으면 null */
   token: string | null;
   distancePx: number | null;
+  /** (간격만) 가장 가까운 4px 스텝 px, 동률이면 작은 스텝 */
+  scaleStep?: number;
+  /** (간격만) `space-${scaleStep/4}` */
+  scaleName?: string;
 }
 
 export interface TokenDraft {
@@ -54,16 +62,22 @@ export interface DraftOptions {
 
 const SCALE_UNIT_PX = 4;
 const DEFAULT_LIMITS = { spacing: 12, radius: 3, fontSize: 8 };
-const FULL_RADIUS_MIN_PX = 999;
+export const FULL_RADIUS_MIN_PX = 999;
+const INFER_MIN_USAGE = 3;
 const FULL_RADIUS_VALUE_PX = 9999;
 
 const RADIUS_LADDER: readonly (readonly [string, number])[] = [
+  ["2xs", 2],
+  ["xs", 3],
   ["sm", 4],
   ["md", 6],
   ["lg", 8],
+  ["xl", 12],
+  ["2xl", 16],
 ];
 
 const FONT_LADDER: readonly (readonly [string, number])[] = [
+  ["2xs", 10],
   ["xs", 12],
   ["sm", 14],
   ["base", 16],
@@ -74,6 +88,7 @@ const FONT_LADDER: readonly (readonly [string, number])[] = [
   ["4xl", 36],
   ["5xl", 48],
   ["6xl", 60],
+  ["7xl", 72],
 ];
 
 function underDir(file: string, dir: string): boolean {
@@ -95,6 +110,31 @@ function nearestStep(px: number, ladder: readonly (readonly [string, number])[])
     if (d < bd || (d === bd && step[1] < best[1])) best = step;
   }
   return best[0];
+}
+
+function spacingToken(key: number, count: number, members: string[]): DraftToken {
+  const px = key * SCALE_UNIT_PX;
+  return {
+    category: "spacing",
+    group: "space",
+    key: String(key),
+    name: `space-${key}`,
+    value: `${px}px`,
+    normalized: pxLength(px),
+    usageCount: count,
+    members,
+    unit: "px",
+  };
+}
+
+/** 가장 가까운 4px 스텝. 동률이면 작은 스텝. */
+function nearestSpacingStep(px: number): number {
+  const lower = Math.floor(px / SCALE_UNIT_PX) * SCALE_UNIT_PX;
+  return px - lower <= lower + SCALE_UNIT_PX - px ? lower : lower + SCALE_UNIT_PX;
+}
+
+function lengthPx(t: DraftToken): number {
+  return t.normalized.kind === "length" ? t.normalized.px : 0;
 }
 
 function pxLength(px: number): StyleUsage["normalized"] {
@@ -155,9 +195,9 @@ export function buildTokenDraft(styles: StyleUsage[], opts: DraftOptions = {}): 
   colorClusters.forEach((cluster, i) => {
     const key = colorKeys[i] as string;
     const members = [...cluster.members].sort((a, b) => b.count - a.count);
-    const choice = opts.colorChoices?.[key];
+    const choice = opts.colorChoices?.[key]?.toLowerCase();
     const chosenNormalized =
-      choice !== undefined && cluster.members.some((m) => m.hex === choice)
+      choice !== undefined && cluster.members.some((m) => m.hex.toLowerCase() === choice)
         ? normalizedByHex.get(choice)
         : undefined;
     const token: DraftToken = {
@@ -175,21 +215,26 @@ export function buildTokenDraft(styles: StyleUsage[], opts: DraftOptions = {}): 
   });
 
   // 간격
-  const spacingAll = clusterSpacing(input).filter((c) => c.onScale && c.px > 0);
-  const spacingKept = spacingAll.slice(0, limits.spacing).sort((a, b) => a.px - b.px);
-  const spacingTokens: DraftToken[] = spacingKept.map((c) => {
-    const key = String(c.px / SCALE_UNIT_PX);
-    return {
-      category: "spacing",
-      group: "space",
-      key,
-      name: `space-${key}`,
-      value: `${c.px}px`,
-      normalized: pxLength(c.px),
-      usageCount: c.count,
-      members: [`${c.px}px`],
-    };
-  });
+  const spacingObserved = clusterSpacing(input).filter((c) => c.px > 0);
+  const spacingKept = spacingObserved.filter((c) => c.onScale).slice(0, limits.spacing);
+  const spacingTokens: DraftToken[] = spacingKept.map((c) => spacingToken(c.px / SCALE_UNIT_PX, c.count, [`${c.px}px`]));
+  // 오프스케일 값을 가장 가까운 4px 스텝으로 모아, 합계가 충분하면 그 스텝을 추론 토큰으로 넣는다.
+  const offScaleByStep = new Map<number, { count: number; members: { px: number; count: number }[] }>();
+  for (const c of spacingObserved) {
+    if (c.onScale) continue;
+    const step = nearestSpacingStep(c.px);
+    const entry = offScaleByStep.get(step) ?? { count: 0, members: [] };
+    entry.count += c.count;
+    entry.members.push({ px: c.px, count: c.count });
+    offScaleByStep.set(step, entry);
+  }
+  for (const [step, entry] of offScaleByStep) {
+    if (step <= 0 || entry.count < INFER_MIN_USAGE) continue;
+    if (spacingTokens.some((t) => t.normalized.kind === "length" && t.normalized.px === step)) continue;
+    const members = [...entry.members].sort(byCountThenPx).map((m) => `${m.px}px`);
+    spacingTokens.push({ ...spacingToken(step / SCALE_UNIT_PX, entry.count, members), inferred: true });
+  }
+  spacingTokens.sort((a, b) => lengthPx(a) - lengthPx(b));
   tokens.push(...spacingTokens);
 
   // 모서리
@@ -210,6 +255,7 @@ export function buildTokenDraft(styles: StyleUsage[], opts: DraftOptions = {}): 
       normalized: pxLength(e.px),
       usageCount: e.count,
       members: [`${e.px}px`],
+      unit: "px",
     };
   });
   if (fullEntries.length > 0) {
@@ -223,6 +269,7 @@ export function buildTokenDraft(styles: StyleUsage[], opts: DraftOptions = {}): 
       normalized: pxLength(FULL_RADIUS_VALUE_PX),
       usageCount: sorted.reduce((s, e) => s + e.count, 0),
       members: sorted.map((e) => `${e.px}px`),
+      unit: "px",
     });
   }
   tokens.push(...radiusTokens);
@@ -242,16 +289,24 @@ export function buildTokenDraft(styles: StyleUsage[], opts: DraftOptions = {}): 
       normalized: pxLength(c.px),
       usageCount: c.total,
       members: c.members.map((m) => `${m.px}px`),
+      unit: "px",
     };
   });
   tokens.push(...fontTokens);
 
   // 토큰이 되지 못한 관측값 → 가장 가까운 토큰
   const rest: ScaleMapping[] = [];
-  const spacingLeft = clusterSpacing(input)
-    .filter((c) => c.px > 0 && !spacingKept.some((k) => k.px === c.px))
+  const spacingLeft = spacingObserved
+    .filter((c) => !spacingKept.some((k) => k.px === c.px))
     .sort(byCountThenPx);
-  for (const c of spacingLeft) rest.push(nearestMapping("spacing", c.px, c.count, spacingTokens));
+  for (const c of spacingLeft) {
+    const scaleStep = nearestSpacingStep(c.px);
+    rest.push({
+      ...nearestMapping("spacing", c.px, c.count, spacingTokens),
+      scaleStep,
+      scaleName: `space-${scaleStep / SCALE_UNIT_PX}`,
+    });
+  }
   for (const e of normalRadii.filter((e) => !radiusKept.some((k) => k.px === e.px)).sort(byCountThenPx)) {
     rest.push(nearestMapping("radius", e.px, e.count, radiusTokens));
   }
@@ -286,8 +341,16 @@ export interface Coverage {
   total: number;
   rate: number | null;
   byCategory: Record<DraftCategory, { replaceable: number; total: number }>;
+  /** 분모에서 뺀 0 이하 간격(padding·margin·gap) 사용 수 */
+  zeroOrNegative: number;
 }
 
+/**
+ * 색·글꼴 크기 토큰은 이 초안이 하드코딩 값에서 직접 만든 것이라 커버리지가 거의 100%다(구성상 그렇다).
+ * 그래서 이 숫자는 사실상 간격(4px 스케일에 걸리지 않는 값) 커버리지를 반영한다.
+ * 대상 = hardcoded 사용 중 0 이하 간격은 제외하고 `zeroOrNegative`로 따로 센다.
+ * 999px 이상 모서리는 `radius-full`이 있으면 바꿀 수 있는 것으로 센다.
+ */
 export function draftCoverage(
   styles: StyleUsage[],
   tokens: Token[],
@@ -301,13 +364,30 @@ export function draftCoverage(
   };
   let replaceable = 0;
   let total = 0;
+  let zeroOrNegative = 0;
+  const hasFull = tokens.some(
+    (t) => t.category === "radius" && t.normalized.kind === "length" && t.normalized.px >= FULL_RADIUS_MIN_PX,
+  );
 
   for (const u of filterExcluded(styles, opts.excludeDirs)) {
     if (u.source !== "hardcoded" || !isRatedUsage(u) || !COVERAGE_PROPERTIES.includes(u.property)) continue;
     const category = tokenCategoryOf(u.property);
     if (category === null) continue;
+    if (category === "spacing" && u.normalized.kind === "length" && u.normalized.px <= 0) {
+      zeroOrNegative += 1;
+      continue;
+    }
     const top = rankTokens(u.normalized, tokens, { category, limit: 1 })[0];
-    const ok = top !== undefined && (top.confidence === "exact" || top.confidence === "close");
+    let ok = top !== undefined && (top.confidence === "exact" || top.confidence === "close");
+    if (
+      !ok &&
+      hasFull &&
+      category === "radius" &&
+      u.normalized.kind === "length" &&
+      u.normalized.px >= FULL_RADIUS_MIN_PX
+    ) {
+      ok = true;
+    }
     total += 1;
     byCategory[category].total += 1;
     if (ok) {
@@ -321,6 +401,7 @@ export function draftCoverage(
     total,
     rate: total === 0 ? null : Math.round((replaceable / total) * 10000) / 10000,
     byCategory,
+    zeroOrNegative,
   };
 }
 
