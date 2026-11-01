@@ -14,6 +14,8 @@ export { normalizeColor } from "./normalize/color.js";
 export { normalizeLength } from "./normalize/length.js";
 export { parseTsx, traverse } from "./parse/tsx.js";
 export type { Index, IndexOptions } from "./index/indexer.js";
+export type { ExtractorMatcher, FileStyles } from "./index/extract-file.js";
+export { extractFileStyles, extractorMatchers } from "./index/extract-file.js";
 export { DEFAULT_EXCLUDE, indexRepo } from "./index/indexer.js";
 export type { ModuleContext } from "./index/component-usage.js";
 export { extractComponentUsage } from "./index/component-usage.js";
