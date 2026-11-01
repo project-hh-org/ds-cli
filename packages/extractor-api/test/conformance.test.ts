@@ -233,3 +233,112 @@ describe("metaOf", () => {
     expect(metaOf(e)).toEqual({ name: "dummy-x", files: JS_FILES, parses: "tsx", signals });
   });
 });
+
+describe("runConformance write+tokenRef 왕복", () => {
+  const token = { name: "--c", value: "#ff0000", category: "color" as const, normalized: usage().normalized };
+  const CODE = "a:#f00;b:#00f;";
+
+  /** 코드 문자열에서 `#rrggbb`/`var(--c)` 모양을 직접 읽는 가짜 Extractor. */
+  const fake = (over: Partial<Extractor> = {}): Extractor => {
+    const patches = new WeakMap<StyleUsage, { start: number; end: number }>();
+    return {
+      name: "dummy",
+      files: JS_FILES,
+      parses: "none",
+      appliesTo: () => true,
+      extract: (ctx) =>
+        [...ctx.code.matchAll(/(#[0-9a-f]{3}|var\(--c\))/g)].map((m) => {
+          const u = usage({
+            line: 1,
+            column: m.index ?? 0,
+            raw: m[0],
+            source: m[0].startsWith("var") ? "token" : "hardcoded",
+          });
+          patches.set(u, { start: m.index ?? 0, end: (m.index ?? 0) + m[0].length });
+          return u;
+        }),
+      write: (u, ref) => {
+        const p = patches.get(u);
+        return p === undefined ? null : { file: "a.css", start: p.start, end: p.end, replacement: ref };
+      },
+      tokenRef: (t) => `var(${t.name})`,
+      ...over,
+    };
+  };
+  const writeCase = (over: Partial<ConformanceCase["writes"] extends (infer W)[] | undefined ? W : never> = {}): ConformanceCase => ({
+    code: CODE,
+    file: "a.css",
+    expect: [],
+    writes: [{ target: { raw: "#f00" }, token, ref: "var(--c)", reextract: { source: "token" }, ...over }],
+  });
+
+  it("정상 가짜는 통과한다(output 단언 포함)", () => {
+    const report = runConformance("dummy", () => fake(), [writeCase({ output: "a:var(--c);b:#00f;" })]);
+    expect(report).toEqual({ passed: 1, failed: [] });
+  });
+
+  it("writes가 있는데 tokenRef가 없으면 'tokenRef 없음'으로 실패한다", () => {
+    const report = runConformance("dummy", () => fake({ tokenRef: undefined }), [writeCase()]);
+    expect(report.failed[0]?.reason).toContain("tokenRef 없음");
+  });
+
+  it("ref 불일치는 실패한다", () => {
+    const report = runConformance("dummy", () => fake(), [writeCase({ ref: "var(--x)" })]);
+    expect(report.failed[0]?.reason).toContain("tokenRef");
+  });
+
+  it("ref가 null이면 null을 돌려줘야 통과하고 이후 검사는 생략한다", () => {
+    const ok = runConformance("dummy", () => fake({ tokenRef: () => null }), [writeCase({ ref: null })]);
+    expect(ok.failed).toEqual([]);
+    const bad = runConformance("dummy", () => fake(), [writeCase({ ref: null })]);
+    expect(bad.failed).toHaveLength(1);
+  });
+
+  it("재추출이 reextract와 다르면 실패한다", () => {
+    const report = runConformance("dummy", () => fake({ tokenRef: () => "#abc" }), [writeCase({ ref: "#abc" })]);
+    expect(report.failed[0]?.reason).toContain("reextract");
+  });
+
+  it("output이 다르면 실패한다", () => {
+    const report = runConformance("dummy", () => fake(), [writeCase({ output: "nope" })]);
+    expect(report.failed[0]?.reason).toContain("output");
+  });
+
+  it("target이 없거나 write가 null이면 실패한다", () => {
+    expect(runConformance("dummy", () => fake(), [writeCase({ target: { raw: "zzz" } })]).failed).toHaveLength(1);
+    expect(runConformance("dummy", () => fake({ write: () => null }), [writeCase()]).failed[0]?.reason).toContain("null");
+  });
+
+  it("다른 usage가 사라지는 write는 실패한다", () => {
+    const patches = new WeakMap<StyleUsage, number>();
+    const greedy = fake({
+      extract: (ctx) =>
+        [...ctx.code.matchAll(/(#[0-9a-f]{3}|var\(--c\))/g)].map((m) => {
+          const u = usage({ line: 1, column: m.index ?? 0, raw: m[0], source: m[0].startsWith("var") ? "token" : "hardcoded" });
+          patches.set(u, m.index ?? 0);
+          return u;
+        }),
+      // 전체 코드를 지워 버린다
+      write: () => ({ file: "a.css", start: 0, end: CODE.length, replacement: "var(--c)" }),
+    });
+    const report = runConformance("dummy", () => greedy, [writeCase()]);
+    expect(report.failed[0]?.reason).toContain("바뀜");
+  });
+});
+
+describe("tokenRef 관련 export", () => {
+  it("cssVarRef는 CSS 변수 이름만 var()로 감싼다", async () => {
+    const { cssVarRef, TAILWIND_PRESET_PREFIX } = await import("../src/extractor.js");
+    const t = (name: string) => ({ name, value: "", category: "color" as const, normalized: { kind: "unknown" as const } });
+    expect(cssVarRef(t("--color-blue-500"))).toBe("var(--color-blue-500)");
+    expect(cssVarRef(t("color.brand"))).toBeNull();
+    expect(cssVarRef(t("--a b"))).toBeNull();
+    expect(TAILWIND_PRESET_PREFIX).toBe("ds");
+  });
+
+  it("tokenRef가 있어도 metaOf 키는 name·files·parses(·signals)다", () => {
+    const e = makeExtractor(() => [], { tokenRef: () => null });
+    expect(Object.keys(metaOf(e))).toEqual(["name", "files", "parses"]);
+    expect(Object.keys(metaOf({ ...e, signals: { code: "x" } }))).toEqual(["name", "files", "parses", "signals"]);
+  });
+});
