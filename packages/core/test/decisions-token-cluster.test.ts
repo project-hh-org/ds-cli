@@ -102,3 +102,39 @@ describe("listDecisions stale", () => {
     expect(listDecisions(indexOf([hc("a.tsx", A)]), file)[0]).toMatchObject({ stale: true });
   });
 });
+
+describe("stale: 결정이 적용된 경우는 stale이 아니다", () => {
+  it("duplicate가 하나로 합쳐져 후보가 사라지면 stale 아님", () => {
+    const comps: ComponentUsage[] = [{ name: "Button", file: "src/App.tsx", line: 1, importedFrom: "a/Button", module: "a/Button", props: [] }];
+    const file: DecisionsFile = {
+      version: 1,
+      items: [{ item: "Button", kind: "duplicate", status: "decided", options: ["a/Button", "b/Button"], chosen: "a/Button" }],
+    };
+    expect(listDecisions(indexOf([], comps), file)[0]).not.toHaveProperty("stale");
+  });
+
+  it("token-cluster의 모든 구성원이 hardcoded에서 사라지면 stale 아님", () => {
+    const file: DecisionsFile = {
+      version: 1,
+      items: [{ item: "blue-400", kind: "token-cluster", status: "decided", options: [A, B], chosen: A }],
+    };
+    expect(listDecisions(indexOf([]), file)[0]).not.toHaveProperty("stale");
+  });
+
+  it("explain 카드: 선택지에서 빠진 chosen은 decided.stale", async () => {
+    const stale: DecisionsFile = {
+      version: 1,
+      items: [{ item: "blue-400", kind: "token-cluster", status: "decided", options: [A, B], chosen: B, decidedAt: "t" }],
+    };
+    const result = await explainDecision(tmp, indexOf([hc("a.tsx", A)]), "blue-400", { isDsModule: () => false, decisions: stale, git: false });
+    if (!("card" in result)) throw new Error("card");
+    expect(result.card.decided).toEqual({ chosen: B, decidedAt: "t", stale: true });
+  });
+
+  it("token-cluster 선택은 대문자 hex도 받는다", async () => {
+    await writeDecisions(tmp, decisions);
+    const record = await chooseDecision(tmp, index, "blue-400", B.toUpperCase(), { kind: "token-cluster" });
+    expect(record.chosen).toBe(B);
+    await expect(chooseDecision(tmp, index, "blue-400", "#000000", { kind: "token-cluster" })).rejects.toThrow('--choose "#3b82f6"');
+  });
+});

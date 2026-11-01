@@ -68,8 +68,20 @@ async function otherDeclarationRanges(
     return [];
   }
   const declarations = componentDeclarations(code, file);
-  if (!declarations.some((d) => d.name === item)) return [];
-  return declarations.filter((d) => d.name !== item).map((d) => ({ startLine: d.startLine, endLine: d.endLine }));
+  const own = declarations.filter((d) => d.name === item);
+  if (own.length === 0) return [];
+  // 같은 문장에 선언자가 여럿이면 item 자신의 줄은 뺀다(다른 선언 범위 − item 범위)
+  let ranges = declarations.filter((d) => d.name !== item).map((d) => ({ startLine: d.startLine, endLine: d.endLine }));
+  for (const o of own) {
+    ranges = ranges.flatMap((r) => {
+      if (r.endLine < o.startLine || r.startLine > o.endLine) return [r];
+      const parts: { startLine: number; endLine: number }[] = [];
+      if (r.startLine < o.startLine) parts.push({ startLine: r.startLine, endLine: o.startLine - 1 });
+      if (r.endLine > o.endLine) parts.push({ startLine: o.endLine + 1, endLine: r.endLine });
+      return parts;
+    });
+  }
+  return ranges;
 }
 
 const CHECK_LIST = "list_decisions(또는 decide --list)로 항목을 확인하세요";

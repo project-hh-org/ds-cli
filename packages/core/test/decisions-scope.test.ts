@@ -122,3 +122,66 @@ describe("explainDecision 선언 범위 계산", () => {
     }
   });
 });
+
+describe("styled 파일은 자기 스타일을 잃지 않는다", () => {
+  it("SIZES·styled Root가 있는 파일은 범위 없이 file", async () => {
+    const fs = await import("node:fs/promises");
+    const os = await import("node:os");
+    const path = await import("node:path");
+    const { explainDecision } = await import("../src/decisions/explain.js");
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "dsmith-scope2-"));
+    try {
+      await fs.mkdir(path.join(root, "ui"), { recursive: true });
+      await fs.writeFile(
+        path.join(root, "ui/Button.tsx"),
+        ["const SIZES = { sm: 1 };", "const Root = styled.button`", "  color: #111111;", "`;", "export function Button() { return null; }"].join("\n"),
+      );
+      const idx = indexOf([cu("ui/Button", 0), cu("legacy/Button", 1)], [hc("ui/Button.tsx", 3, "#111111")]);
+      const result = await explainDecision(root, idx, "Button", { isDsModule: () => false, git: false });
+      if (!("card" in result)) throw new Error("card");
+      expect(result.card.styleScope).toBe("file");
+      expect(result.card.options.find((o) => o.id === "ui/Button")?.styleValues.color).toEqual(["#111111"]);
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("같은 문장의 선언자가 여럿이면 item 자신의 줄은 뺀 범위만 제외", async () => {
+    const fs = await import("node:fs/promises");
+    const os = await import("node:os");
+    const path = await import("node:path");
+    const { explainDecision } = await import("../src/decisions/explain.js");
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "dsmith-scope3-"));
+    try {
+      await fs.mkdir(path.join(root, "ui"), { recursive: true });
+      await fs.writeFile(path.join(root, "ui/Button.tsx"), ["const Other = () => 1, Button = () => 2;", "const Icon = () => 3;"].join("\n"));
+      const idx = indexOf([cu("ui/Button", 0), cu("legacy/Button", 1)], [hc("ui/Button.tsx", 1, "#111111"), hc("ui/Button.tsx", 2, "#222222")]);
+      const result = await explainDecision(root, idx, "Button", { isDsModule: () => false, git: false });
+      if (!("card" in result)) throw new Error("card");
+      expect(result.card.options.find((o) => o.id === "ui/Button")?.styleValues.color).toEqual(["#111111"]);
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("tokenMatchRate: token 소스 포함", () => {
+  it("전부 token인 A가 절반 hardcoded인 B를 이긴다", () => {
+    const primary = { name: "--p", category: "color", value: "#3b82f6", normalized: normalizeColor("#3b82f6") } as Token;
+    const tokenUse = (file: string): StyleUsage => ({ ...hc(file, 1, "#3b82f6"), source: "token" });
+    const idx = indexOf(
+      [cu("a/Button", 0), cu("b/Button", 1)],
+      [tokenUse("a/Button.tsx"), tokenUse("a/Button.tsx"), hc("b/Button.tsx", 0, "#3b82f6"), hc("b/Button.tsx", 0, "#123456")].map((u, i) => ({ ...u, line: i + 1 })),
+    );
+    const card = buildDecisionCard({
+      candidate: { item: "Button", kind: "duplicate", optionIds: ["a/Button", "b/Button"] },
+      index: idx,
+      isDsModule: () => false,
+      history: {},
+      definitionFiles: { "a/Button": "a/Button.tsx", "b/Button": "b/Button.tsx" },
+      tokens: [primary],
+    });
+    expect(card.ruleCheck.tokenMatchRate).toEqual({ "a/Button": 1, "b/Button": 0.5 });
+    expect(card.recommendation).toMatchObject({ optionId: "a/Button", rule: "token-rate" });
+  });
+});

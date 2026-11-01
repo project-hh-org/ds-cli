@@ -30,8 +30,16 @@ export function tokenClusterCandidates(file: DecisionsFile): DecisionCandidate[]
     .map((r) => ({ item: r.item, kind: "token-cluster" as const, optionIds: r.options }));
 }
 
+/**
+ * token-cluster stale: 고른 hex가 더는 hardcoded가 아니고, 다른 구성원은 아직 hardcoded로 남아 있을 때.
+ * 전부 사라졌으면 결정이 적용된 것이라 stale이 아니다.
+ */
+export function isTokenClusterStale(hardcodedHexes: Set<string>, chosen: string, options: string[]): boolean {
+  return !hardcodedHexes.has(chosen) && options.some((o) => o !== chosen && hardcodedHexes.has(o));
+}
+
 /** index에 hardcoded 색으로 남아 있는 hex 집합 */
-function hardcodedColorHexes(index: Index): Set<string> {
+export function hardcodedColorHexes(index: Index): Set<string> {
   const hexes = new Set<string>();
   for (const u of index.styles) {
     if (u.source === "hardcoded" && u.normalized.kind === "color") hexes.add(u.normalized.hex);
@@ -42,8 +50,8 @@ function hardcodedColorHexes(index: Index): Set<string> {
 /**
  * 후보 + 파일에만 있는 기록(예: token-cluster)을 합쳐 목록을 만든다.
  * 기록이 decided면 status decided·chosen=기록의 chosen. `status`를 주면 그 상태만 낸다.
- * decided인데 chosen이 현재 선택지에 없으면 stale: duplicate·local-definition은 현재 후보의 optionIds에 없을 때,
- * token-cluster는 chosen hex가 index의 hardcoded 색에 더는 없을 때.
+ * decided인데 chosen이 현재 선택지에 없으면 stale: duplicate·local-definition은 후보가 아직 있고 optionIds에 chosen이 없을 때(후보가 사라진 것은 결정이 적용된 것),
+ * token-cluster는 chosen hex가 hardcoded 색에서 사라졌는데 다른 구성원은 남아 있을 때.
  */
 export function listDecisions(
   index: Index,
@@ -55,12 +63,13 @@ export function listDecisions(
   const keyOf = (item: string, kind: DecisionKind): string => JSON.stringify([item, kind]);
 
   let colorHexes: Set<string> | undefined;
-  const isStale = (kind: DecisionKind, chosen: string, currentOptions: string[] | null): boolean => {
+  const isStale = (kind: DecisionKind, chosen: string, options: string[], currentOptions: string[] | null): boolean => {
     if (kind === "token-cluster") {
       colorHexes ??= hardcodedColorHexes(index);
-      return !colorHexes.has(chosen);
+      return isTokenClusterStale(colorHexes, chosen, options);
     }
-    return currentOptions === null || !currentOptions.includes(chosen);
+    // 후보가 사라졌으면(결정이 적용돼 중복이 없어짐) stale이 아니다
+    return currentOptions !== null && !currentOptions.includes(chosen);
   };
 
   const push = (
@@ -74,7 +83,7 @@ export function listDecisions(
     const entry: DecisionListItem = { item, kind, options, status: decided ? "decided" : "pending" };
     if (decided && record?.chosen !== undefined) {
       entry.chosen = record.chosen;
-      if (isStale(kind, record.chosen, currentOptions)) entry.stale = true;
+      if (isStale(kind, record.chosen, options, currentOptions)) entry.stale = true;
     }
     items.push(entry);
   };

@@ -1,11 +1,12 @@
 import fs from "node:fs";
 import path from "node:path";
-import { chooseDecision, readIndex, type ComponentUsage } from "@dsmith-dev/core";
+import { chooseDecision, explainDecision, loadTokens, readDecisions, readIndex, type ComponentUsage } from "@dsmith-dev/core";
+import { isDsSpecifier, readDetect } from "@dsmith-dev/detect";
 import type { Client } from "@modelcontextprotocol/client";
 import { afterEach, describe, expect, it } from "vitest";
 import { estimateTokens } from "../src/budget.js";
 import { TOOL_NAMES } from "../src/index.js";
-import { connect, copyFixture, indexFixture, json, syntheticRoot, textOf, usageOf } from "./helpers.js";
+import { WITH_DS_TOKENS_CSS, connect, copyFixture, indexFixture, json, syntheticRoot, textOf, usageOf } from "./helpers.js";
 
 const clients: Client[] = [];
 const dirs: string[] = [];
@@ -350,3 +351,22 @@ describe("응답 상한: 합성 워크스페이스", () => {
   });
 });
 
+
+describe("explain_decision: CLI와 같은 카드(토큰 파일이 있을 때)", () => {
+  it("tokenMatchRate가 실리고 core(CLI 경로)의 카드와 같다", async () => {
+    const { client, root } = await open("fixtures/with-ds-app", { "components/ui/tokens.css": WITH_DS_TOKENS_CSS });
+    const card = json(await call(client, "explain_decision", { item: "Button" }));
+    expect(card.ruleCheck).toHaveProperty("tokenMatchRate");
+    const [index, detected] = await Promise.all([readIndex(root), readDetect(root)]);
+    if (index === null || detected === null) throw new Error("index");
+    const tokens = (await loadTokens(root, detected.ds.tokenFiles, [])).tokens;
+    const expected = await explainDecision(root, index, "Button", {
+      isDsModule: (m) => isDsSpecifier(m, detected.ds),
+      decisions: await readDecisions(root),
+      git: false,
+      tokens,
+    });
+    if (!("card" in expected)) throw new Error("card");
+    expect(card).toEqual(JSON.parse(JSON.stringify(expected.card)));
+  });
+});

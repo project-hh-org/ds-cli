@@ -27,10 +27,27 @@ describe("componentDeclarations", () => {
   });
 
   it("선언자가 여럿인 const는 선언자별 범위", () => {
-    const code = "const A = 1,\n  B = 2;\n";
+    const code = "const A = () => 1,\n  B = () => 2;\n";
     expect(componentDeclarations(code, "x.tsx")).toEqual([
       { name: "A", startLine: 1, endLine: 1 },
       { name: "B", startLine: 2, endLine: 2 },
     ]);
+  });
+});
+
+describe("componentDeclarations: 컴포넌트 같은 초기값만", () => {
+  it("상수·styled 템플릿·객체/배열 리터럴은 제외한다", () => {
+    const code = [
+      "const SIZES = { sm: 1 };",
+      "const LABEL = 'x';",
+      "const Root = styled.button`color: red;`;",
+      "const Wrap = styled(Root)({ color: 'red' });",
+      "const Items = [1, 2];",
+      "export const Card = () => null;",
+      "export const Fancy = React.memo(function Fancy() { return null; });",
+      "const Input = forwardRef((p, r) => null);",
+      "const Klass = class {};",
+    ].join("\n");
+    expect(componentDeclarations(code, "x.tsx").map((d) => d.name)).toEqual(["Card", "Fancy", "Input", "Klass"]);
   });
 });

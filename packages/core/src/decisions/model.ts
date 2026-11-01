@@ -33,7 +33,7 @@ export interface DecisionCard {
   kind: DecisionKind;
   /**
    * `options[].styleValues`·`ruleCheck`가 읽는 범위. "file" = 정의 파일 전체의 스타일.
-   * "declaration" = 정의 파일에서 다른 최상위 컴포넌트 선언의 줄 범위를 뺀 스타일(모듈 수준 상수는 남는다).
+   * "declaration" = 정의 파일에서 다른 최상위 컴포넌트 선언의 줄 범위를 적용한 스타일(실제로 뺀 스타일이 없을 수도 있다. 모듈 수준 상수는 남는다).
    */
   styleScope: "file" | "declaration";
   /** usageCount desc → id asc */
@@ -49,7 +49,7 @@ export interface DecisionCard {
   ruleCheck: {
     tokenUsageRate: Record<string, number | null>;
     /**
-     * 정의 범위의 hardcoded rated 스타일 중 rankTokens(…)[0]이 exact|close인 비율(소수 4자리). 대상이 0이면 null.
+     * 정의 범위의 (token 소스 + 가장 가까운 토큰이 exact|close인 hardcoded) / (token 소스 + hardcoded) (소수 4자리). tailwind-default·dynamic은 분모에서 뺀다. 대상이 0이면 null.
      * `ExplainOptions.tokens`가 비어 있지 않을 때만 있다.
      */
     tokenMatchRate?: Record<string, number | null>;
@@ -65,7 +65,7 @@ export interface DecisionCard {
     confidence: Confidence;
     rule: "ds-module" | "usage" | "token-rate" | "tie";
   };
-  decided?: { chosen: string; decidedAt: string; note?: string };
+  decided?: { chosen: string; decidedAt: string; note?: string; stale?: true };
 }
 
 export interface DecisionRecord {

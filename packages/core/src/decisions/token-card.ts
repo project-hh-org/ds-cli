@@ -1,5 +1,5 @@
 import type { Index } from "../index/indexer.js";
-import type { DecisionCandidate } from "./candidates.js";
+import { hardcodedColorHexes, isTokenClusterStale, type DecisionCandidate } from "./candidates.js";
 import type { DecisionCard, DecisionOption, DecisionRecord } from "./model.js";
 
 export interface TokenCardInput {
@@ -87,6 +87,7 @@ export function buildTokenClusterCard(input: TokenCardInput): DecisionCard {
   if (record?.status === "decided" && record.chosen !== undefined) {
     card.decided = { chosen: record.chosen, decidedAt: record.decidedAt ?? "" };
     if (record.note !== undefined) card.decided.note = record.note;
+    if (isTokenClusterStale(hardcodedColorHexes(index), record.chosen, candidate.optionIds)) card.decided.stale = true;
   }
   return card;
 }

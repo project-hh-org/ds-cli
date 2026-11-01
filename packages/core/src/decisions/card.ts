@@ -91,13 +91,19 @@ function tokenUsageRateOf(rated: StyleUsage[]): number | null {
 }
 
 /**
- * 토큰 일치율: hardcoded rated 스타일(토큰 카테고리가 있는 속성) 중 가장 가까운 토큰이 exact|close인 비율.
- * 같은 카테고리에 토큰이 없으면 일치하지 않은 것으로 센다. 대상이 0이면 null.
+ * 토큰 일치율 = (token 소스 + 가장 가까운 토큰이 exact|close인 hardcoded) / (token 소스 + hardcoded).
+ * tailwind-default·dynamic은 분모에서 뺀다. hardcoded는 토큰 카테고리가 있는 속성만 센다(같은 카테고리에 토큰이 없으면 불일치).
+ * 대상이 0이면 null.
  */
 function tokenMatchRateOf(rated: StyleUsage[], tokens: Token[]): number | null {
   let total = 0;
   let matched = 0;
   for (const u of rated) {
+    if (u.source === "token") {
+      total++;
+      matched++;
+      continue;
+    }
     if (u.source !== "hardcoded") continue;
     const category = tokenCategoryOf(u.property);
     if (category === null) continue;
@@ -341,6 +347,7 @@ export function buildDecisionCard(input: CardInput): DecisionCard {
   if (record?.status === "decided" && record.chosen !== undefined) {
     card.decided = { chosen: record.chosen, decidedAt: record.decidedAt ?? "" };
     if (record.note !== undefined) card.decided.note = record.note;
+    if (!candidate.optionIds.includes(record.chosen)) card.decided.stale = true;
   }
   return card;
 }
