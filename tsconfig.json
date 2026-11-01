@@ -6,6 +6,7 @@
     { "path": "packages/extractor-inline-style" },
     { "path": "packages/extractor-tailwind" },
     { "path": "packages/extractor-css" },
+    { "path": "packages/extractor-styled" },
     { "path": "packages/detect" },
     { "path": "packages/cli" }
   ]
