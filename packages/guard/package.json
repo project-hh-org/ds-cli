@@ -1,6 +1,6 @@
 {
   "name": "@dsmith-dev/guard",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "dsmith guard: design-system drift checks for pull requests and ESLint setup",
   "keywords": ["design-system", "dsmith", "guard", "ci", "eslint"],
   "license": "MIT",

@@ -1,5 +1,17 @@
 # @dsmith-dev/extractor-emotion
 
+## 0.2.0
+
+### Minor Changes
+
+- [`fe33b86`](https://github.com/project-hh-org/dsmith/commit/fe33b8669a0e11ca5275e507f4a683e78901219c) Thanks [@dahee90522](https://github.com/dahee90522)! - 적용·방어: `dsmith migrate`(토큰·결정 기반 컴포넌트 치환, 되돌리기, 브랜치 커밋), `dsmith guard`(ESLint 플러그인·PR 드리프트 검사), 규칙 엔진 공유.
+
+### Patch Changes
+
+- Updated dependencies [[`fe33b86`](https://github.com/project-hh-org/dsmith/commit/fe33b8669a0e11ca5275e507f4a683e78901219c)]:
+  - @dsmith-dev/extractor-api@0.2.0
+  - @dsmith-dev/extractor-styled@0.2.0
+
 ## 0.1.0
 
 ### Minor Changes

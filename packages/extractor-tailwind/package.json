@@ -1,6 +1,6 @@
 {
   "name": "@dsmith-dev/extractor-tailwind",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "dsmith extractor for Tailwind CSS className utilities",
   "keywords": ["design-system", "dsmith", "extractor", "tailwindcss", "tailwind"],
   "license": "MIT",

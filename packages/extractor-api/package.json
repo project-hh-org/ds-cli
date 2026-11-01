@@ -1,6 +1,6 @@
 {
   "name": "@dsmith-dev/extractor-api",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Extractor plugin contract and conformance runner for dsmith",
   "keywords": ["design-system", "dsmith", "extractor", "plugin", "conformance"],
   "license": "MIT",

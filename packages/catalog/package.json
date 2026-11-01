@@ -1,6 +1,6 @@
 {
   "name": "@dsmith-dev/catalog",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "dsmith ai: component catalog from a local or npm design system",
   "keywords": ["design-system", "dsmith", "catalog", "ai-agent"],
   "license": "MIT",

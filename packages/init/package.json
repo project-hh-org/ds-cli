@@ -1,6 +1,6 @@
 {
   "name": "@dsmith-dev/init",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "dsmith init: draft design tokens (W3C) and component scaffolds from an audit",
   "keywords": ["design-system", "dsmith", "init", "design-tokens", "w3c"],
   "license": "MIT",

@@ -1,6 +1,6 @@
 {
   "name": "@dsmith-dev/agent-skill",
-  "version": "0.0.0",
+  "version": "0.2.0",
   "description": "dsmith slash-command sources and per-AI-tool renderers (Claude Code, Codex, Cursor, Gemini CLI, AGENTS.md)",
   "keywords": ["design-system", "dsmith", "agent-skill", "slash-command", "mcp"],
   "license": "MIT",
