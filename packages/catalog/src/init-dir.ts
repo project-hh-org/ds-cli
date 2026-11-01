@@ -11,16 +11,24 @@ async function isFile(abs: string): Promise<boolean> {
   }
 }
 
+const tokensJson = (dir: string): string => (dir === "." ? "tokens.json" : `${dir}/tokens.json`);
+
 /**
- * init 산출 디렉터리: `.dsmith/init.json` 엔트리 키 중 "<dir>/tokens.json"의 dir
- * → 없으면 "design-system/tokens.json"이 있으면 "design-system" → null.
- * init 패키지를 import하지 않고 매니페스트 키 규칙(레포 루트 상대 경로)만 읽는다.
+ * init 산출 디렉터리. init 패키지를 import하지 않고 `.dsmith/init.json`만 읽는다.
+ *  1. 매니페스트의 `outDir`(init이 가장 최근 실행에 기록) — `<dir>/tokens.json`이 있을 때
+ *  2. 엔트리 키 중 "<dir>/tokens.json"의 dir(옛 매니페스트; 여러 개면 이름순 첫째)
+ *  3. "design-system/tokens.json"이 있으면 "design-system"
+ *  4. null
  */
 export async function findInitDir(root: string): Promise<string | null> {
   try {
     const parsed = JSON.parse(await fs.readFile(path.join(root, ".dsmith", "init.json"), "utf-8")) as {
       entries?: Record<string, unknown>;
+      outDir?: unknown;
     };
+    if (typeof parsed.outDir === "string" && parsed.outDir !== "" && (await isFile(path.join(root, tokensJson(parsed.outDir))))) {
+      return parsed.outDir;
+    }
     const keys = Object.keys(parsed.entries ?? {}).sort();
     for (const key of keys) {
       if (key.includes("#")) continue;

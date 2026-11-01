@@ -3,6 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { afterEach } from "vitest";
 import { indexRepo, writeIndex, type Index } from "@dsmith-dev/core";
 import { detect, readDetect, writeDetect, type DetectResult } from "@dsmith-dev/detect";
 import { metaOf, type Extractor } from "@dsmith-dev/extractor-api";
@@ -12,6 +13,16 @@ import { inlineStyleExtractor } from "@dsmith-dev/extractor-inline-style";
 import { muiSxExtractor } from "@dsmith-dev/extractor-mui-sx";
 import { styledExtractor } from "@dsmith-dev/extractor-styled";
 import { tailwindExtractor } from "@dsmith-dev/extractor-tailwind";
+
+/** 테스트가 만든 임시 디렉터리 — afterEach에서 지운다 */
+const createdDirs: string[] = [];
+afterEach(() => {
+  for (const dir of createdDirs.splice(0)) fs.rmSync(dir, { recursive: true, force: true });
+});
+function track<T extends string>(dir: T): T {
+  createdDirs.push(dir);
+  return dir;
+}
 
 export const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..");
 
@@ -26,7 +37,7 @@ const ALL_EXTRACTORS: Extractor[] = [
 
 /** fixtures/<name> → 임시 디렉터리 복사(.dsmith 제외). overlay = 상대 경로 → 파일 내용. 원본은 수정하지 않는다 */
 export function copyFixture(name: string, overlay: Record<string, string> = {}): string {
-  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "dsmith-catalog-"));
+  const tmp = track(fs.mkdtempSync(path.join(os.tmpdir(), "dsmith-catalog-")));
   fs.cpSync(path.join(REPO_ROOT, "fixtures", name), tmp, {
     recursive: true,
     filter: (p) => !p.split(path.sep).includes(".dsmith"),
@@ -58,7 +69,7 @@ export async function auditFixture(root: string): Promise<{ index: Index; detect
 
 /** 임의 파일 트리를 임시 디렉터리에 쓴다 */
 export function tmpTree(files: Record<string, string>): string {
-  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "dsmith-catalog-tree-"));
+  const tmp = track(fs.mkdtempSync(path.join(os.tmpdir(), "dsmith-catalog-tree-")));
   for (const [file, content] of Object.entries(files)) {
     const target = path.join(tmp, file);
     fs.mkdirSync(path.dirname(target), { recursive: true });
@@ -125,7 +136,7 @@ export function treeHash(base: string): string[] {
 
 /** examples/<name> → 임시 디렉터리 복사(.dsmith 제외) */
 export function copyExample(name: string): string {
-  const tmp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "dsmith-catalog-ex-")));
+  const tmp = track(fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "dsmith-catalog-ex-"))));
   fs.cpSync(path.join(REPO_ROOT, "examples", name), tmp, {
     recursive: true,
     filter: (p) => !p.split(path.sep).includes(".dsmith"),

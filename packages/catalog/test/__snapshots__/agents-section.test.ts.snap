@@ -9,7 +9,7 @@ exports[`renderAgentsDsSection > with-ds-app 카탈로그 스냅샷 1`] = `
 - 쓰지 말 것(deprecated): OldButton — Button을 쓰세요
 
 ### 규칙
-1. 색·간격·모서리·글꼴 크기 값을 하드코딩하지 않는다. 토큰 파일의 변수를 쓴다.
+1. 토큰 파일이 있으면 색·간격·모서리·글꼴 크기 값을 하드코딩하지 않고 그 변수를 쓴다.
 2. 값이 필요하면 MCP \`resolve_token\`으로 가장 가까운 토큰을 찾는다.
 3. 새 UI는 위 컴포넌트를 먼저 쓴다. 고르기 전에 \`search_component\`·\`get_component\`로 props를 확인한다.
 4. deprecated 컴포넌트·props는 쓰지 않는다.

@@ -59,3 +59,19 @@ describe("dsmith ai", () => {
     expect(() => execFileSync("node", [bin, "ai", "--root", root, "--from", "x"], { encoding: "utf-8", stdio: "pipe" })).toThrow();
   });
 });
+
+describe("dsmith ai: 상대 --root", () => {
+  it("cwd 기준 상대 경로를 --root로 줘도 동작한다(safeWrite는 절대 경로를 요구)", async () => {
+    const root = await auditedDsApp();
+    const out = execFileSync("node", [bin, "ai", "--root", path.basename(root), "--json"], {
+      encoding: "utf-8",
+      cwd: path.dirname(root),
+    });
+    expect(JSON.parse(out).outcomes[0].status).toBe("created");
+    expect(fs.readFileSync(path.join(root, "AGENTS.md"), "utf-8")).toContain("<!-- dsmith:ds:start -->");
+    // runAiCommand도 상대 경로를 받는다
+    const rel = path.relative(process.cwd(), root);
+    const r = await runAiCommand({ root: rel, version: "0.0.0-test" });
+    expect(r.outcomes[0]?.status).toBe("unchanged");
+  });
+});

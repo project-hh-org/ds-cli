@@ -50,6 +50,26 @@ async function exists(file: string): Promise<boolean> {
   }
 }
 
+/** AI 도구별 MCP 설정 파일에 dsmith 서버 항목이 있는지. install.json이 없어도(수동 등록) 인정한다. */
+async function mcpRegistered(root: string): Promise<boolean> {
+  if (await exists(path.join(root, ".dsmith", "install.json"))) return true;
+  for (const rel of [".mcp.json", ".cursor/mcp.json", ".gemini/settings.json"]) {
+    try {
+      const parsed = JSON.parse(await fs.readFile(path.join(root, rel), "utf-8")) as { mcpServers?: Record<string, unknown> };
+      if (parsed.mcpServers !== undefined && Object.hasOwn(parsed.mcpServers, "dsmith")) return true;
+    } catch {
+      // 없거나 JSON이 아님 — 다음 파일
+    }
+  }
+  try {
+    const toml = await fs.readFile(path.join(root, ".codex", "config.toml"), "utf-8");
+    if (/^\s*\[\s*mcp_servers\s*\.\s*"?dsmith"?\s*\]/m.test(toml)) return true;
+  } catch {
+    // 없음
+  }
+  return false;
+}
+
 async function claudeMdNote(root: string): Promise<string | null> {
   for (const rel of ["CLAUDE.md", ".claude/CLAUDE.md"]) {
     let text: string;
@@ -67,7 +87,8 @@ async function claudeMdNote(root: string): Promise<string | null> {
 }
 
 export async function runAi(opts: AiOptions): Promise<AiResult> {
-  const { root, version } = opts;
+  const root = path.resolve(opts.root);
+  const { version } = opts;
   const [index, detect] = await Promise.all([readIndex(root), readDetect(root)]);
   if (index === null || detect === null) throw new Error("분석 결과(.dsmith/index.json·detect.json)가 없음 — 먼저 `dsmith audit`");
 
@@ -79,18 +100,44 @@ export async function runAi(opts: AiOptions): Promise<AiResult> {
     ...(opts.from === undefined ? {} : { from: opts.from }),
   });
 
-  // 사용 수 순 이름: 인덱스의 name+module 사용 수를 카탈로그 module로 조인
+  // 사용 수 순 이름: 인덱스의 name+module 사용 수를 카탈로그 module로 조인.
+  // init 산출 컴포넌트는 module이 init 디렉터리라 조인이 0이 되므로 이름만으로 센 사용 수로 대체한다.
   const counts = new Map<string, number>();
+  const nameCounts = new Map<string, number>();
   for (const s of summarizeComponents(index.components)) {
     counts.set(JSON.stringify([s.name, s.module]), s.count);
+    nameCounts.set(s.name, (nameCounts.get(s.name) ?? 0) + s.count);
   }
-  const usage = (c: { name: string; module: string }): number => counts.get(JSON.stringify([c.name, c.module])) ?? 0;
+  const usage = (c: { name: string; module: string }): number =>
+    counts.get(JSON.stringify([c.name, c.module])) || (nameCounts.get(c.name) ?? 0);
   const usageOrder = [...catalog.components]
     .sort((a, b) => usage(b) - usage(a) || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))
     .map((c) => c.name);
 
-  const section = renderAgentsDsSection(catalog, usageOrder);
   const dryRun = opts.dryRun === true;
+  const notes: string[] = [];
+
+  // `--from init`인데 init 컴포넌트가 하나도 없으면 비어 있는 카탈로그·섹션으로 기존 것을 덮어쓰지 않는다.
+  if (opts.from === "init" && catalog.components.length === 0) {
+    warnings.push("init 컴포넌트가 없음 — 카탈로그와 AGENTS.md DS 섹션을 갱신하지 않음");
+    notes.push("`dsmith init --all`(또는 /ds-decide로 결정 후 `dsmith init`)으로 스캐폴드를 만든 뒤 다시 실행");
+    return {
+      sources: catalog.sources,
+      components: 0,
+      propsExtracted: { ok: 0, total: 0, rate: null },
+      deprecated: 0,
+      tokens: catalog.stats.tokens,
+      catalogFile: null,
+      catalogChanged: false,
+      outcomes: [],
+      notes,
+      warnings,
+      manifest: MANIFEST,
+      dryRun,
+    };
+  }
+
+  const section = renderAgentsDsSection(catalog, usageOrder);
   const write = await safeWrite(
     [{ file: path.join(root, "AGENTS.md"), region: { kind: "block", ...DS_MARKERS }, content: section }],
     {
@@ -109,10 +156,9 @@ export async function runAi(opts: AiOptions): Promise<AiResult> {
   const catalogChanged = before !== `${JSON.stringify(catalog, null, 2)}\n`;
   if (!dryRun && catalogChanged) await writeCatalog(root, catalog);
 
-  const notes: string[] = [];
   const claude = await claudeMdNote(root);
   if (claude !== null) notes.push(claude);
-  if (!(await exists(path.join(root, ".dsmith", "install.json")))) notes.push("MCP 서버 미등록 — `npx dsmith install`");
+  if (!(await mcpRegistered(root))) notes.push("MCP 서버 미등록 — `npx dsmith install`");
   const total = catalog.stats.components;
   if (total > 0 && total - catalog.stats.propsOk > total / 2) {
     notes.push("props를 못 읽은 컴포넌트가 많음 — 타입 정의 위치를 확인");

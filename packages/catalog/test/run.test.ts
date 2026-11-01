@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { runInit } from "@dsmith-dev/init";
 import { describe, expect, it } from "vitest";
-import { runAi, formatAiSummary } from "../src/index.js";
+import { runAi, formatAiSummary, findInitDir } from "../src/index.js";
 import { copyExample, copyFixture, forceStateZero, installMui, overlay, treeHash, writeAudit } from "./helpers.js";
 
 const VERSION = "0.0.0-test";
@@ -154,5 +154,87 @@ describe("runAi: 상태 0 (examples/legacy-demo) → init → ai", () => {
     const root = copyExample("legacy-demo");
     await forceStateZero(root);
     await expect(runAi({ root, version: VERSION })).rejects.toThrow("DS를 찾지 못함");
+  });
+});
+
+describe("runAi: 보강 (fix round 1)", () => {
+  it("init 산출 컴포넌트도 이름 기준 사용 수로 정렬한다(module 조인이 0일 때)", async () => {
+    const root = copyExample("legacy-demo");
+    await forceStateZero(root);
+    await runInit({ root, all: true, version: VERSION });
+    await runAi({ root, version: VERSION });
+    const agents = read(root, "AGENTS.md");
+    const line = agents.split("\n").find((l) => l.startsWith("- 컴포넌트")) ?? "";
+    // 인덱스 사용 수는 Button(6) > Badge(…)이고 사전순은 Badge < Button이다 — 사용 수가 반영돼야 Button이 앞
+    expect(line.indexOf("Button")).toBeGreaterThan(-1);
+    expect(line.indexOf("Button")).toBeLessThan(line.indexOf("Badge"));
+  });
+
+  it("init 섹션은 tokens.css(CSS 변수)를 함께 안내한다", async () => {
+    const root = copyExample("legacy-demo");
+    await forceStateZero(root);
+    await runInit({ root, all: true, version: VERSION });
+    await runAi({ root, version: VERSION });
+    const agents = read(root, "AGENTS.md");
+    expect(agents).toContain("`design-system/tokens.json`");
+    expect(agents).toContain("CSS 변수: `design-system/tokens.css`");
+  });
+
+  it("npm DS 섹션에는 '토큰 파일: 없음 — init' 문구가 없다", async () => {
+    const root = fs.realpathSync(copyFixture("mui-app"));
+    installMui(root, "mui-material-6");
+    await writeAudit(root);
+    await runAi({ root, version: VERSION });
+    expect(read(root, "AGENTS.md")).not.toContain("dsmith init");
+  });
+
+  it("MCP 안내: .mcp.json·.cursor/mcp.json·.gemini/settings.json·.codex/config.toml의 dsmith 항목도 등록으로 본다", async () => {
+    const cases: Record<string, string> = {
+      ".mcp.json": '{"mcpServers":{"dsmith":{"command":"npx"}}}',
+      ".cursor/mcp.json": '{"mcpServers":{"dsmith":{"command":"npx"}}}',
+      ".gemini/settings.json": '{"mcpServers":{"dsmith":{"command":"npx"}}}',
+      ".codex/config.toml": '[mcp_servers.dsmith]\ncommand = "npx"\n',
+    };
+    for (const [file, content] of Object.entries(cases)) {
+      const root = await withDsApp({ [file]: content });
+      const r = await runAi({ root, version: VERSION });
+      expect(r.notes.some((n) => n.includes("MCP 서버 미등록")), file).toBe(false);
+    }
+    const none = await withDsApp({ ".mcp.json": '{"mcpServers":{"other":{}}}' });
+    expect((await runAi({ root: none, version: VERSION })).notes.some((n) => n.includes("MCP 서버 미등록"))).toBe(true);
+  });
+
+  it("--from init인데 init 컴포넌트가 없으면 기존 DS 섹션·카탈로그를 덮어쓰지 않고 안내한다", async () => {
+    const root = await withDsApp();
+    await runAi({ root, version: VERSION });
+    const agents = read(root, "AGENTS.md");
+    const catalog = read(root, ".dsmith/catalog.json");
+    fs.mkdirSync(path.join(root, "design-system", "components"), { recursive: true });
+    fs.writeFileSync(path.join(root, "design-system", "tokens.json"), "{}\n");
+    const r = await runAi({ root, version: VERSION, from: "init" });
+    expect(r.outcomes).toEqual([]);
+    expect(r.catalogFile).toBeNull();
+    expect(r.warnings.join("\n")).toContain("init 컴포넌트가 없음");
+    expect(r.notes.join("\n")).toContain("dsmith init");
+    expect(read(root, "AGENTS.md")).toBe(agents);
+    expect(read(root, ".dsmith/catalog.json")).toBe(catalog);
+  });
+
+  it("상대 root도 절대 경로로 풀어 쓴다", async () => {
+    const root = await withDsApp();
+    const rel = path.relative(process.cwd(), root);
+    const r = await runAi({ root: rel, version: VERSION });
+    expect(r.outcomes[0]?.status).toBe("created");
+  });
+
+  it("findInitDir: init.json의 outDir(최근 산출)을 엔트리 키보다 우선한다", async () => {
+    const root = copyExample("legacy-demo");
+    await forceStateZero(root);
+    await runInit({ root, all: true, version: VERSION });
+    await runInit({ root, all: true, outDir: "src/ds", version: VERSION, now: new Date(2026, 10, 3) });
+    // 엔트리 키 이름순으로는 design-system이 앞이지만 최근 산출은 src/ds
+    expect(await findInitDir(root)).toBe("src/ds");
+    const r = await runAi({ root, version: VERSION });
+    expect(r.sources).toEqual([{ origin: "init", dir: "src/ds/components" }]);
   });
 });

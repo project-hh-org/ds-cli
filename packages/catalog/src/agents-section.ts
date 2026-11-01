@@ -46,12 +46,28 @@ function sourceLabel(s: CatalogSource): string {
   return `${tick(s.dir ?? ".")} (로컬)`;
 }
 
-function tokenLine(catalog: Catalog): string {
+/** init 산출 소스의 산출 디렉터리("design-system/components" → "design-system") */
+function initDirOf(s: CatalogSource): string {
+  return (s.dir ?? "design-system/components").replace(/\/components$/, "");
+}
+
+function tokenLine(catalog: Catalog): string | null {
   const files = [...new Set(catalog.tokens.map((t) => t.file).filter((f) => f !== ""))];
-  if (files.length === 0) return "- 토큰 파일: 없음 — `dsmith init`으로 초안 생성";
+  const initSources = catalog.sources.filter((s) => s.origin === "init");
+  if (files.length === 0) {
+    // npm DS는 토큰 파일이 없는 게 정상이다 — init을 권하지 않는다.
+    if (catalog.sources.some((s) => s.origin === "ds-npm")) return null;
+    return "- 토큰 파일: 없음 — `dsmith init`으로 초안 생성";
+  }
   const shown = files.slice(0, MAX_TOKEN_FILES).map(tick).join(", ");
   const more = files.length > MAX_TOKEN_FILES ? ` 외 ${files.length - MAX_TOKEN_FILES}개` : "";
-  return `- 토큰 파일: ${shown}${more} (토큰 ${catalog.tokens.length}개)`;
+  // init 산출은 같은 디렉터리에 CSS 변수 파일(tokens.css)도 있다 — 코드에서는 이쪽을 쓴다.
+  const css = initSources.map((s) => {
+    const dir = initDirOf(s);
+    return tick(dir === "components" || dir === "." ? "tokens.css" : `${dir}/tokens.css`);
+  });
+  const cssNote = css.length > 0 ? ` · CSS 변수: ${[...new Set(css)].join(", ")}` : "";
+  return `- 토큰 파일: ${shown}${more} (토큰 ${catalog.tokens.length}개)${cssNote}`;
 }
 
 function orderedNames(components: CatalogComponent[], usageOrder: string[]): string[] {
@@ -77,7 +93,8 @@ export function renderAgentsDsSection(catalog: Catalog, usageOrder: string[]): s
       ? "- DS 위치: 찾지 못함"
       : `- DS 위치: ${catalog.sources.map(sourceLabel).join(" · ")}`,
   );
-  lines.push(tokenLine(catalog));
+  const tokens = tokenLine(catalog);
+  if (tokens !== null) lines.push(tokens);
 
   const names = orderedNames(catalog.components, usageOrder);
   const top = names.slice(0, TOP_COMPONENTS);
@@ -101,7 +118,9 @@ export function renderAgentsDsSection(catalog: Catalog, usageOrder: string[]): s
   lines.push(
     "",
     "### 규칙",
-    "1. 색·간격·모서리·글꼴 크기 값을 하드코딩하지 않는다. 토큰 파일의 변수를 쓴다.",
+    catalog.tokens.length > 0
+      ? "1. 색·간격·모서리·글꼴 크기 값을 하드코딩하지 않는다. 토큰 파일의 변수를 쓴다."
+      : "1. 토큰 파일이 있으면 색·간격·모서리·글꼴 크기 값을 하드코딩하지 않고 그 변수를 쓴다.",
     "2. 값이 필요하면 MCP `resolve_token`으로 가장 가까운 토큰을 찾는다.",
     "3. 새 UI는 위 컴포넌트를 먼저 쓴다. 고르기 전에 `search_component`·`get_component`로 props를 확인한다.",
     "4. deprecated 컴포넌트·props는 쓰지 않는다.",
