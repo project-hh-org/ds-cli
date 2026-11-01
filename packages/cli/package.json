@@ -1,6 +1,6 @@
 {
   "name": "dsmith",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "Design-system lifecycle CLI: detect your styling setup and audit hardcoded style values",
   "keywords": ["design-system", "design-tokens", "cli", "audit", "dsmith"],
   "license": "MIT",
