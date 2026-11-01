@@ -91,6 +91,47 @@ describe("indexRepo", () => {
     ]);
   });
 
+  it("paths 전용 tsconfig(baseUrl 없음): root 디렉터리와 이름이 같은 패키지의 서브패스 import도 패키지 module이다", async () => {
+    put("package.json", JSON.stringify({ name: "app", dependencies: { convex: "^1.0.0" } }));
+    put("tsconfig.json", `{ "compilerOptions": { "paths": { "@/*": ["./src/*"] } } }`);
+    put("convex/schema.ts", `export default {};`);
+    put("src/a.tsx", `import { ConvexProvider } from "convex/react";\nexport const A = () => <ConvexProvider />;`);
+    put("src/b.tsx", `import { ConvexProvider } from "convex";\nexport const B = () => <ConvexProvider />;`);
+    const index = await indexRepo(tmp, [inlineStyleExtractor]);
+    expect(index.components.map((c) => [c.file, c.name, c.module])).toEqual([
+      ["src/a.tsx", "ConvexProvider", "convex"],
+      ["src/b.tsx", "ConvexProvider", "convex"],
+    ]);
+  });
+
+  it("paths 전용 tsconfig(baseUrl 없음): 선언되지 않은 bare import도 root 디렉터리 경로로 풀지 않는다", async () => {
+    put("tsconfig.json", `{ "compilerOptions": { "paths": { "@/*": ["./src/*"] } } }`);
+    put("lib/x.ts", `export const x = 1;`);
+    put("src/a.tsx", `import { Thing } from "lib/thing";\nexport const A = () => <Thing />;`);
+    const index = await indexRepo(tmp, [inlineStyleExtractor]);
+    expect(index.components.map((c) => c.module)).toEqual(["lib"]);
+  });
+
+  it("명시적 baseUrl이어도 선언된 의존성과 이름이 같은 최상위 디렉터리보다 패키지가 우선한다", async () => {
+    put("package.json", JSON.stringify({ name: "app", dependencies: { utils: "^1.0.0" } }));
+    put("tsconfig.json", `{ "compilerOptions": { "baseUrl": "." } }`);
+    put("utils/format.ts", `export const f = 1;`);
+    put("components/Card.tsx", `export const Card = () => <div />;`);
+    put(
+      "src/a.tsx",
+      [
+        `import { Tooltip } from "utils/tooltip";`,
+        `import { Card } from "components/Card";`,
+        `export const A = () => <><Tooltip /><Card /></>;`,
+      ].join("\n"),
+    );
+    const index = await indexRepo(tmp, [inlineStyleExtractor]);
+    expect(index.components.map((c) => [c.name, c.module])).toEqual([
+      ["Tooltip", "utils"],
+      ["Card", "components/Card"],
+    ]);
+  });
+
   it("모노레포 앱: 의존성으로 선언한 패키지의 paths 별칭은 패키지명 module로 합친다", async () => {
     put("package.json", JSON.stringify({ name: "web", dependencies: { "@acme/ui": "workspace:*" } }));
     put(

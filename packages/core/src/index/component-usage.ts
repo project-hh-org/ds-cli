@@ -40,7 +40,8 @@ export interface ModuleContext {
  * 같은 모듈이면 같은 값이 되는 비교 키.
  * 상대 경로 → root 상대 경로, tsconfig paths 별칭 → paths로 푼 root 상대 경로(단, 패키지 모양 specifier가
  * root 밖을 가리키거나 의존성으로 선언된 패키지면 패키지명), 그 밖의 `@/`·`~/` → resolveSource 규칙,
- * baseUrl 아래 항목으로 시작하는 bare specifier → baseUrl 기준 경로, 패키지 → 서브패스를 뗀 패키지명.
+ * baseUrl 아래 항목으로 시작하는 bare specifier → baseUrl 기준 경로(의존성으로 선언된 패키지명이면 제외),
+ * 패키지 → 서브패스를 뗀 패키지명.
  * 경로는 확장자와 끝의 `/`·`/index`를 뗀다.
  */
 function moduleOf(file: string, specifier: string, tsPaths: TsPaths | null, ctx: ModuleContext): string {
@@ -55,7 +56,9 @@ function moduleOf(file: string, specifier: string, tsPaths: TsPaths | null, ctx:
     return viaPaths;
   }
   if (PATH_ALIAS.test(specifier)) return stripModulePath(resolveSource(file, specifier));
-  if (tsPaths !== null && isBareSpecifier(specifier)) {
+  // 선언된 의존성은 baseUrl 아래 같은 이름의 항목보다 우선한다(node_modules 패키지로 본다).
+  const declaredDependency = ctx.dependencies?.has(normalizePackageSpecifier(specifier)) === true;
+  if (tsPaths !== null && isBareSpecifier(specifier) && !declaredDependency) {
     const first = specifier.split("/")[0] ?? "";
     if (ctx.baseUrlEntries?.has(first) === true) {
       return stripModulePath(posix.join(tsPaths.baseUrl === "" ? "." : tsPaths.baseUrl, specifier));

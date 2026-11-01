@@ -100,9 +100,11 @@ export async function indexRepo(
   }
 
   // 컴포넌트 import 해석에 쓸 tsconfig paths·baseUrl 항목·의존성은 레포마다 한 번만 읽는다.
+  // baseUrl 항목은 baseUrl을 명시했을 때만 모은다: paths 전용 tsconfig에서는 bare import가 baseUrl 기준으로 풀리지 않는다.
   const tsPaths = await readTsconfigPaths(root);
   const moduleContext: ModuleContext = {
-    baseUrlEntries: tsPaths === null ? new Set() : await baseUrlEntriesOf(path.join(root, tsPaths.baseUrl)),
+    baseUrlEntries:
+      tsPaths?.baseUrlExplicit === true ? await baseUrlEntriesOf(path.join(root, tsPaths.baseUrl)) : new Set(),
     dependencies: await dependencyNamesOf(root),
   };
 

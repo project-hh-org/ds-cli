@@ -301,6 +301,16 @@ describe("extractComponentUsage — baseUrl 전용(paths 없음)", () => {
     expect(resolve(`import App from "App"; const a = <App />;`)[0]?.module).toBe("src/App");
   });
 
+  it("선언된 의존성 이름은 baseUrl 아래 같은 이름의 항목보다 우선해 패키지 module이 된다", () => {
+    const result = extractComponentUsage(
+      "src/a.tsx",
+      parseTsx(`import { Thing } from "lib/thing"; const a = <Thing />;`, "src/a.tsx"),
+      tsPaths,
+      { ...ctx, dependencies: new Set(["lib"]) },
+    );
+    expect(result[0]?.module).toBe("lib");
+  });
+
   it("baseUrlEntries를 넘기지 않으면 기존처럼 패키지 규칙이다", () => {
     const result = extractComponentUsage(
       "src/a.tsx",

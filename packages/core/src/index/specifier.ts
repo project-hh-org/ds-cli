@@ -40,6 +40,11 @@ export function stripModulePath(p: string): string {
 export interface TsPaths {
   /** root 상대 POSIX 경로. ""이면 root. */
   baseUrl: string;
+  /**
+   * compilerOptions.baseUrl을 (자신 또는 extends 대상에서) 명시했는지. false면 baseUrl은 paths를 선언한 파일의
+   * 디렉터리로 채운 값이고, TypeScript는 bare import를 baseUrl 기준으로 풀지 않는다. 없으면 false로 본다.
+   */
+  baseUrlExplicit?: boolean;
   paths: Record<string, string[]>;
 }
 
@@ -164,7 +169,7 @@ function toRootRelative(root: string, abs: string): string {
 /**
  * `<root>/tsconfig.json`(없으면 `jsconfig.json`)의 baseUrl·paths를 읽는다.
  * JSONC를 허용하고 `extends`는 한 단계만 따라간다(읽지 못하면 무시). 자식의 값이 부모를 덮는다.
- * baseUrl이 없으면 paths를 선언한 파일의 디렉터리를 기준으로 한다.
+ * baseUrl이 없으면 paths를 선언한 파일의 디렉터리를 기준으로 하고 baseUrlExplicit은 false다.
  * baseUrl만 있으면(CRA·Next baseUrl 전용) paths는 빈 객체다. 둘 다 없으면 null. 어떤 입력에도 예외를 던지지 않는다.
  */
 export async function readTsconfigPaths(root: string): Promise<TsPaths | null> {
@@ -197,10 +202,10 @@ export async function readTsconfigPaths(root: string): Promise<TsPaths | null> {
     const baseUrl = collected.baseUrl;
     if (baseUrl !== undefined) {
       const baseAbs = path.resolve(baseUrl.dir, baseUrl.value);
-      return { baseUrl: toRootRelative(root, baseAbs), paths: paths?.value ?? {} };
+      return { baseUrl: toRootRelative(root, baseAbs), baseUrlExplicit: true, paths: paths?.value ?? {} };
     }
     if (paths === undefined) return null;
-    return { baseUrl: toRootRelative(root, paths.dir), paths: paths.value };
+    return { baseUrl: toRootRelative(root, paths.dir), baseUrlExplicit: false, paths: paths.value };
   } catch {
     return null;
   }

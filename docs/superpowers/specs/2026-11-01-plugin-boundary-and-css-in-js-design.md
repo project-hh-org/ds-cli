@@ -18,7 +18,7 @@ MVP 최종 리뷰와 실제 운영 어드민(1,140 파일, Next.js pages + MUI +
 포함:
 - Extractor 계약 v2 (파일 글롭 선언, 담당 스타일링 방식 선언, 선택적 `prepare`)
 - 인덱서: 글롭 합집합, 컴포넌트 사용량은 JS/TS 파일에서만, 비-JS 파일은 파싱 시도 안 함
-- detect: 사용 가능한 Extractor 목록을 호출자(cli)로부터 받음 → `IMPLEMENTED_EXTRACTORS` 삭제; 스타일링 방식에 `sx`(MUI) 추가
+- detect: 사용 가능한 Extractor 목록을 호출자(cli)로부터 받음 → `IMPLEMENTED_EXTRACTORS` 삭제; 스타일링 방식에 `mui-sx`(MUI) 추가
 - core `parse/css-text.ts`: CSS 선언 텍스트(`prop: value;`) 파서 — emotion/styled 템플릿 리터럴과 `.css` 파일이 공유
 - 새 Extractor 4종: `extractor-css`(`.css/.scss` 파일), `extractor-styled`(styled-components), `extractor-emotion`(`css` prop·`css`` ` 태그·`@emotion/styled`), `extractor-mui-sx`(`sx` prop + MUI 테마 키)
 - 중복 판정 보정: 패키지 서브패스 정규화, tsconfig `paths` 별칭 해석, DS 대표 패키지 우선순위
@@ -59,7 +59,7 @@ export interface Extractor extends ExtractorMeta {
 
 - `detect(root, index?, opts?: { available?: ExtractorMeta[] })` — cli가 레지스트리의 메타를 넘긴다. 없으면(라이브러리로 쓸 때) `activeExtractors`는 빈 배열이 아니라 `methods` 이름 그대로를 반환하고 `provisional`과 별개로 `extractorsResolved: false`를 표시한다.
 - `activeExtractors` = `methods`에 있는 이름 ∩ `available.map(m => m.name)`. 비면 `available` 중 `inline-style`이 있을 때만 폴백.
-- 스타일링 방식 추가: `sx` — 근거 `@mui/material` 또는 `@mui/joy` 의존성 + 코드에 `sx={{`; `share`는 해당 Extractor 사용량.
+- 스타일링 방식 추가: `mui-sx` — 근거 `@mui/material` 또는 `@mui/joy` 의존성 + 코드에 `sx={{`; `share`는 해당 Extractor 사용량.
 - `css` 방식: 근거 `.css/.scss` 파일 존재(모듈 아닌 것). `css-modules`는 기존대로 감지만(Extractor는 이번 범위 밖 — `.module.css`의 클래스는 JSX에서 `styles.x`로 쓰여 사용 위치 매핑이 별도 문제).
 - DS 대표 패키지: `packageNames` 중 `icons`/`x-`/`styled-engine`/`utils`/`system`이 이름에 없는 것을 `packageName`으로 우선(`@mui/material` > `@mui/icons-material`). 전부 해당하면 첫 번째.
 
@@ -112,7 +112,7 @@ export function parseCssDeclarations(text: string, offset?: number): CssDecl[];
 
 1. 계약 v2 + conformance 확장 + 기존 두 Extractor에 `files`/`parses` 추가
 2. 인덱서 글롭 합집합·JS 전용 파싱 + 가짜 Extractor 경계 테스트
-3. detect `available` 주입, `sx`/`css` 방식, `packageName` 우선순위
+3. detect `available` 주입, `mui-sx`/`css` 방식, `packageName` 우선순위
 4. core `css-text` 파서 + `css-property` 이동 + `extractor-css`
 5. `extractor-styled` + `extractor-emotion`
 6. `extractor-mui-sx`

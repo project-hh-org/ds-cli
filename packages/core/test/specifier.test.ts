@@ -56,6 +56,7 @@ describe("readTsconfigPaths", () => {
     put("tsconfig.json", CHILD);
     expect(await readTsconfigPaths(tmp)).toEqual({
       baseUrl: "",
+      baseUrlExplicit: true,
       paths: {
         "@/*": ["./src/*"],
         "components/*": ["./src/components/*"],
@@ -66,35 +67,35 @@ describe("readTsconfigPaths", () => {
 
   it("문자열 안의 // 와 /* 는 주석으로 보지 않는다", async () => {
     put("tsconfig.json", `{ "compilerOptions": { "paths": { "x//*": ["./a/*/*"] } } }`);
-    expect(await readTsconfigPaths(tmp)).toEqual({ baseUrl: "", paths: { "x//*": ["./a/*/*"] } });
+    expect(await readTsconfigPaths(tmp)).toEqual({ baseUrl: "", baseUrlExplicit: false, paths: { "x//*": ["./a/*/*"] } });
   });
 
   it("자식 paths는 부모 paths를 통째로 대체하고, 부모 baseUrl은 부모 파일 기준으로 푼다", async () => {
     put("configs/base.json", `{ "compilerOptions": { "baseUrl": "..", "paths": { "old/*": ["./old/*"] } } }`);
     put("tsconfig.json", `{ "extends": "./configs/base", "compilerOptions": { "paths": { "@/*": ["./src/*"] } } }`);
-    expect(await readTsconfigPaths(tmp)).toEqual({ baseUrl: "", paths: { "@/*": ["./src/*"] } });
+    expect(await readTsconfigPaths(tmp)).toEqual({ baseUrl: "", baseUrlExplicit: true, paths: { "@/*": ["./src/*"] } });
   });
 
   it("node_modules 안의 extends 대상을 읽는다", async () => {
     put("node_modules/@acme/tsconfig/base.json", `{ "compilerOptions": { "paths": { "@/*": ["./src/*"] } } }`);
     put("tsconfig.json", `{ "extends": "@acme/tsconfig/base.json", "compilerOptions": { "baseUrl": "." } }`);
     const result = await readTsconfigPaths(tmp);
-    expect(result).toEqual({ baseUrl: "", paths: { "@/*": ["./src/*"] } });
+    expect(result).toEqual({ baseUrl: "", baseUrlExplicit: true, paths: { "@/*": ["./src/*"] } });
   });
 
   it("읽을 수 없는 extends는 무시한다", async () => {
     put("tsconfig.json", `{ "extends": "./missing.json", "compilerOptions": { "paths": { "@/*": ["./src/*"] } } }`);
-    expect(await readTsconfigPaths(tmp)).toEqual({ baseUrl: "", paths: { "@/*": ["./src/*"] } });
+    expect(await readTsconfigPaths(tmp)).toEqual({ baseUrl: "", baseUrlExplicit: false, paths: { "@/*": ["./src/*"] } });
   });
 
   it("baseUrl이 하위 디렉터리면 root 상대 경로로 돌려준다", async () => {
     put("tsconfig.json", `{ "compilerOptions": { "baseUrl": "./src", "paths": { "@/*": ["./*"] } } }`);
-    expect(await readTsconfigPaths(tmp)).toEqual({ baseUrl: "src", paths: { "@/*": ["./*"] } });
+    expect(await readTsconfigPaths(tmp)).toEqual({ baseUrl: "src", baseUrlExplicit: true, paths: { "@/*": ["./*"] } });
   });
 
   it("tsconfig.json이 없으면 jsconfig.json을 읽는다", async () => {
     put("jsconfig.json", `{ "compilerOptions": { "paths": { "@/*": ["./src/*"] } } }`);
-    expect(await readTsconfigPaths(tmp)).toEqual({ baseUrl: "", paths: { "@/*": ["./src/*"] } });
+    expect(await readTsconfigPaths(tmp)).toEqual({ baseUrl: "", baseUrlExplicit: false, paths: { "@/*": ["./src/*"] } });
   });
 
   it("설정 파일이 없으면 null", async () => {
@@ -103,12 +104,12 @@ describe("readTsconfigPaths", () => {
 
   it("baseUrl만 있고 paths가 없으면 빈 paths와 baseUrl을 돌려준다(CRA·Next baseUrl 전용)", async () => {
     put("tsconfig.json", `{ "compilerOptions": { "baseUrl": "." } }`);
-    expect(await readTsconfigPaths(tmp)).toEqual({ baseUrl: "", paths: {} });
+    expect(await readTsconfigPaths(tmp)).toEqual({ baseUrl: "", baseUrlExplicit: true, paths: {} });
   });
 
   it("baseUrl이 하위 디렉터리이고 paths가 없어도 root 상대 baseUrl을 돌려준다", async () => {
     put("jsconfig.json", `{ "compilerOptions": { "baseUrl": "src" } }`);
-    expect(await readTsconfigPaths(tmp)).toEqual({ baseUrl: "src", paths: {} });
+    expect(await readTsconfigPaths(tmp)).toEqual({ baseUrl: "src", baseUrlExplicit: true, paths: {} });
   });
 
   it("baseUrl도 paths도 없으면 null", async () => {
