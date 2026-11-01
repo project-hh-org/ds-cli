@@ -1,0 +1,6 @@
+{
+  "name": "@mui/material",
+  "version": "6.5.0",
+  "license": "MIT",
+  "types": "./index.d.ts"
+}

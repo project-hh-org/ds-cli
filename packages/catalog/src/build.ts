@@ -12,6 +12,7 @@ import type { DetectResult } from "@dsmith-dev/detect";
 import { findInitDir } from "./init-dir.js";
 import { catalogFromDir } from "./local.js";
 import { compareCodeUnits } from "./names.js";
+import { catalogFromPackage } from "./npm.js";
 import { findStories, storyExample } from "./stories.js";
 
 export interface BuildCatalogOptions {
@@ -72,6 +73,11 @@ export async function buildCatalog(opts: BuildCatalogOptions): Promise<BuildCata
       const res = await catalogFromDir(root, ds.dir, "ds-local", index);
       await attachExamples(root, ds.dir, res.components);
       sources.push({ origin: "ds-local", dir: ds.dir });
+      components.push(...res.components);
+      warnings.push(...res.warnings);
+    } else if (ds.kind === "npm" && ds.packageName !== undefined) {
+      const res = await catalogFromPackage(root, ds.packageName, index);
+      sources.push(res.source);
       components.push(...res.components);
       warnings.push(...res.warnings);
     }
