@@ -1,4 +1,4 @@
-import { parse } from "@babel/parser";
+import { parse, type ParserPlugin } from "@babel/parser";
 import traverseModule from "@babel/traverse";
 import type { File } from "@babel/types";
 
@@ -10,11 +10,19 @@ export const traverse: TraverseFn =
   (traverseModule as unknown as { default?: TraverseFn }).default ??
   (traverseModule as unknown as TraverseFn);
 
+const DTS_FILE = /\.d\.[cm]?ts$/;
+
+function pluginsFor(file: string): ParserPlugin[] {
+  // 선언 파일(.d.ts/.d.mts/.d.cts): ambient 문맥 규칙(dts), jsx 없음. 부록 B.3 (babeljs.io/docs/babel-parser, 2026-11-01 확인)
+  if (DTS_FILE.test(file)) return [["typescript", { dts: true }]];
+  // .ts에서는 jsx 플러그인이 `<T>expr` 단언과 제네릭 화살표 함수를 깨뜨리므로 끈다.
+  return file.endsWith(".ts") ? ["typescript"] : ["jsx", "typescript"];
+}
+
 export function parseTsx(code: string, file: string): File {
   return parse(code, {
     sourceType: "module",
-    // .ts에서는 jsx 플러그인이 `<T>expr` 단언과 제네릭 화살표 함수를 깨뜨리므로 끈다.
-    plugins: file.endsWith(".ts") ? ["typescript"] : ["jsx", "typescript"],
+    plugins: pluginsFor(file),
     errorRecovery: true,
     sourceFilename: file,
   });

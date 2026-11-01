@@ -13,6 +13,17 @@ export interface PropInfo {
   type?: string;
   required?: boolean;
   values?: string[];
+  /** JSDoc 본문 첫 문단, 공백 접기, ≤200자(넘치면 "…") */
+  description?: string;
+  /** @deprecated 뒤 텍스트, 비었으면 "deprecated" */
+  deprecated?: string;
+  /** @default 뒤 텍스트 */
+  default?: string;
+}
+
+export interface ComponentDoc {
+  description?: string;
+  deprecated?: string;
 }
 
 export interface ComponentProps {
@@ -25,8 +36,76 @@ interface Members {
   inherits: string[];
 }
 
+/** 파싱 문맥: 소스 텍스트와 같은 파일 최상위 `const X = { … }`의 키(keyof typeof X용) */
+interface Ctx {
+  code: string;
+  consts: Map<string, string[]>;
+}
+
 function textOf(code: string, node: Node): string {
   return code.slice(node.start ?? 0, node.end ?? 0).replace(/\s+/g, " ").trim();
+}
+
+const DESCRIPTION_MAX = 200;
+
+interface JsDoc {
+  description?: string;
+  deprecated?: string;
+  default?: string;
+}
+
+// 노드의 leadingComments 중 마지막 JSDoc 블록(별표 두 개로 시작하는 블록 주석)을 읽는다.
+function jsDocOf(node: { leadingComments?: readonly { type: string; value: string }[] | null }): JsDoc | null {
+  const comments = node.leadingComments;
+  if (!comments || comments.length === 0) return null;
+  const last = comments[comments.length - 1];
+  if (!last || last.type !== "CommentBlock" || !last.value.startsWith("*")) return null;
+  const lines = last.value
+    .slice(1)
+    .split("\n")
+    .map((l) => l.replace(/^\s*\*?\s?/, "").replace(/\s+$/, ""));
+  const body: string[] = [];
+  const tags: { tag: string; text: string[] }[] = [];
+  for (const line of lines) {
+    const m = /^\s*@(\w+)\s*(.*)$/.exec(line);
+    if (m) {
+      tags.push({ tag: m[1] as string, text: [m[2] as string] });
+    } else if (tags.length > 0) {
+      (tags[tags.length - 1] as { text: string[] }).text.push(line);
+    } else {
+      body.push(line);
+    }
+  }
+  const out: JsDoc = {};
+  // 본문 첫 문단: 첫 비어 있지 않은 줄부터 다음 빈 줄 전까지
+  const para: string[] = [];
+  for (const line of body) {
+    if (line.trim() === "") {
+      if (para.length > 0) break;
+      continue;
+    }
+    para.push(line.trim());
+  }
+  const description = para.join(" ").replace(/\s+/g, " ").trim();
+  if (description !== "") {
+    out.description = description.length > DESCRIPTION_MAX ? `${description.slice(0, DESCRIPTION_MAX - 1)}…` : description;
+  }
+  const textOfTag = (name: string): string | undefined => {
+    const t = tags.find((x) => x.tag === name);
+    return t ? t.text.join(" ").replace(/\s+/g, " ").trim() : undefined;
+  };
+  const deprecated = textOfTag("deprecated");
+  if (deprecated !== undefined) out.deprecated = deprecated === "" ? "deprecated" : deprecated;
+  const def = textOfTag("default");
+  if (def !== undefined && def !== "") out.default = def;
+  return out;
+}
+
+function applyDoc(info: PropInfo, doc: JsDoc | null): void {
+  if (!doc) return;
+  if (doc.description !== undefined) info.description = doc.description;
+  if (doc.deprecated !== undefined) info.deprecated = doc.deprecated;
+  if (doc.default !== undefined) info.default = doc.default;
 }
 
 function memberName(m: TSTypeElement): string | null {
@@ -37,18 +116,51 @@ function memberName(m: TSTypeElement): string | null {
   return null;
 }
 
-function stringLiteralValues(t: TSType): string[] | null {
-  if (t.type !== "TSUnionType") return null;
-  const values: string[] = [];
-  for (const part of t.types) {
-    if (part.type === "TSUndefinedKeyword" || part.type === "TSNullKeyword") continue;
-    if (part.type !== "TSLiteralType" || part.literal.type !== "StringLiteral") return null;
-    values.push(part.literal.value);
+const VALUE_WRAPPERS = new Set(["OverridableStringUnion", "NonNullable"]);
+
+/** 유니온을 펼쳐 문자열 리터럴 값을 모은다. 그 외 부분이 하나라도 있으면 false */
+function collectValues(t: TSType, ctx: Ctx, out: string[], depth = 0): boolean {
+  if (depth > 6) return false;
+  switch (t.type) {
+    case "TSUnionType":
+      return t.types.every((part) => collectValues(part, ctx, out, depth + 1));
+    case "TSParenthesizedType":
+      return collectValues(t.typeAnnotation, ctx, out, depth + 1);
+    case "TSUndefinedKeyword":
+    case "TSNullKeyword":
+      return true;
+    case "TSLiteralType":
+      if (t.literal.type !== "StringLiteral") return false;
+      out.push(t.literal.value);
+      return true;
+    case "TSTypeReference": {
+      if (t.typeName.type !== "Identifier" || !VALUE_WRAPPERS.has(t.typeName.name)) return false;
+      const first = t.typeParameters?.params[0];
+      return first ? collectValues(first, ctx, out, depth + 1) : false;
+    }
+    case "TSTypeOperator": {
+      if (t.operator !== "keyof") return false;
+      const q = t.typeAnnotation;
+      if (q.type !== "TSTypeQuery" || q.exprName.type !== "Identifier") return false;
+      const keys = ctx.consts.get(q.exprName.name);
+      if (!keys) return false;
+      out.push(...keys);
+      return true;
+    }
+    default:
+      return false;
   }
+}
+
+function stringLiteralValues(t: TSType, ctx: Ctx): string[] | null {
+  const raw: string[] = [];
+  if (!collectValues(t, ctx, raw)) return null;
+  const values = [...new Set(raw)];
   return values.length > 0 ? values : null;
 }
 
-function membersOf(code: string, elements: TSTypeElement[]): PropInfo[] {
+function membersOf(ctx: Ctx, elements: TSTypeElement[]): PropInfo[] {
+  const { code } = ctx;
   const out: PropInfo[] = [];
   for (const m of elements) {
     const name = memberName(m);
@@ -60,14 +172,43 @@ function membersOf(code: string, elements: TSTypeElement[]): PropInfo[] {
         info.type = textOf(code, ann);
       }
       info.required = m.optional !== true;
-      const values = ann ? stringLiteralValues(ann) : null;
+      const values = ann ? stringLiteralValues(ann, ctx) : null;
       if (values) info.values = values;
+      applyDoc(info, jsDocOf(m));
       out.push(info);
     } else if (m.type === "TSMethodSignature") {
-      out.push({ name, required: m.optional !== true });
+      const info: PropInfo = { name, required: m.optional !== true };
+      applyDoc(info, jsDocOf(m));
+      out.push(info);
     }
   }
   return out;
+}
+
+/** 최상위 `const X = { … }`(as const·satisfies 허용)의 키 */
+function collectConsts(body: Statement[]): Map<string, string[]> {
+  const consts = new Map<string, string[]>();
+  for (const raw of body) {
+    const stmt = unwrapExport(raw);
+    if (!stmt || stmt.type !== "VariableDeclaration") continue;
+    for (const d of stmt.declarations) {
+      if (d.id.type !== "Identifier" || !d.init) continue;
+      let init: Node = d.init;
+      while (init.type === "TSAsExpression" || init.type === "TSSatisfiesExpression" || init.type === "ParenthesizedExpression") {
+        init = init.expression;
+      }
+      if (init.type !== "ObjectExpression") continue;
+      const keys: string[] = [];
+      for (const p of init.properties) {
+        if (p.type !== "ObjectProperty" && p.type !== "ObjectMethod") continue;
+        if (p.computed) continue;
+        if (p.key.type === "Identifier") keys.push(p.key.name);
+        else if (p.key.type === "StringLiteral") keys.push(p.key.value);
+      }
+      consts.set(d.id.name, keys);
+    }
+  }
+  return consts;
 }
 
 interface LocalTypes {
@@ -94,14 +235,14 @@ function collectLocalTypes(body: Statement[]): LocalTypes {
   return { interfaces, aliases };
 }
 
-function literalMembers(code: string, t: TSType): Members | null {
-  if (t.type === "TSTypeLiteral") return { props: membersOf(code, t.members), inherits: [] };
-  if (t.type === "TSParenthesizedType") return literalMembers(code, t.typeAnnotation);
+function literalMembers(ctx: Ctx, t: TSType): Members | null {
+  if (t.type === "TSTypeLiteral") return { props: membersOf(ctx, t.members), inherits: [] };
+  if (t.type === "TSParenthesizedType") return literalMembers(ctx, t.typeAnnotation);
   if (t.type === "TSIntersectionType") {
     const result: Members = { props: [], inherits: [] };
     for (const part of t.types) {
-      if (part.type === "TSTypeLiteral") result.props.push(...membersOf(code, part.members));
-      else result.inherits.push(textOf(code, part));
+      if (part.type === "TSTypeLiteral") result.props.push(...membersOf(ctx, part.members));
+      else result.inherits.push(textOf(ctx.code, part));
     }
     return result;
   }
@@ -109,8 +250,8 @@ function literalMembers(code: string, t: TSType): Members | null {
 }
 
 /** 매개변수 타입 노드를 같은 파일 안에서만 따라가 멤버로 푼다 */
-function resolveType(code: string, t: TSType, local: LocalTypes): Members | null {
-  const direct = literalMembers(code, t);
+function resolveType(ctx: Ctx, t: TSType, local: LocalTypes): Members | null {
+  const direct = literalMembers(ctx, t);
   if (direct) return direct;
   if (t.type !== "TSTypeReference" || t.typeName.type !== "Identifier") return null;
   // 제네릭 인스턴스(Props<T>)는 따라가지 않는다.
@@ -120,14 +261,14 @@ function resolveType(code: string, t: TSType, local: LocalTypes): Members | null
   if (iface) {
     if (iface.typeParameters && iface.typeParameters.params.length > 0) return null;
     return {
-      props: membersOf(code, iface.body.body),
-      inherits: (iface.extends ?? []).map((e) => textOf(code, e)),
+      props: membersOf(ctx, iface.body.body),
+      inherits: (iface.extends ?? []).map((e) => textOf(ctx.code, e)),
     };
   }
   const alias = local.aliases.get(name);
   if (alias) {
     if (alias.typeParameters && alias.typeParameters.params.length > 0) return null;
-    return literalMembers(code, alias.typeAnnotation);
+    return literalMembers(ctx, alias.typeAnnotation);
   }
   return null;
 }
@@ -278,7 +419,57 @@ export function readComponentProps(code: string, file: string, name: string): Co
   if (!target) return null;
   const typeNode = target.typeArg ?? target.paramType;
   if (!typeNode) return null;
-  const resolved = resolveType(code, typeNode, collectLocalTypes(body));
+  const resolved = resolveType({ code, consts: collectConsts(body) }, typeNode, collectLocalTypes(body));
   if (!resolved) return null;
   return { props: resolved.props, inherits: resolved.inherits };
+}
+
+function parseBody(code: string, file: string): Statement[] | null {
+  try {
+    return parseTsx(code, file).program.body;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * 파일 최상위의 interface/type 별칭 `typeName` 멤버를 읽는다. readComponentProps와 같은 타입 해석 규칙
+ * (같은 파일만, 제네릭 선언은 따라가지 않음). 선언이 없거나 읽을 수 없으면 null.
+ */
+export function readTypeProps(code: string, file: string, typeName: string): ComponentProps | null {
+  const body = parseBody(code, file);
+  if (!body) return null;
+  const local = collectLocalTypes(body);
+  if (!local.interfaces.has(typeName) && !local.aliases.has(typeName)) return null;
+  const ref: TSType = {
+    type: "TSTypeReference",
+    typeName: { type: "Identifier", name: typeName },
+  } as TSType;
+  const resolved = resolveType({ code, consts: collectConsts(body) }, ref, local);
+  return resolved ? { props: resolved.props, inherits: resolved.inherits } : null;
+}
+
+/** 최상위 선언 `name`(export로 감싼 것 포함)의 JSDoc. 선언이 없거나 JSDoc이 없으면 null */
+export function readComponentDoc(code: string, file: string, name: string): ComponentDoc | null {
+  const body = parseBody(code, file);
+  if (!body) return null;
+  for (const raw of body) {
+    const stmt = unwrapExport(raw);
+    if (!stmt) continue;
+    let declares = false;
+    if ((stmt.type === "FunctionDeclaration" || stmt.type === "TSDeclareFunction") && stmt.id?.name === name) declares = true;
+    else if (stmt.type === "ClassDeclaration" && stmt.id?.name === name) declares = true;
+    else if (stmt.type === "VariableDeclaration") {
+      declares = stmt.declarations.some((d) => d.id.type === "Identifier" && d.id.name === name);
+    }
+    if (!declares) continue;
+    // export로 감싼 선언의 주석은 감싸는 노드에 붙는다.
+    const doc = jsDocOf(raw) ?? jsDocOf(stmt);
+    if (!doc) return null;
+    const out: ComponentDoc = {};
+    if (doc.description !== undefined) out.description = doc.description;
+    if (doc.deprecated !== undefined) out.deprecated = doc.deprecated;
+    return out.description === undefined && out.deprecated === undefined ? null : out;
+  }
+  return null;
 }

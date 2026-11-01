@@ -90,3 +90,6 @@ export type { ExplainOptions, ExplainResult } from "./decisions/explain.js";
 export { DEFAULT_MAX_OPTIONS, explainDecision } from "./decisions/explain.js";
 export type { ChooseOptions } from "./decisions/choose.js";
 export { chooseDecision } from "./decisions/choose.js";
+export type { ComponentDoc } from "./component/props.js";
+export { readComponentDoc, readTypeProps } from "./component/props.js";
+export { moduleOfFile } from "./component/definition.js";

@@ -1,5 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
+import { stripModulePath } from "../index/specifier.js";
 
 export const DEFINITION_EXTENSIONS: readonly string[] = [".tsx", ".ts", ".jsx", ".js"];
 
@@ -30,4 +31,12 @@ export async function resolveDefinitionFile(root: string, module: string): Promi
     if (await isFile(path.join(absRoot, candidate))) return candidate;
   }
   return null;
+}
+
+/**
+ * root 상대 파일 경로 → 인덱스 `ComponentUsage.module` 규칙의 키.
+ * 확장자(SOURCE_EXTENSION) 제거 → 끝 "/index" 제거(root index는 "index").
+ */
+export function moduleOfFile(file: string): string {
+  return stripModulePath(file.split(path.sep).join("/"));
 }

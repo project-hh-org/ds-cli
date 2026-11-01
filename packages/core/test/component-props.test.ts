@@ -12,7 +12,7 @@ describe("readComponentProps", () => {
     });
   });
 
-  it("interface + extends: 멤버는 required:false, extends는 inherits, keyof 타입은 values 없음", () => {
+  it("interface + extends: 멤버는 required:false, extends는 inherits, keyof typeof는 같은 파일 const 키를 values로", () => {
     const code = [
       `const variants = { primary: "", secondary: "" };`,
       `const sizes = { sm: "", md: "" };`,
@@ -24,8 +24,8 @@ describe("readComponentProps", () => {
     ].join("\n");
     expect(readComponentProps(code, F, "Button")).toEqual({
       props: [
-        { name: "variant", type: "keyof typeof variants", required: false },
-        { name: "size", type: "keyof typeof sizes", required: false },
+        { name: "variant", type: "keyof typeof variants", required: false, values: ["primary", "secondary"] },
+        { name: "size", type: "keyof typeof sizes", required: false, values: ["sm", "md"] },
       ],
       inherits: ["ButtonHTMLAttributes<HTMLButtonElement>"],
     });
