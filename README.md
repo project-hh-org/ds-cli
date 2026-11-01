@@ -10,9 +10,11 @@ audit     # 하드코딩 값 분포, 중복 컴포넌트, 토큰 후보 → .dsm
 install   # 쓰는 AI 도구를 감지해 슬래시 명령(/ds …)과 MCP 서버 등록을 레포에 내려씀 → .dsmith/install.json
 mcp       # MCP 서버(stdio). AI 도구가 띄운다 — 직접 실행할 일은 없음
 decide    # 중복·지역 재정의 컴포넌트의 결정 카드 보기(--list/--explain), 고른 결과 기록(--item/--choose) → .dsmith/decisions.json
+init      # audit 결과로 DS 초안 생성: W3C 토큰 파일·CSS 변수·TS 상수, 컴포넌트 골격, 커버리지 → design-system/
+ai        # DS에서 컴포넌트 카탈로그를 만들고 AGENTS.md의 DS 섹션을 갱신 → .dsmith/catalog.json
 ```
 
-> **MVP 상태:** 구현: `detect`·`audit`·`install`·`mcp`·`decide`. 계획: `init`(DS 초안 생성)·`ai`(DS 규칙을 AI 파일로 내려쓰기, 3b), `migrate`(토큰 치환 codemod), `guard`(ESLint 규칙·CI 드리프트 검사), `usage`(사용량 대시보드) — [설계 스펙](docs/superpowers/specs/2026-10-31-ds-cli-design.md) 참고.
+> **MVP 상태:** 구현: `detect`·`audit`·`install`·`mcp`·`decide`·`init`·`ai`. 계획: `migrate`(토큰 치환 codemod), `guard`(ESLint 규칙·CI 드리프트 검사), `usage`(사용량 대시보드) — [설계 스펙](docs/superpowers/specs/2026-10-31-ds-cli-design.md) 참고.
 
 0.1.0 배포 전까지는 빌드한 뒤 직접 실행한다. 배포는 릴리스 PR(`chore: 버전 올림`)을 머지하면 GitHub Actions가 자동으로 하며, 절차는 [docs/release.md](docs/release.md)에 있다.
 
@@ -27,6 +29,29 @@ node packages/cli/dist/bin.js audit --root <repo>
 ```
 npx dsmith audit        # 또는: pnpm dlx dsmith audit
 ```
+
+## DS 초안 (init · ai)
+
+`audit → decide → init → ai`. DS가 없는 레포(상태 0)는 `init`으로 초안을 만들고, DS가 있는 레포(상태 1·2)는 `ai`만으로 카탈로그를 만든다.
+
+| 산출 | 위치 | 내용 |
+| --- | --- | --- |
+| 토큰 파일 | `design-system/tokens.{json,css,ts}` | `json`은 W3C Design Tokens 2025.10 형식, `css`는 `:root` CSS 변수, `ts`는 TS 상수. 셋의 토큰 수가 같다 |
+| 컴포넌트 골격 | `design-system/components/<Name>.tsx` | 새 파일만. 결정한 항목(또는 `--all`의 추천안 상위 `--top`개)이 대상 |
+| 컴포넌트 카탈로그 | `.dsmith/catalog.json` | 로컬 DS 디렉터리 / npm 패키지의 `.d.ts` / `init` 산출에서 읽은 컴포넌트·props(허용 값 포함)·폐기 표시·토큰 |
+| AI 규칙 | `AGENTS.md`의 `<!-- dsmith:ds:start -->` … `<!-- dsmith:ds:end -->` | DS 위치, 자주 쓰는 컴포넌트, 폐기 예정, 토큰 파일, MCP 도구 안내. 그 밖의 줄은 건드리지 않는다 |
+
+```
+npx dsmith init --dry-run    # 쓸 파일과 diff, 토큰 수, 커버리지만 보기
+npx dsmith init --all        # 결정 없이 추천안으로 스캐폴드(상위 --top개, 기본 10)
+npx dsmith ai                # 카탈로그와 AGENTS.md DS 섹션
+```
+
+- 커버리지는 하드코딩 값 중 토큰으로 바꿀 수 있는 비율로, `migrate`가 바꿀 수 있는 예상치다. 색·글꼴 크기 토큰은 이 초안이 하드코딩 값에서 직접 만들기 때문에 사실상 간격·모서리 커버리지를 반영한다.
+- 쓰기 규칙: 토큰 파일은 사람이 고친 것을 `--force` 없이 덮어쓰지 않는다. 스캐폴드는 `--force`로도 덮어쓰지 않는다. `--dry-run`은 `.dsmith/`를 포함해 아무것도 쓰지 않는다. 두 번째 실행은 아무것도 바꾸지 않는다.
+- npm 패키지 DS(예: `@mui/material`)는 `node_modules`가 설치돼 있어야 `.d.ts`를 읽는다. 설치가 없으면 `ai`가 그렇게 알린다.
+- MCP 서버는 `.dsmith/catalog.json`이 있으면 그것을 먼저 읽는다: `get_component`가 `source: "catalog"`로 props·허용 값·폐기·사용 예를 답하고, `search_component`는 아직 쓰이지 않는 DS 컴포넌트도 찾고, `resolve_token`은 카탈로그 토큰을 `source: "catalog"`로 돌려준다. 카탈로그가 없으면 이전과 같이 사용처 인덱스에서 답한다.
+- Claude Code는 `CLAUDE.md`가 있으면 `AGENTS.md`를 읽지 않는다. `CLAUDE.md`에 `@AGENTS.md` 한 줄을 추가한다(`ai`가 필요할 때 알려 준다).
 
 ### 감지 결과 고치기 (`overrides`)
 
@@ -91,19 +116,21 @@ npx dsmith install       # 쓰는 AI 도구를 감지해 설치. 그 뒤 AI 도�
 
 | 명령 | 하는 일 |
 | --- | --- |
-| `/ds` | 상태(0·1·2)를 감지하고 알맞은 단계(audit → decide → check)를 순서대로 안내 |
+| `/ds` | 상태(0·1·2)를 감지하고 알맞은 단계(audit → decide → init → ai, check)를 순서대로 안내 |
 | `/ds-detect` | 스타일링 방식·DS·프레임워크·시작 상태 감지 결과 설명 |
 | `/ds-audit` | 하드코딩 값·중복 컴포넌트 진단 결과 설명 |
 | `/ds-decide` | 중복·지역 재정의 중 표준으로 삼을 것을 결정 카드로 비교하고, 사람이 고른 결과를 기록 |
 | `/ds-check` | 파일의 하드코딩 값을 찾아 토큰으로 바꿀 수정안 제안 |
-| `/ds-init` · `/ds-ai` · `/ds-migrate` | 아직 제공되지 않음 — 현재 가능한 단계를 안내 |
+| `/ds-init` | `init --dry-run`으로 토큰 수·커버리지·스캐폴드를 보여주고, 확인 뒤 실제로 DS 초안을 만듦 |
+| `/ds-ai` | `ai --dry-run`으로 카탈로그 요약을 보여주고, 확인 뒤 카탈로그와 AGENTS.md DS 섹션을 만듦 |
+| `/ds-migrate` | 아직 제공되지 않음 — 현재 가능한 단계를 안내 |
 
 MCP 서버 `dsmith`(`npx -y dsmith@<설치된 0.x 마이너> mcp` — 0.x는 마이너까지, 1.x 이상은 메이저까지 고정)가 AI 도구에 내는 도구 6개:
 
 - `resolve_token` — 하드코딩 값에 가장 가까운 디자인 토큰과 신뢰도
 - `lint_snippet` — 코드 조각의 하드코딩 스타일 값을 찾아 토큰 제안
 - `search_component` — 하려는 일(예: "날짜 선택")에 맞는 컴포넌트 검색
-- `get_component` — 컴포넌트의 props·사용 수·정의 파일(같은 이름이 여러 module이면 결정한 것 → DS → 사용 수 순으로 고르고 `isDs`·`decided`를 싣는다)
+- `get_component` — 컴포넌트의 props·사용 수·정의 파일(카탈로그가 있으면 카탈로그에서 답하고 `source: "catalog"`, 설명·폐기·사용 예를 더한다. 같은 이름이 여러 module이면 결정한 것 → DS·카탈로그 → 사용 수 순으로 고르고 `isDs`·`decided`를 싣는다)
 - `explain_decision` — 중복·지역 재정의 항목의 결정 카드(옵션·차이·영향·추천)
 - `list_decisions` — 결정할 항목과 이미 결정한 항목
 
@@ -140,9 +167,11 @@ node <abs>/packages/cli/dist/bin.js install --root <repo> --mcp-command "node <a
 - `packages/extractor-styled` — styled-components 태그 템플릿·객체 인자(emotion과 공유하는 CSS-in-JS 파서 포함)
 - `packages/extractor-emotion` — Emotion `css` 태그·`@emotion/styled`·`css` prop
 - `packages/extractor-mui-sx` — MUI `sx` prop
-- `packages/mcp-server` — MCP 서버(도구 6개·리소스 2개). core 함수를 부르는 얇은 핸들러와 응답 토큰 상한
+- `packages/mcp-server` — MCP 서버(도구 6개·리소스 2개). core 함수를 부르는 얇은 핸들러와 응답 토큰 상한. 카탈로그는 core `readCatalog`로 읽는다
+- `packages/init` — `dsmith init`: audit 결과로 W3C 토큰 파일·CSS 변수·TS 상수와 컴포넌트 골격을 쓰고 커버리지를 계산
+- `packages/catalog` — `dsmith ai`: 로컬 DS·npm `.d.ts`·init 산출에서 컴포넌트 카탈로그를 만들고 AGENTS.md DS 섹션을 갱신
 - `packages/agent-skill` — 도구 중립 슬래시 명령 소스 8개와 AI 도구별 렌더러 5개(Claude Code·Codex·Cursor·Gemini CLI·AGENTS.md), 도구 감지
-- `packages/cli` — `dsmith` 바이너리(`detect`·`audit`·`install`·`mcp`·`decide`), Extractor 레지스트리, 마크다운 리포트
+- `packages/cli` — `dsmith` 바이너리(`detect`·`audit`·`install`·`mcp`·`decide`·`init`·`ai`), Extractor 레지스트리, 마크다운 리포트
 - `fixtures/` — e2e용 최소 레포
 - `examples/legacy-demo` — 데모 대상 가상 어드민 앱
 

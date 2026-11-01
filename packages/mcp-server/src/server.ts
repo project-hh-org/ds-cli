@@ -80,7 +80,7 @@ export function createDsmithServer(deps: ServerDeps): Promise<McpServer> {
     "resolve_token",
     {
       description:
-        "Map a raw style value (#3B82F6, 13px, var(--x)) to the closest design token. distance is oklch ΔE_ok for colors and px for lengths; confidence is high for ΔE < 0.005 or 0px, medium for ΔE < 0.03 or ≤ 2px, else low. Pass property (padding, border-radius, ...) to compare only that category. Use before writing any hardcoded color or spacing.",
+        "Map a raw style value (#3B82F6, 13px, var(--x)) to the closest design token (source says where the token came from: token-file, catalog or proposal). distance is oklch ΔE_ok for colors and px for lengths; confidence is high for ΔE < 0.005 or 0px, medium for ΔE < 0.03 or ≤ 2px, else low. Pass property (padding, border-radius, ...) to compare only that category. Use before writing any hardcoded color or spacing.",
       inputSchema: z.object({ raw: z.string().min(1).max(MAX_TEXT), property: z.string().max(MAX_PROPERTY).optional() }),
       annotations: readOnly,
     },
@@ -114,7 +114,7 @@ export function createDsmithServer(deps: ServerDeps): Promise<McpServer> {
     "search_component",
     {
       description:
-        "Find existing components in this repo by intent (e.g. 'date picker', '버튼'). Returns up to limit matches (matched = count before limit). Use before creating a new component to avoid duplicates.",
+        "Find existing components in this repo by intent (e.g. 'date picker', '버튼'), including design-system components in the catalog that nothing uses yet. Returns up to limit matches (matched = count before limit); status scaffold marks an unimplemented shell made by dsmith init, listed after real implementations — do not use it in new UI. Use before creating a new component to avoid duplicates.",
       inputSchema: z.object({
         intent: z.string().min(1).max(MAX_TEXT),
         limit: z.number().int().min(1).max(50).optional(),
@@ -134,7 +134,7 @@ export function createDsmithServer(deps: ServerDeps): Promise<McpServer> {
     "get_component",
     {
       description:
-        "Get a component's props (with allowed values), variants, usage count and definition file from this repo. When several modules export the same name, returns the one chosen with decide, else the design-system one, else the most used (isDs and decided say which; the rest are in otherModules). Use before using or changing a component.",
+        "Get a component's props (with allowed values), variants, usage count and definition file from this repo. When the repo has a catalog (dsmith ai), the answer comes from it (source catalog: also description, deprecated, one usage example, origin); otherwise from the usage index and the definition file (source index). When several modules export the same name, returns the one chosen with decide, else the design-system or catalog one, else the most used (isDs and decided say which; the rest are in otherModules). status scaffold (with a note) means an unimplemented shell made by dsmith init. Use before using or changing a component.",
       inputSchema: z.object({ name: z.string().min(1).max(MAX_TEXT), module: z.string().max(MAX_TEXT).optional() }),
       annotations: readOnly,
     },
@@ -154,8 +154,8 @@ export function createDsmithServer(deps: ServerDeps): Promise<McpServer> {
     "explain_decision",
     {
       description:
-        "Explain a duplicate or locally redefined component: options, differences, impact of each choice and a recommendation. impact.byOption[x] = call sites and files that would have to change if x is chosen (not x's usage; usage is options[].usageCount). ruleCheck.tokenUsageRate[x] = share of the rated styles in x's definition file that already use a token; null = nothing rated. Use when several components do the same job and you must pick one.",
-      inputSchema: z.object({ item: z.string().min(1).max(MAX_TEXT), kind: z.enum(["duplicate", "local-definition"]).optional() }),
+        "Explain a duplicate or locally redefined component, or a token-cluster (kind token-cluster: options are near-identical color hex values to merge into one token; recommendation is by usage; ruleCheck is n/a): options, differences, impact of each choice and a recommendation. impact.byOption[x] = call sites and files that would have to change if x is chosen (not x's usage; usage is options[].usageCount). ruleCheck.tokenUsageRate[x] = share of the rated styles in x's definition file that already use a token; null = nothing rated. ruleCheck.tokenMatchRate[x] (only when the repo has token files) = share of those styles that use a token or hardcode a value within close range of one. Use when several components do the same job and you must pick one.",
+      inputSchema: z.object({ item: z.string().min(1).max(MAX_TEXT), kind: z.enum(["duplicate", "local-definition", "token-cluster"]).optional() }),
       annotations: readOnly,
     },
     async (args): Promise<CallToolResult> => {
@@ -174,7 +174,7 @@ export function createDsmithServer(deps: ServerDeps): Promise<McpServer> {
     "list_decisions",
     {
       description:
-        "List duplicate or locally redefined components that still need a decision, and the ones already decided (those carry chosen = the picked option id). Use to see which choices are open before building UI.",
+        "List duplicate or locally redefined components and token-cluster color groups (kind token-cluster; options are hex values) that still need a decision, and the ones already decided (those carry chosen = the picked option id; stale = true means the options changed since, so decide again). Use to see which choices are open before building UI.",
       inputSchema: z.object({ status: z.enum(["pending", "decided"]).optional(), cursor: z.string().max(MAX_CURSOR).optional() }),
       annotations: readOnly,
     },
@@ -188,13 +188,13 @@ export function createDsmithServer(deps: ServerDeps): Promise<McpServer> {
   server.registerResource(
     "tokens",
     "tokens://list",
-    { mimeType: "application/json", description: "Names of the design tokens available in this repo (source token-file, proposal or mixed)." },
+    { mimeType: "application/json", description: "Names of the design tokens available in this repo (source token-file, catalog, proposal or mixed)." },
     async (uri) => ({ contents: [{ uri: uri.href, text: toText(tokensList(await workspace())) }] }),
   );
   server.registerResource(
     "components",
     "components://list",
-    { mimeType: "application/json", description: "Components imported in this repo, most used first." },
+    { mimeType: "application/json", description: "Components of this repo's catalog (source catalog), or else the components imported in this repo, most used first (source index)." },
     async (uri) => ({ contents: [{ uri: uri.href, text: toText(componentsList(await workspace())) }] }),
   );
 

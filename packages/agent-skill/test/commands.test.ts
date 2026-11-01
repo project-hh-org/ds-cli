@@ -45,14 +45,31 @@ describe("loadCommands — 실제 명령 소스", () => {
     for (const c of await loadCommands()) expect(c.body, c.name).not.toMatch(/`\s[은는이가을를]\s/);
   });
 
-  it("3a에서 아직 없는 ds-init·ds-ai·ds-migrate는 uses가 비고 '아직 제공되지 않음'을 말한다", async () => {
+  it("아직 없는 ds-migrate만 uses가 비고 '아직 제공되지 않음'을 말한다", async () => {
     const commands = await loadCommands();
-    for (const name of ["ds-init", "ds-ai", "ds-migrate"]) {
-      const c = commands.find((x) => x.name === name);
-      expect(c?.uses, name).toEqual([]);
-      expect(c?.body, name).toContain("아직 제공되지 않음");
-      expect(c?.body, name).not.toMatch(/\d+\.\d+\.\d+/); // 버전 번호를 약속하지 않는다
+    const c = commands.find((x) => x.name === "ds-migrate");
+    expect(c?.uses).toEqual([]);
+    expect(c?.body).toContain("아직 제공되지 않음");
+    expect(c?.body).not.toMatch(/\d+\.\d+\.\d+/); // 버전 번호를 약속하지 않는다
+    for (const name of ["ds-init", "ds-ai"]) {
+      const body = commands.find((x) => x.name === name)?.body ?? "";
+      expect(body, name).not.toContain("아직 제공되지 않음");
     }
+  });
+
+  it("ds-init·ds-ai는 dry-run 미리보기를 먼저 부르고 같은 인자로 실제 실행을 안내한다", async () => {
+    const commands = await loadCommands();
+    const init = commands.find((c) => c.name === "ds-init");
+    expect(init?.uses).toEqual(["cli:init --dry-run", "mcp:list_decisions"]);
+    expect(init?.body).toContain("npx dsmith init --dry-run --json {{args}}");
+    expect(init?.body).toContain("npx dsmith init --json");
+    expect(init?.body).toContain("skipped-exists");
+    expect(init?.body).toContain("migrate가 바꿀 수 있는 예상치");
+    const ai = commands.find((c) => c.name === "ds-ai");
+    expect(ai?.uses).toEqual(["cli:ai --dry-run"]);
+    expect(ai?.body).toContain("npx dsmith ai --dry-run --json {{args}}");
+    expect(ai?.body).toContain("npx dsmith ai --json");
+    expect(ai?.body).toContain("npx dsmith install");
   });
 
   it("ds-audit은 기준 형식(args·uses·cli:audit)을 따른다", async () => {
@@ -74,8 +91,29 @@ describe("loadCommands — 실제 명령 소스", () => {
     const ds = (await loadCommands()).find((c) => c.name === "ds");
     expect(ds?.body).toContain("state");
     expect(ds?.body).toMatch(/audit.*decide.*init.*ai/s);
-    expect(ds?.body).toContain("아직 제공되지 않음");
+    expect(ds?.body).toContain("`/ds-migrate` 단계에 닿으면 \"아직 제공되지 않음\"");
+    expect(ds?.body).not.toContain("`/ds-init`, `/ds-ai`, `/ds-migrate` 단계");
     expect(ds?.body).toContain("직접 입력해 달라고 하고 멈춘다");
+  });
+
+  it("/ds는 상태 1·2에서도 ai를 거치게 안내하고 40줄 이하다", async () => {
+    const ds = (await loadCommands()).find((c) => c.name === "ds");
+    const body = ds?.body ?? "";
+    expect(body).toContain("- 0 (DS 없음): `/ds-audit` → `/ds-decide` → `/ds-init` → `/ds-ai`");
+    expect(body).toContain("- 1 (DS는 있으나 도입이 약함): `/ds-audit` → `/ds-decide` → `/ds-ai` → (`/ds-migrate`는 이후 릴리스)");
+    expect(body).toContain("- 2 (DS 사용 중): `/ds-ai` → `/ds-check`");
+    expect(body.split("\n").length).toBeLessThanOrEqual(40);
+  });
+
+  it("/ds-init은 {{args}}를 한 번만 쓰고 4단계에서 --all 선택을 붙이게 한다", async () => {
+    const init = (await loadCommands()).find((c) => c.name === "ds-init");
+    expect(init?.body.match(/\{\{args\}\}/g)).toHaveLength(1);
+    expect(init?.body).toContain("3단계에서 `--all`을 골랐으면 `--all`을 붙여");
+  });
+
+  it("/ds-audit은 중복이 없고 상태 0이면 /ds-init을 제안한다", async () => {
+    const audit = (await loadCommands()).find((c) => c.name === "ds-audit");
+    expect(audit?.body).toContain("없고 `detect.state`가 0이면 `/ds-init`");
   });
 });
 

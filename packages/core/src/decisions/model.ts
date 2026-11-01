@@ -32,10 +32,10 @@ export interface DecisionCard {
   item: string;
   kind: DecisionKind;
   /**
-   * `options[].styleValues`·`ruleCheck.tokenUsageRate`가 읽는 범위. "file" = 정의 파일 전체의 스타일이다.
-   * 그 컴포넌트 선언만 따로 가른 값이 아니므로, 한 파일에 컴포넌트가 여럿이면 다른 컴포넌트 값도 섞인다.
+   * `options[].styleValues`·`ruleCheck`가 읽는 범위. "file" = 정의 파일 전체의 스타일.
+   * "declaration" = 정의 파일에서 다른 최상위 컴포넌트 선언의 줄 범위를 적용한 스타일(실제로 뺀 스타일이 없을 수도 있다. 모듈 수준 상수는 남는다).
    */
-  styleScope: "file";
+  styleScope: "file" | "declaration";
   /** usageCount desc → id asc */
   options: DecisionOption[];
   /** 옵션 사이 값이 다른 aspect만. byOption 값은 "그 옵션에만 있는 것"(전체 옵션 기준, 카드에 실린 옵션만 키로 남는다) */
@@ -46,7 +46,15 @@ export interface DecisionCard {
    * tokenUsageRate: 정의 파일 rated 스타일 중 토큰 소스(source "token") 사용 비율(소수 4자리). 토큰 매처 기반이 아니다.
    * 분모에서 tailwind-default는 뺀다. 대상이 0이면 null. a11yNotes는 3a에서 생략
    */
-  ruleCheck: { tokenUsageRate: Record<string, number | null>; a11yNotes?: string[] };
+  ruleCheck: {
+    tokenUsageRate: Record<string, number | null>;
+    /**
+     * 정의 범위의 (token 소스 + 가장 가까운 토큰이 exact|close인 hardcoded) / (token 소스 + hardcoded) (소수 4자리). tailwind-default·dynamic은 분모에서 뺀다. 대상이 0이면 null.
+     * `ExplainOptions.tokens`가 비어 있지 않을 때만 있다.
+     */
+    tokenMatchRate?: Record<string, number | null>;
+    a11yNotes?: string[];
+  };
   /** `maxOptions`로 카드에서 뺀 옵션의 합계. 뺀 옵션이 없으면 필드 생략 */
   omittedOptions?: { count: number; callSites: number; files: number };
   /** git 없거나 정의 파일 없으면 그 옵션 생략, 전부 없으면 필드 생략 */
@@ -57,7 +65,7 @@ export interface DecisionCard {
     confidence: Confidence;
     rule: "ds-module" | "usage" | "token-rate" | "tie";
   };
-  decided?: { chosen: string; decidedAt: string; note?: string };
+  decided?: { chosen: string; decidedAt: string; note?: string; stale?: true };
 }
 
 export interface DecisionRecord {
@@ -81,4 +89,6 @@ export interface DecisionListItem {
   options: string[];
   status: "pending" | "decided";
   chosen?: string;
+  /** decided인데 chosen이 현재 선택지에 없다 — 다시 결정해야 한다 */
+  stale?: true;
 }

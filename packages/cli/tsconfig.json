@@ -7,6 +7,7 @@
   "include": ["src"],
   "references": [
     { "path": "../agent-skill" },
+    { "path": "../catalog" },
     { "path": "../core" },
     { "path": "../detect" },
     { "path": "../extractor-api" },
@@ -16,6 +17,7 @@
     { "path": "../extractor-styled" },
     { "path": "../extractor-emotion" },
     { "path": "../extractor-mui-sx" },
+    { "path": "../init" },
     { "path": "../mcp-server" }
   ]
 }

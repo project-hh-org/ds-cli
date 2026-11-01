@@ -1,6 +1,7 @@
 import path from "node:path";
 import { Command } from "commander";
 import { AI_TOOLS, type AiTool } from "@dsmith-dev/agent-skill";
+import { AI_FROM, formatAiSummary, runAiCommand } from "./commands/ai.js";
 import { runAudit } from "./commands/audit.js";
 import {
   explainJson,
@@ -11,6 +12,7 @@ import {
   runDecideList,
 } from "./commands/decide.js";
 import { detectHints, formatDetectSummary, runDetect } from "./commands/detect.js";
+import { runInitCommand } from "./commands/init.js";
 import { formatInstallSummary, runInstall } from "./commands/install.js";
 import { runMcp } from "./commands/mcp.js";
 import { auditWarnings } from "./report/audit-report.js";
@@ -45,8 +47,16 @@ interface DecideOptions {
   git: boolean;
 }
 
-const DECIDE_KINDS = ["duplicate", "local-definition"] as const;
+const DECIDE_KINDS = ["duplicate", "local-definition", "token-cluster"] as const;
 type DecideKind = (typeof DECIDE_KINDS)[number];
+
+interface AiCliOptions {
+  root: string;
+  json?: boolean;
+  from: string;
+  dryRun?: boolean;
+  force?: boolean;
+}
 
 interface McpOptions {
   root?: string;
@@ -63,6 +73,16 @@ interface InstallCliOptions {
   dryRun?: boolean;
   force?: boolean;
   mcpCommand?: string;
+}
+
+interface InitCliOptions {
+  root: string;
+  json?: boolean;
+  out?: string;
+  all?: boolean;
+  top?: string;
+  dryRun?: boolean;
+  force?: boolean;
 }
 
 /** `dsmith` 커맨드 트리. 실행(parse)은 bin.ts가 하고, 테스트는 이 트리를 직접 들여다본다. */
@@ -104,7 +124,7 @@ export function buildProgram(): Command {
     .option("--limit <n>", "--list에 보일 최대 항목 수(기본: 전부)")
     .option("--explain <item>", "항목의 결정 카드(옵션·차이·영향·추천)")
     .option("--no-git", "--explain에서 git 이력을 읽지 않는다")
-    .option("--kind <kind>", "같은 이름이 duplicate와 local-definition 둘 다일 때 종류 지정")
+    .option("--kind <kind>", "종류 지정(duplicate | local-definition | token-cluster). 같은 이름이 둘 이상일 때 필요")
     .option("--item <name>", "--choose로 결정할 항목")
     .option("--choose <id>", "--item의 선택지 id를 결정으로 기록")
     .option("--note <text>", "--choose에 남길 메모")
@@ -190,6 +210,46 @@ export function buildProgram(): Command {
       process.stdout.write(opts.json ? `${JSON.stringify(result, null, 2)}\n` : `${formatInstallSummary(result)}\n`);
       // 스킬·명령을 하나도 못 썼으면 설치가 안 된 것이다.
       if (result.allSkillsSkipped === true) process.exitCode = 1;
+    });
+
+  program
+    .command("ai")
+    .description(
+      "이 레포의 DS에서 컴포넌트 카탈로그(.dsmith/catalog.json)를 만들고 AGENTS.md의 DS 섹션을 갱신. 사용자가 고친 섹션은 --force 없이 덮어쓰지 않음",
+    )
+    .option("--root <dir>", "대상 레포 경로", process.cwd())
+    .option("--json", "결과를 JSON으로만 stdout에 출력")
+    .option("--from <source>", `DS 소스(${AI_FROM.join(" | ")}). auto: detect.ds, 없으면 init 산출`, "auto")
+    .option("--dry-run", "아무것도 쓰지 않고 쓸 내용과 diff만 출력")
+    .option("--force", "사용자가 고친 DS 섹션도 덮어쓴다")
+    .action(async (opts: AiCliOptions) => {
+      if (!(AI_FROM as readonly string[]).includes(opts.from)) {
+        throw new Error(`--from은 ${AI_FROM.join(" | ")} 중 하나여야 합니다: ${opts.from}`);
+      }
+      const result = await runAiCommand({
+        root: opts.root,
+        from: opts.from as (typeof AI_FROM)[number],
+        ...(opts.dryRun === true ? { dryRun: true } : {}),
+        ...(opts.force === true ? { force: true } : {}),
+      });
+      process.stdout.write(opts.json ? `${JSON.stringify(result, null, 2)}\n` : `${formatAiSummary(result)}\n`);
+    });
+
+  program
+    .command("init")
+    .description(
+      "audit 결과로 W3C 토큰 파일(tokens.json·css·ts)과 컴포넌트 스캐폴드를 만들고 커버리지를 보고한다. 사용자가 고친 토큰 파일은 --force 없이 덮어쓰지 않고, 기존 스캐폴드는 --force여도 덮어쓰지 않음",
+    )
+    .option("--root <dir>", "대상 레포 경로", process.cwd())
+    .option("--json", "결과를 JSON으로만 stdout에 출력")
+    .option("--out <dir>", "산출 디렉터리(레포 안 상대 경로, 기본 design-system)")
+    .option("--all", "결정 없이 추천안으로 스캐폴드(상위 --top개)")
+    .option("--top <n>", "--all에서 스캐폴드할 컴포넌트 수(기본 10)")
+    .option("--dry-run", "아무것도 쓰지 않고 쓸 파일과 diff만 출력")
+    .option("--force", "사용자가 고친 토큰 파일도 덮어쓴다(스캐폴드는 제외)")
+    .action(async (opts: InitCliOptions) => {
+      const { result, text } = await runInitCommand(opts);
+      process.stdout.write(opts.json ? `${JSON.stringify(result, null, 2)}\n` : `${text}\n`);
     });
 
   return program;

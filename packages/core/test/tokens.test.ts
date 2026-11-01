@@ -6,8 +6,11 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { normalizeColor } from "../src/normalize/color.js";
 import { normalizeLength } from "../src/normalize/length.js";
 import { rankTokens } from "../src/match/token-matcher.js";
-import { loadTokens, tokenCategoryOf } from "../src/tokens/load.js";
+import { loadTokens, tokenCategoryOf, tokensFromCatalog } from "../src/tokens/load.js";
 import { proposalTokens } from "../src/tokens/proposal.js";
+import { buildTokenDraft } from "../src/tokens/draft.js";
+import { emitTokensCss, emitTokensTs } from "../src/tokens/emit.js";
+import { serializeW3c } from "../src/tokens/w3c.js";
 import { readCssVariableTokens } from "../src/tokens/css-variables.js";
 
 function colorUsage(raw: string, property: StyleUsage["property"] = "color"): StyleUsage {
@@ -388,5 +391,78 @@ describe("loadTokens — 카테고리별 폴백 (I4b·M1·M5)", () => {
     expect(loaded.tokens.filter((t) => t.name === "--c")).toHaveLength(1);
     expect(loaded.tokens.find((t) => t.name === "--c")?.normalized).toMatchObject({ hex: "#111111" });
     expect(loaded.tokens.find((t) => t.name === "--brand")?.normalized).toMatchObject({ hex: "#ff0000" });
+  });
+});
+
+describe("loadTokens .json", () => {
+  let dir: string;
+  beforeEach(() => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), "dsmith-tokens-json-"));
+  });
+  afterEach(() => {
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("init 산출 3종은 중복 없이 token-file로 읽고 tokens.ts는 ignored에 넣지 않는다", async () => {
+    const draft = buildTokenDraft([colorUsage("#3b82f6"), colorUsage("#111111"), lengthUsage("8px")]);
+    fs.mkdirSync(path.join(dir, "design-system"));
+    fs.writeFileSync(path.join(dir, "design-system/tokens.json"), serializeW3c(draft));
+    fs.writeFileSync(path.join(dir, "design-system/tokens.css"), emitTokensCss(draft));
+    fs.writeFileSync(path.join(dir, "design-system/tokens.ts"), emitTokensTs(draft));
+    const loaded = await loadTokens(
+      dir,
+      ["design-system/tokens.json", "design-system/tokens.css", "design-system/tokens.ts"],
+      [],
+    );
+    expect(loaded.source).toBe("token-file");
+    expect(loaded.tokens).toHaveLength(draft.tokens.length);
+    expect(loaded.ignored).toEqual([]);
+    expect(loaded.tokens.every((t) => t.file === "design-system/tokens.css")).toBe(true);
+  });
+
+  it("깨진 tokens.json은 warnings·ignored에 싣고 제안으로 채운다", async () => {
+    fs.writeFileSync(path.join(dir, "tokens.json"), "{oops");
+    const loaded = await loadTokens(dir, ["tokens.json"], [colorUsage("#ef4444")]);
+    expect(loaded.warnings).toContain("토큰 JSON을 읽을 수 없음: tokens.json");
+    expect(loaded.ignored).toEqual(["tokens.json"]);
+    expect(loaded.source).toBe("proposal");
+  });
+
+  it("json만 있으면 file이 json이다", async () => {
+    fs.writeFileSync(
+      path.join(dir, "tokens.json"),
+      JSON.stringify({ color: { brand: { $type: "color", $value: "#3b82f6" } } }),
+    );
+    const loaded = await loadTokens(dir, ["tokens.json"], []);
+    expect(loaded.tokens).toEqual([expect.objectContaining({ name: "--color-brand", source: "token-file", file: "tokens.json" })]);
+  });
+});
+
+describe("tokensFromCatalog", () => {
+  const colorTokens = [
+    { name: "--color-primary", value: "#3b82f6", category: "color" as const, file: "design-system/tokens.json" },
+  ];
+
+  it("색만 있는 카탈로그 토큰 + 간격 usage → mixed, 색은 catalog·간격은 proposal", () => {
+    const loaded = tokensFromCatalog(colorTokens, [lengthUsage("12px"), lengthUsage("12px")]);
+    expect(loaded.source).toBe("mixed");
+    expect(loaded.tokens.filter((t) => t.source === "catalog").map((t) => t.name)).toEqual(["--color-primary"]);
+    expect(loaded.tokens.find((t) => t.source === "catalog")?.file).toBe("design-system/tokens.json");
+    expect(loaded.tokens.filter((t) => t.source === "proposal").every((t) => t.category === "spacing")).toBe(true);
+    expect(loaded.tokens.some((t) => t.source === "proposal")).toBe(true);
+  });
+
+  it("모든 카테고리가 카탈로그에 있으면 제안 없이 catalog", () => {
+    const loaded = tokensFromCatalog(
+      [
+        ...colorTokens,
+        { name: "--space-2", value: "8px", category: "spacing" as const, file: "t.json" },
+        { name: "--radius-md", value: "6px", category: "radius" as const, file: "t.json" },
+        { name: "--font-size-md", value: "14px", category: "font-size" as const, file: "t.json" },
+      ],
+      [lengthUsage("12px")],
+    );
+    expect(loaded.source).toBe("catalog");
+    expect(loaded.tokens.every((t) => t.source === "catalog")).toBe(true);
   });
 });

@@ -3,9 +3,14 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import {
   loadTokens,
+  readCatalog,
   readDecisions,
   readIndex,
+  recordedTokenFiles,
+  staleCatalogTokenFiles,
   summarizeComponents,
+  tokensFromCatalog,
+  type Catalog,
   type ComponentSummary,
   type DecisionsFile,
   type Index,
@@ -14,6 +19,7 @@ import {
 } from "@dsmith-dev/core";
 import { isDsSpecifier, readDetect, type DetectResult } from "@dsmith-dev/detect";
 import type { ServerDeps } from "./index.js";
+import { buildCandidates } from "./rank.js";
 
 export interface Workspace {
   root: string;
@@ -21,10 +27,14 @@ export interface Workspace {
   index: Index;
   /** summarizeComponents(index.components) */
   components: ComponentSummary[];
-  /** loadTokens(root, detect.ds.tokenFiles, index.styles) */
+  /** `.dsmith/catalog.json` (mtime+size 키로 다시 읽는다. 읽기에 실패하면 이전 값을 유지) */
+  catalog: Catalog | null;
+  /** 검색·조회 후보: components ∪ 카탈로그 항목(같은 name+module이면 합치고, 인덱스에 없으면 사용 0회) */
+  candidates: ComponentSummary[];
+  /** 카탈로그에 토큰이 있으면 tokensFromCatalog(catalog.tokens, index.styles), 아니면 loadTokens(root, detect.ds.tokenFiles, index.styles) */
   tokens: LoadedTokens;
-  /** 토큰 이름 → 출처(토큰 파일 / audit 제안). tokens가 바뀔 때만 다시 만든다 */
-  tokenSources: Map<string, "token-file" | "proposal">;
+  /** 토큰 이름 → 출처(토큰 파일 / audit 제안 / 카탈로그). tokens가 바뀔 때만 다시 만든다 */
+  tokenSources: Map<string, "token-file" | "proposal" | "catalog">;
   decisions: DecisionsFile;
   isDsModule: (module: string) => boolean;
   /** 읽은 파일들의 변경 키를 합친 짧은 해시. 데이터가 바뀌었는지 cursor가 확인하는 데 쓴다 */
@@ -36,12 +46,13 @@ export interface WorkspaceHandle {
 }
 
 const DSMITH_DIR = ".dsmith";
-const CSS_FILE = /\.(css|scss)$/i;
+const TOKEN_FILE = /\.(css|scss|json)$/i;
 
 interface Stamps {
   index: string;
   detect: string;
   decisions: string;
+  catalog: string;
   tokens: string;
 }
 
@@ -56,7 +67,7 @@ async function stamp(file: string): Promise<string> {
 }
 
 async function tokenStamp(root: string, tokenFiles: string[]): Promise<string> {
-  const parts = await Promise.all(tokenFiles.filter((f) => CSS_FILE.test(f)).map((f) => stamp(path.resolve(root, f))));
+  const parts = await Promise.all(tokenFiles.filter((f) => TOKEN_FILE.test(f)).map((f) => stamp(path.resolve(root, f))));
   return parts.join("|");
 }
 
@@ -64,7 +75,7 @@ function messageOf(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
-function sourcesOf(tokens: LoadedTokens): Map<string, "token-file" | "proposal"> {
+function sourcesOf(tokens: LoadedTokens): Map<string, "token-file" | "proposal" | "catalog"> {
   return new Map(tokens.tokens.map((t) => [t.name, t.source]));
 }
 
@@ -97,6 +108,7 @@ export async function openWorkspace(deps: ServerDeps): Promise<WorkspaceHandle> 
       index: await stamp(dsmith("index.json")),
       detect: await stamp(dsmith("detect.json")),
       decisions: await stamp(dsmith("decisions.json")),
+      catalog: await stamp(dsmith("catalog.json")),
     };
     const stamps: Stamps = { ...now, tokens: prevStamps?.tokens ?? "" };
     const changed = (k: "index" | "detect" | "decisions"): boolean => prevStamps === null || prevStamps[k] !== now[k];
@@ -122,16 +134,42 @@ export async function openWorkspace(deps: ServerDeps): Promise<WorkspaceHandle> 
     }
     const decisions = (await piece("decisions", "decisions.json", () => readDecisions(root), prev?.decisions)) ?? { version: 1 as const, items: [] };
 
+    // 카탈로그: 읽기에 실패하면 이전 값을 유지한다(이전 값이 없으면 null, 파일이 바뀔 때까지 다시 읽지 않는다).
+    let catalog: Catalog | null = prev?.catalog ?? null;
+    if (prevStamps === null || prevStamps.catalog !== now.catalog) {
+      try {
+        catalog = await readCatalog(root);
+      } catch (err) {
+        log(`dsmith mcp: ${DSMITH_DIR}/catalog.json을 읽지 못해 ${catalog === null ? "카탈로그 없이 진행함" : "이전 카탈로그를 유지함"}: ${messageOf(err)}`);
+        if (catalog !== null && prevStamps !== null) stamps.catalog = prevStamps.catalog;
+      }
+    }
+
     const components = index === prev?.index ? prev.components : summarizeComponents(index.components);
+    const candidates = index === prev?.index && catalog === prev.catalog ? prev.candidates : buildCandidates(components, catalog);
     const isDsModule = detect === prev?.detect ? prev.isDsModule : (m: string): boolean => isDsSpecifier(m, detect.ds);
 
-    // 토큰 파일의 키도 읽기 전에 잡는다.
-    const tokensStamp = await tokenStamp(root, detect.ds.tokenFiles);
+    // 토큰 파일의 키도 읽기 전에 잡는다. 카탈로그가 읽은 토큰 파일(init 산출 tokens.json 등)도 포함한다.
+    const tokenFiles = [...new Set([...detect.ds.tokenFiles, ...(catalog === null ? [] : recordedTokenFiles(catalog).map((f) => f.file))])];
+    const tokensStamp = await tokenStamp(root, tokenFiles);
     let tokens = prev?.tokens;
     let tokenSources = prev?.tokenSources;
-    if (tokens === undefined || index !== prev?.index || detect !== prev.detect || tokensStamp !== prevStamps?.tokens) {
+    if (tokens === undefined || index !== prev?.index || detect !== prev.detect || catalog !== prev.catalog || tokensStamp !== prevStamps?.tokens) {
       try {
-        tokens = await loadTokens(root, detect.ds.tokenFiles, index.styles);
+        // 카탈로그에 토큰이 있으면 카탈로그가 먼저다 — 단, `dsmith ai`가 기록한 토큰 파일 해시가 지금 파일과 다르면 낡은 값이라 토큰 파일에서 다시 읽는다.
+        // 토큰이 없으면 3a 경로(토큰 파일 → audit 제안).
+        let useCatalog = catalog !== null && Array.isArray(catalog.tokens) && catalog.tokens.length > 0;
+        if (useCatalog && catalog !== null) {
+          const stale = await staleCatalogTokenFiles(root, catalog);
+          if (stale.length > 0) {
+            log(`dsmith mcp: 토큰 파일이 카탈로그 생성 뒤에 바뀜(${stale.join(", ")}) — 카탈로그 토큰 대신 토큰 파일에서 읽음. \`dsmith ai\`로 카탈로그를 갱신하세요`);
+            useCatalog = false;
+          }
+        }
+        tokens =
+          useCatalog && catalog !== null
+            ? tokensFromCatalog(catalog.tokens, index.styles)
+            : await loadTokens(root, tokenFiles, index.styles);
         tokenSources = sourcesOf(tokens);
         stamps.tokens = tokensStamp;
       } catch (err) {
@@ -144,7 +182,7 @@ export async function openWorkspace(deps: ServerDeps): Promise<WorkspaceHandle> 
     }
     if (tokens === undefined || tokenSources === undefined) throw new Error("토큰을 읽을 수 없음");
 
-    const ws: Workspace = { root, detect, index, components, tokens, tokenSources, decisions, isDsModule, version: versionOf(stamps) };
+    const ws: Workspace = { root, detect, index, components, catalog, candidates, tokens, tokenSources, decisions, isDsModule, version: versionOf(stamps) };
     return { ws, stamps };
   }
 
@@ -175,7 +213,9 @@ export async function openWorkspace(deps: ServerDeps): Promise<WorkspaceHandle> 
   };
 }
 
-/** LoadedTokens.source("mixed" 포함)를 응답용 TokenSourceKind로 바꾼다. 섞였으면 토큰 파일이 주 출처다. */
+/** LoadedTokens를 응답용 TokenSourceKind로 바꾼다: 전부 제안 → proposal, 전부 카탈로그 출처 → catalog, 그 외(섞임 포함)는 토큰 파일이 주 출처다. */
 export function tokenSourceKind(tokens: LoadedTokens): TokenSourceKind {
-  return tokens.source === "proposal" ? "proposal" : "token-file";
+  if (tokens.source === "proposal") return "proposal";
+  if (tokens.tokens.length > 0 && tokens.tokens.every((t) => t.source === "catalog")) return "catalog";
+  return "token-file";
 }

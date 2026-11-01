@@ -2,7 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { DEFINITION_EXTENSIONS, resolveDefinitionFile } from "../src/component/definition.js";
+import { DEFINITION_EXTENSIONS, moduleOfFile, resolveDefinitionFile } from "../src/component/definition.js";
 
 let tmp: string;
 beforeEach(() => {
@@ -40,5 +40,27 @@ describe("resolveDefinitionFile", () => {
     expect(await resolveDefinitionFile(tmp, "src/d")).toBeNull();
     expect(await resolveDefinitionFile(tmp, "")).toBeNull();
     expect(await resolveDefinitionFile(tmp, "../outside")).toBeNull();
+  });
+});
+
+describe("moduleOfFile", () => {
+  it("확장자와 끝 /index를 떼고, root index는 index", () => {
+    expect(moduleOfFile("components/ui/Button.tsx")).toBe("components/ui/Button");
+    expect(moduleOfFile("src/b/index.ts")).toBe("src/b");
+    expect(moduleOfFile("index.tsx")).toBe("index");
+  });
+
+  it(".d.ts 계열은 .d까지 뗀다", () => {
+    expect(moduleOfFile("Button/Button.d.ts")).toBe("Button/Button");
+    expect(moduleOfFile("Button/index.d.mts")).toBe("Button");
+  });
+
+  it("resolveDefinitionFile과 왕복한다", async () => {
+    write("src/a/Button.tsx");
+    write("src/b/index.ts");
+    write("index.tsx");
+    for (const f of ["src/a/Button.tsx", "src/b/index.ts", "index.tsx"]) {
+      expect(await resolveDefinitionFile(tmp, moduleOfFile(f))).toBe(f);
+    }
   });
 });

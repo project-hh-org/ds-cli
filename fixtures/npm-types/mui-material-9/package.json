@@ -1,0 +1,22 @@
+{
+  "name": "@mui/material",
+  "version": "9.5.0",
+  "license": "MIT",
+  "types": "./index.d.ts",
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./index.d.mts",
+        "default": "./index.mjs"
+      },
+      "require": {
+        "types": "./index.d.ts",
+        "default": "./index.js"
+      },
+      "default": {
+        "types": "./index.d.mts",
+        "default": "./index.mjs"
+      }
+    }
+  }
+}

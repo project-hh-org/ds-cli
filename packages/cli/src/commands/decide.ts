@@ -3,8 +3,11 @@ import {
   chooseDecision,
   explainDecision,
   listDecisions,
+  loadTokens,
+  readCatalog,
   readDecisions,
   readIndex,
+  tokensFromCatalog,
   type DecisionKind,
   type DecisionListItem,
   type DecisionRecord,
@@ -19,6 +22,7 @@ interface Audited {
   root: string;
   index: Index;
   isDsModule: (module: string) => boolean;
+  tokenFiles: string[];
 }
 
 /** audit이 남긴 .dsmith/index.json·detect.json을 읽는다. 없으면 안내 에러. */
@@ -26,7 +30,7 @@ async function loadAudited(rootArg: string): Promise<Audited> {
   const root = path.resolve(rootArg);
   const [index, detected] = await Promise.all([readIndex(root), readDetect(root)]);
   if (index === null || detected === null) throw new Error(NEED_AUDIT);
-  return { root, index, isDsModule: (m) => isDsSpecifier(m, detected.ds) };
+  return { root, index, isDsModule: (m) => isDsSpecifier(m, detected.ds), tokenFiles: detected.ds.tokenFiles };
 }
 
 export async function runDecideList(rootArg: string, status?: "pending" | "decided"): Promise<DecisionListItem[]> {
@@ -39,11 +43,21 @@ export async function runDecideExplain(
   item: string,
   opts: { git?: boolean; kind?: DecisionKind } = {},
 ): Promise<ExplainResult> {
-  const { root, index, isDsModule } = await loadAudited(rootArg);
+  const { root, index, isDsModule, tokenFiles } = await loadAudited(rootArg);
   const decisions = await readDecisions(root);
+  // 토큰 파일·카탈로그의 토큰만 매처에 쓴다(proposal 없음). MCP 서버와 같은 우선순위: 카탈로그에 토큰이 있으면 카탈로그. 못 읽으면 일치율 없이 진행한다.
+  const catalog = await readCatalog(root).catch(() => null);
+  const tokens =
+    catalog !== null && Array.isArray(catalog.tokens) && catalog.tokens.length > 0
+      ? tokensFromCatalog(catalog.tokens, []).tokens
+      : await loadTokens(root, tokenFiles, []).then(
+          (loaded) => loaded.tokens,
+          () => [],
+        );
   return explainDecision(root, index, item, {
     isDsModule,
     decisions,
+    ...(tokens.length > 0 ? { tokens } : {}),
     ...(opts.git === undefined ? {} : { git: opts.git }),
     ...(opts.kind === undefined ? {} : { kind: opts.kind }),
   });
@@ -70,7 +84,8 @@ export function formatDecideList(items: DecisionListItem[], limit?: number): str
   const shown = limit === undefined ? items : items.slice(0, limit);
   for (const i of shown) {
     const tail = i.status === "decided" ? `결정: ${i.chosen ?? ""}` : `선택지 ${i.options.length}개`;
-    lines.push(`- [${i.status}] ${i.item} (${i.kind}) — ${tail}`);
+    const stale = i.stale ? " (stale — 선택지가 바뀜, 다시 결정)" : "";
+    lines.push(`- [${i.status}] ${i.item} (${i.kind}) — ${tail}${stale}`);
   }
   if (shown.length < items.length) lines.push(`… 외 ${items.length - shown.length}건 (--limit 조정)`);
   return lines.join("\n");

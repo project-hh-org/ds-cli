@@ -287,3 +287,57 @@ describe("dsmith decide (bin)", { timeout: 30_000 }, () => {
     expect(r.stdout).toContain("비슷한 항목: Button");
   });
 });
+
+describe("dsmith decide --kind token-cluster", { timeout: 30_000 }, () => {
+  const run = (root: string, ...args: string[]) =>
+    spawnSync(process.execPath, [bin, "decide", ...args, "--root", root], { encoding: "utf-8" });
+
+  /** legacy-demo 인덱스의 hardcoded 색 hex 둘로 token-cluster 기록을 심는다. */
+  async function seeded(): Promise<{ root: string; hexes: string[] }> {
+    const root = await audited("examples", "legacy-demo");
+    const index = JSON.parse(fs.readFileSync(path.join(root, ".dsmith", "index.json"), "utf-8")) as {
+      styles: { source: string; normalized: { kind: string; hex?: string } }[];
+    };
+    const hexes = [
+      ...new Set(index.styles.filter((s) => s.source === "hardcoded" && s.normalized.kind === "color").map((s) => s.normalized.hex as string)),
+    ].slice(0, 2);
+    expect(hexes).toHaveLength(2);
+    fs.writeFileSync(
+      path.join(root, ".dsmith", "decisions.json"),
+      JSON.stringify({ version: 1, items: [{ item: "blue-400", kind: "token-cluster", status: "pending", options: hexes }] }),
+    );
+    return { root, hexes };
+  }
+
+  it("--explain --json은 token-cluster 카드를 쓴다", async () => {
+    const { root, hexes } = await seeded();
+    const r = run(root, "--explain", "blue-400", "--kind", "token-cluster", "--json");
+    expect(r.status).toBe(0);
+    const card = JSON.parse(r.stdout);
+    expect(card).toMatchObject({ item: "blue-400", kind: "token-cluster" });
+    expect(card.options.map((o: { id: string }) => o.id).sort()).toEqual([...hexes].sort());
+  });
+
+  it("--choose는 기록하고 --list에 token-cluster가 나온다", async () => {
+    const { root, hexes } = await seeded();
+    const chosen = hexes[1] as string;
+    expect(run(root, "--item", "blue-400", "--choose", chosen, "--kind", "token-cluster").stdout).toBe(
+      `결정 기록: blue-400 → ${chosen} (.dsmith/decisions.json)\n`,
+    );
+    const list = JSON.parse(run(root, "--list", "--json").stdout) as { item: string; kind: string; status: string }[];
+    expect(list.find((i) => i.item === "blue-400")).toMatchObject({ kind: "token-cluster", status: "decided" });
+    expect(run(root, "--item", "blue-400", "--choose", "#000001", "--kind", "token-cluster").status).toBe(1);
+  });
+
+  it("선택 뒤 선택지가 바뀌면 --list가 stale을 표시한다", async () => {
+    const { root, hexes } = await seeded();
+    fs.writeFileSync(
+      path.join(root, ".dsmith", "decisions.json"),
+      JSON.stringify({
+        version: 1,
+        items: [{ item: "blue-400", kind: "token-cluster", status: "decided", options: hexes, chosen: "#000001" }],
+      }),
+    );
+    expect(run(root, "--list").stdout).toContain("— 결정: #000001 (stale — 선택지가 바뀜, 다시 결정)");
+  });
+});

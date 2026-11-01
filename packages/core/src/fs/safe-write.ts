@@ -22,6 +22,12 @@ export interface PlannedWrite {
   region: ManagedRegion;
   /** file/block: 텍스트(끝 개행 하나로 정규화), json-key: JSON.stringify(value) */
   content: string;
+  /**
+   * 기본 managed(매니페스트 해시로 사용자 수정을 지킨다).
+   * create-only: 새 파일만 쓴다 — region은 file만 허용. 이미 있으면 내용이 같을 때 unchanged, 다르면 `force`여도
+   * skipped-exists(덮어쓰지 않음, diff 없음).
+   */
+  mode?: "managed" | "create-only";
 }
 
 export type WriteStatus =
@@ -30,7 +36,8 @@ export type WriteStatus =
   | "unchanged"
   | "skipped-modified"
   | "skipped-unowned"
-  | "skipped-invalid";
+  | "skipped-invalid"
+  | "skipped-exists";
 
 export interface WriteOutcome {
   /** displayRoot 상대(밖이면 `~/` 또는 절대) — 표시용 */
@@ -81,6 +88,11 @@ export interface WriteManifest {
 
 const sha256 = (text: string): string => createHash("sha256").update(text).digest("hex");
 const toLf = (text: string): string => text.replace(/\r\n/g, "\n");
+
+/** 매니페스트에 기록되는 해시와 같은 방식으로 파일 전체 텍스트(BOM·CRLF 무시)의 sha256을 낸다 — `file` 영역 비교용. */
+export function managedFileHash(text: string): string {
+  return sha256(toLf(text.startsWith("﻿") ? text.slice(1) : text));
+}
 const toPosix = (p: string): string => p.split(path.sep).join("/");
 const BOM = "﻿";
 
@@ -496,6 +508,9 @@ export async function safeWrite(writes: PlannedWrite[], opts: SafeWriteOptions):
   const outcomes: WriteOutcome[] = [];
 
   for (const w of writes) {
+    if (w.mode === "create-only" && w.region.kind !== "file") {
+      throw new Error(`safeWrite: create-only는 file 영역만 허용함: ${w.file}`);
+    }
     const rel = displayPath(w.file, opts.displayRoot, opts.home);
     const key = regionKey(w, opts.manifestFile);
     const adapter = adapterFor(w);
@@ -524,9 +539,18 @@ export async function safeWrite(writes: PlannedWrite[], opts: SafeWriteOptions):
     const { current } = read;
     const desired = adapter.desired;
     const recorded = Object.hasOwn(entries, key) ? entries[key]?.sha256 : undefined;
+    const createOnly = w.mode === "create-only";
 
     let status: WriteStatus;
     let reason: string | undefined;
+    if (createOnly && current !== null) {
+      if (current === desired) {
+        outcomes.push({ ...base, status: "unchanged" });
+      } else {
+        outcomes.push({ ...base, status: "skipped-exists", reason: "기존 파일 — 스캐폴드는 새 파일만 씀" });
+      }
+      continue;
+    }
     if (current === null) {
       status = "created";
     } else if (current === desired) {

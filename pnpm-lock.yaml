@@ -37,11 +37,57 @@ importers:
         specifier: ^3.0.0
         version: 3.2.7(@types/node@22.20.5)(yaml@2.9.1)
 
+  packages/catalog:
+    dependencies:
+      '@dsmith-dev/core':
+        specifier: workspace:*
+        version: link:../core
+      '@dsmith-dev/detect':
+        specifier: workspace:*
+        version: link:../detect
+      fast-glob:
+        specifier: ^3.3.3
+        version: 3.3.3
+    devDependencies:
+      '@babel/types':
+        specifier: ^7.29.11
+        version: 7.29.11
+      '@dsmith-dev/extractor-api':
+        specifier: workspace:*
+        version: link:../extractor-api
+      '@dsmith-dev/extractor-css':
+        specifier: workspace:*
+        version: link:../extractor-css
+      '@dsmith-dev/extractor-emotion':
+        specifier: workspace:*
+        version: link:../extractor-emotion
+      '@dsmith-dev/extractor-inline-style':
+        specifier: workspace:*
+        version: link:../extractor-inline-style
+      '@dsmith-dev/extractor-mui-sx':
+        specifier: workspace:*
+        version: link:../extractor-mui-sx
+      '@dsmith-dev/extractor-styled':
+        specifier: workspace:*
+        version: link:../extractor-styled
+      '@dsmith-dev/extractor-tailwind':
+        specifier: workspace:*
+        version: link:../extractor-tailwind
+      '@dsmith-dev/init':
+        specifier: workspace:*
+        version: link:../init
+      vitest:
+        specifier: ^3.0.0
+        version: 3.2.7(@types/node@22.20.5)(yaml@2.9.1)
+
   packages/cli:
     dependencies:
       '@dsmith-dev/agent-skill':
         specifier: workspace:*
         version: link:../agent-skill
+      '@dsmith-dev/catalog':
+        specifier: workspace:*
+        version: link:../catalog
       '@dsmith-dev/core':
         specifier: workspace:*
         version: link:../core
@@ -69,6 +115,9 @@ importers:
       '@dsmith-dev/extractor-tailwind':
         specifier: workspace:*
         version: link:../extractor-tailwind
+      '@dsmith-dev/init':
+        specifier: workspace:*
+        version: link:../init
       '@dsmith-dev/mcp-server':
         specifier: workspace:*
         version: link:../mcp-server
@@ -231,6 +280,40 @@ importers:
       '@babel/types':
         specifier: ^7.29.11
         version: 7.29.11
+      vitest:
+        specifier: ^3.0.0
+        version: 3.2.7(@types/node@22.20.5)(yaml@2.9.1)
+
+  packages/init:
+    dependencies:
+      '@dsmith-dev/core':
+        specifier: workspace:*
+        version: link:../core
+      '@dsmith-dev/detect':
+        specifier: workspace:*
+        version: link:../detect
+    devDependencies:
+      '@dsmith-dev/extractor-api':
+        specifier: workspace:*
+        version: link:../extractor-api
+      '@dsmith-dev/extractor-css':
+        specifier: workspace:*
+        version: link:../extractor-css
+      '@dsmith-dev/extractor-emotion':
+        specifier: workspace:*
+        version: link:../extractor-emotion
+      '@dsmith-dev/extractor-inline-style':
+        specifier: workspace:*
+        version: link:../extractor-inline-style
+      '@dsmith-dev/extractor-mui-sx':
+        specifier: workspace:*
+        version: link:../extractor-mui-sx
+      '@dsmith-dev/extractor-styled':
+        specifier: workspace:*
+        version: link:../extractor-styled
+      '@dsmith-dev/extractor-tailwind':
+        specifier: workspace:*
+        version: link:../extractor-tailwind
       vitest:
         specifier: ^3.0.0
         version: 3.2.7(@types/node@22.20.5)(yaml@2.9.1)

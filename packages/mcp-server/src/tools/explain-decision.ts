@@ -4,7 +4,7 @@ import type { Workspace } from "../workspace.js";
 
 export interface ExplainDecisionInput {
   item: string;
-  /** 같은 이름이 duplicate와 local-definition 둘 다일 때 고르는 종류 */
+  /** 같은 이름이 둘 이상의 종류일 때 고르는 종류(duplicate | local-definition | token-cluster) */
   kind?: DecisionKind | undefined;
 }
 
@@ -13,10 +13,13 @@ export interface ExplainDecisionInput {
  * 카드는 그대로, 실패는 `{ error: "not-found" | "ambiguous-kind", … }`. 실패를 오류 응답으로 바꾸는 것은 server.ts다.
  */
 export function explainDecisionTool(ws: Workspace, input: ExplainDecisionInput, opts: { git: boolean }): Promise<ExplainResult> {
+  // CLI와 같은 토큰: 토큰 파일·카탈로그의 토큰만(audit 제안 토큰은 매처에 쓰지 않는다)
+  const tokens = ws.tokens.tokens.filter((t) => t.source !== "proposal");
   return explainDecision(ws.root, ws.index, input.item, {
     isDsModule: ws.isDsModule,
     decisions: ws.decisions,
     git: opts.git,
+    ...(tokens.length > 0 ? { tokens } : {}),
     ...(input.kind === undefined ? {} : { kind: input.kind }),
   });
 }
@@ -33,6 +36,7 @@ function pruneByOption(card: Record<string, unknown>): void {
   for (const d of (card.differences as { byOption?: unknown }[] | undefined) ?? []) prune(d.byOption);
   prune((card.impact as { byOption?: unknown } | undefined)?.byOption);
   prune((card.ruleCheck as { tokenUsageRate?: unknown } | undefined)?.tokenUsageRate);
+  prune((card.ruleCheck as { tokenMatchRate?: unknown } | undefined)?.tokenMatchRate);
   prune((card.history as { byOption?: unknown } | undefined)?.byOption);
 }
 

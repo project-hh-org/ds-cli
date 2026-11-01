@@ -20,26 +20,32 @@ export async function chooseDecision(
   root: string,
   index: Index,
   item: string,
-  optionId: string,
+  optionIdArg: string,
   opts: ChooseOptions = {},
 ): Promise<DecisionRecord> {
-  const matches = candidatesOf(index, item, opts.kind);
+  const file = await readDecisions(root);
+  const matches = candidatesOf(index, item, opts.kind, file);
   if (matches.length === 0) {
     const similar = similarItems(index, item);
     const hint = similar.length > 0 ? ` 비슷한 항목: ${similar.join(", ")}` : "";
     throw new Error(`결정할 항목이 아님: ${item}.${hint}`);
   }
+  // token-cluster 선택지는 소문자 hex라 대소문자를 맞춰 받는다(셸에서는 "#3b82f6"처럼 따옴표로 감싼다)
+  const optionId =
+    matches.some((c) => c.optionIds.includes(optionIdArg)) || !matches.some((c) => c.kind === "token-cluster")
+      ? optionIdArg
+      : optionIdArg.toLowerCase();
   const owners = matches.filter((c) => c.optionIds.includes(optionId));
   if (owners.length === 0) {
     const ids = [...new Set(matches.flatMap((c) => c.optionIds))];
-    throw new Error(`선택지 아님: ${optionId}. 가능: ${ids.join(", ")}`);
+    const hexHint = matches.some((c) => c.kind === "token-cluster") ? ` (hex는 셸에서 따옴표로 감싸세요: --choose "${matches.find((c) => c.kind === "token-cluster")?.optionIds[0] ?? "#3b82f6"}")` : "";
+    throw new Error(`선택지 아님: ${optionIdArg}. 가능: ${ids.join(", ")}${hexHint}`);
   }
   const [candidate] = owners;
   if (owners.length > 1 || candidate === undefined) {
     throw new Error(`종류가 모호함: ${item}의 ${optionId}는 ${owners.map((c) => c.kind).join(", ")} 모두에 있습니다. kind를 지정하세요`);
   }
 
-  const file = await readDecisions(root);
   const existing = file.items.find((r) => r.item === candidate.item && r.kind === candidate.kind);
   if (
     existing?.status === "decided" &&

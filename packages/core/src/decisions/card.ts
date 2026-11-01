@@ -3,6 +3,8 @@ import { summarizeComponents, type ComponentSummary } from "../component/summary
 import type { Index } from "../index/indexer.js";
 import type { ComponentUsage } from "../model/component-usage.js";
 import { isRatedUsage } from "../model/style-usage.js";
+import { rankTokens } from "../match/token-matcher.js";
+import type { Token } from "../model/token.js";
 import { tokenCategoryOf } from "../tokens/load.js";
 import type { DecisionCandidate } from "./candidates.js";
 import type {
@@ -24,6 +26,10 @@ export interface CardInput {
   record?: DecisionRecord;
   /** 카드에 싣는 옵션 상한(사용 수 상위 N + 추천 옵션). 없으면 자르지 않는다. 추천·impact는 항상 전체 옵션 기준이다. */
   maxOptions?: number;
+  /** 정의 파일 → 그 파일의 다른 컴포넌트 선언 줄 범위(제외할 범위, 1-based 포함). 키가 없거나 비었으면 파일 전체 */
+  excludeRanges?: Record<string, { startLine: number; endLine: number }[]>;
+  /** 매칭할 토큰(proposal 제외). 비었거나 없으면 tokenMatchRate를 만들지 않는다 */
+  tokens?: Token[];
 }
 
 const TOP_FILES = 5;
@@ -46,6 +52,10 @@ interface Built {
   /** impact 계산용 전체 사용 파일 */
   allFiles: string[];
   tokenRate: number | null;
+  /** tokens가 있을 때만 의미 있다 */
+  matchRate: number | null;
+  /** 이 옵션의 정의 파일에서 실제로 범위를 좁혔는가 */
+  narrowed: boolean;
 }
 
 function ratedStylesByFile(styles: StyleUsage[]): Map<string, StyleUsage[]> {
@@ -78,6 +88,34 @@ function tokenUsageRateOf(rated: StyleUsage[]): number | null {
   const eligible = rated.filter((u) => u.source !== "tailwind-default");
   if (eligible.length === 0) return null;
   return round4(eligible.filter((u) => u.source === "token").length / eligible.length);
+}
+
+/**
+ * 토큰 일치율 = (token 소스 + 가장 가까운 토큰이 exact|close인 hardcoded) / (token 소스 + hardcoded).
+ * tailwind-default·dynamic은 분모에서 뺀다. hardcoded는 토큰 카테고리가 있는 속성만 센다(같은 카테고리에 토큰이 없으면 불일치).
+ * 대상이 0이면 null.
+ */
+function tokenMatchRateOf(rated: StyleUsage[], tokens: Token[]): number | null {
+  let total = 0;
+  let matched = 0;
+  for (const u of rated) {
+    if (u.source === "token") {
+      total++;
+      matched++;
+      continue;
+    }
+    if (u.source !== "hardcoded") continue;
+    const category = tokenCategoryOf(u.property);
+    if (category === null) continue;
+    total++;
+    const best = rankTokens(u.normalized, tokens, { category, limit: 1 })[0];
+    if (best && best.confidence !== "far") matched++;
+  }
+  return total === 0 ? null : round4(matched / total);
+}
+
+function inRanges(line: number, ranges: { startLine: number; endLine: number }[]): boolean {
+  return ranges.some((r) => line >= r.startLine && line <= r.endLine);
 }
 
 /** 옵션 하나를 만들 때 쓰는, 후보 전체에 공통인 조회 표 */
@@ -113,7 +151,9 @@ function buildOption(input: CardInput, id: string, lookup: Lookup): Built {
     isDs = input.isDsModule(id);
   }
 
-  const definitionStyles = file === null ? [] : (lookup.rated.get(file) ?? []);
+  const excluded = file === null ? [] : (input.excludeRanges?.[file] ?? []);
+  const fileStyles = file === null ? [] : (lookup.rated.get(file) ?? []);
+  const definitionStyles = excluded.length === 0 ? fileStyles : fileStyles.filter((u) => !inRanges(u.line, excluded));
   const option: DecisionOption = {
     id,
     label: id,
@@ -125,7 +165,13 @@ function buildOption(input: CardInput, id: string, lookup: Lookup): Built {
   };
   if (!isLocal) option.module = id;
   if (file !== null) option.file = file;
-  return { option, allFiles, tokenRate: tokenUsageRateOf(definitionStyles) };
+  return {
+    option,
+    allFiles,
+    tokenRate: tokenUsageRateOf(definitionStyles),
+    matchRate: input.tokens && input.tokens.length > 0 ? tokenMatchRateOf(definitionStyles, input.tokens) : null,
+    narrowed: excluded.length > 0,
+  };
 }
 
 /** 값이 정확히 한 옵션에만 있는 것만 옵션별로 모은다. 하나도 없으면 null(그 aspect는 차이가 아니다). */
@@ -173,9 +219,10 @@ function impactOf(built: Built[], kept: Built[]): DecisionCard["impact"] {
   return { byOption };
 }
 
-function recommend(built: Built[]): DecisionCard["recommendation"] {
+function recommend(built: Built[], useMatchRate: boolean): DecisionCard["recommendation"] {
   const options = built.map((b) => b.option);
-  const rateOf = new Map(built.map((b) => [b.option.id, b.tokenRate]));
+  const rateOf = new Map(built.map((b) => [b.option.id, useMatchRate ? b.matchRate : b.tokenRate]));
+  const rateLabel = useMatchRate ? "토큰 일치율" : "토큰 사용 비율";
   const ds = options.filter((o) => o.isDs);
   const only = ds.length === 1 ? ds[0] : undefined;
   if (only) {
@@ -213,7 +260,7 @@ function recommend(built: Built[]): DecisionCard["recommendation"] {
   if (topRate) {
     return {
       optionId: topRate.option.id,
-      reason: `${scope}토큰 사용 비율 ${Math.round(topRate.rate * 1000) / 10}%로 가장 높음`,
+      reason: `${scope}${rateLabel} ${Math.round(topRate.rate * 1000) / 10}%로 가장 높음`,
       confidence: "low",
       rule: "token-rate",
     };
@@ -257,7 +304,8 @@ export function buildDecisionCard(input: CardInput): DecisionCard {
     .map((id) => buildOption(input, id, lookup))
     .sort((a, b) => b.option.usageCount - a.option.usageCount || byCodeUnit(a.option.id, b.option.id));
 
-  const recommendation = recommend(built);
+  const useMatchRate = input.tokens !== undefined && input.tokens.length > 0;
+  const recommendation = recommend(built, useMatchRate);
   const kept = keptOf(built, recommendation.optionId, input.maxOptions);
   const keptIds = new Set(kept.map((b) => b.option.id));
 
@@ -271,13 +319,14 @@ export function buildDecisionCard(input: CardInput): DecisionCard {
   const card: DecisionCard = {
     item: candidate.item,
     kind: candidate.kind,
-    styleScope: "file",
+    styleScope: built.some((b) => b.narrowed) ? "declaration" : "file",
     options: kept.map((b) => b.option),
     differences,
     impact: impactOf(built, kept),
     ruleCheck: { tokenUsageRate: Object.fromEntries(kept.map((b) => [b.option.id, b.tokenRate])) },
     recommendation,
   };
+  if (useMatchRate) card.ruleCheck.tokenMatchRate = Object.fromEntries(kept.map((b) => [b.option.id, b.matchRate]));
 
   if (kept.length < built.length) {
     const dropped = built.filter((b) => !keptIds.has(b.option.id));
@@ -298,6 +347,7 @@ export function buildDecisionCard(input: CardInput): DecisionCard {
   if (record?.status === "decided" && record.chosen !== undefined) {
     card.decided = { chosen: record.chosen, decidedAt: record.decidedAt ?? "" };
     if (record.note !== undefined) card.decided.note = record.note;
+    if (!candidate.optionIds.includes(record.chosen)) card.decided.stale = true;
   }
   return card;
 }

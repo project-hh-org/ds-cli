@@ -1,5 +1,6 @@
 import type { StyleUsage } from "@dsmith-dev/extractor-api";
 import { clusterColors } from "../cluster/color-cluster.js";
+import { colorTokenNames } from "../cluster/names.js";
 import { clusterSpacing } from "../cluster/spacing-cluster.js";
 import type { Token } from "../model/token.js";
 
@@ -12,13 +13,11 @@ const SCALE_UNIT_PX = 4;
 export function proposalTokens(styles: StyleUsage[]): Token[] {
   const tokens: Token[] = [];
 
-  const used = new Set<string>();
-  for (const cluster of clusterColors(styles)) {
-    let name = cluster.suggestedName;
-    for (let n = 2; used.has(name); n++) name = `${cluster.suggestedName}-${n}`;
-    used.add(name);
+  const clusters = clusterColors(styles);
+  const names = colorTokenNames(clusters);
+  for (const [i, cluster] of clusters.entries()) {
     tokens.push({
-      name,
+      name: names[i] as string,
       value: cluster.representative.hex,
       normalized: cluster.representative,
       category: "color",

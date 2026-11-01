@@ -9,6 +9,7 @@ import type { Index } from "@dsmith-dev/core";
 import type { DetectResult } from "@dsmith-dev/detect";
 import type { Extractor, StyleUsage } from "@dsmith-dev/extractor-api";
 import { AI_TOOLS, loadCommands } from "@dsmith-dev/agent-skill";
+import { MCP_TOOL_NAMES_IN_SECTION } from "@dsmith-dev/catalog";
 import { TOOL_NAMES } from "@dsmith-dev/mcp-server";
 import { computeAudit, runAudit } from "../src/commands/audit.js";
 import { buildProgram } from "../src/program.js";
@@ -395,9 +396,13 @@ describe("슬래시 명령 ↔ CLI·MCP 일관성", () => {
     for (const tool of used) expect(TOOL_NAMES as readonly string[]).toContain(tool);
   });
 
+  it("AGENTS.md DS 섹션이 적는 MCP 도구 이름은 서버가 내는 도구 이름과 같다", () => {
+    expect([...MCP_TOOL_NAMES_IN_SECTION].sort()).toEqual([...TOOL_NAMES].sort());
+  });
+
   it("명령 소스가 부르는 CLI 서브커맨드와 플래그는 실제로 등록돼 있다", async () => {
     const program = buildProgram();
-    expect(program.commands.map((c) => c.name()).sort()).toEqual(["audit", "decide", "detect", "install", "mcp"]);
+    expect(program.commands.map((c) => c.name()).sort()).toEqual(["ai", "audit", "decide", "detect", "init", "install", "mcp"]);
     const used = (await loadCommands()).flatMap((c) => c.uses.filter((u) => u.startsWith("cli:")).map((u) => u.slice(4)));
     expect(used.length).toBeGreaterThan(0);
     for (const use of used) {
