@@ -39,7 +39,8 @@ function exportsTypes(exp: unknown): string[] {
 }
 
 /**
- * `<root>/node_modules/<pkg>/package.json`의 타입 엔트리:
+ * `<root>/node_modules/<pkg>/package.json`의 타입 엔트리. 조회는 `<root>/node_modules/<pkg>` 한 곳뿐이다
+ * (상위 디렉터리의 node_modules로 올라가지 않는다 — 모노레포 호이스팅 레이아웃은 root를 패키지 디렉터리로 지정해야 한다):
  * exports["."]의 types → import.types → require.types → default.types → types → typings → index.d.ts. 없으면 null
  */
 export async function resolvePackageTypes(root: string, pkg: string): Promise<PackageTypes | null> {
@@ -111,5 +112,10 @@ export async function catalogFromPackage(
     if (c.doc?.deprecated !== undefined) comp.deprecated = c.doc.deprecated;
     return comp;
   });
+  const none = components.filter((c) => c.propsStatus === "none").map((c) => c.name);
+  if (none.length > 0) {
+    const shown = none.slice(0, 10).join(", ");
+    warnings.push(`props 미추출 ${none.length}: ${shown}${none.length > 10 ? ` 외 ${none.length - 10}` : ""}`);
+  }
   return { components, source, warnings };
 }

@@ -4,14 +4,9 @@
 // 규칙: 이름 있는 re-export는 최대 maxHops(기본 3)까지, `export *`는 1단계(그 파일의 직접 선언만).
 import fs from "node:fs/promises";
 import path from "node:path";
-import type { Node, Statement, TSType } from "@babel/types";
-import {
-  parseTsx,
-  readComponentDoc,
-  readTypeProps,
-  type ComponentDoc,
-  type ComponentProps,
-} from "@dsmith-dev/core";
+import type { Statement } from "@babel/types";
+import { parseTsx, readComponentDoc, type ComponentDoc, type ComponentProps } from "@dsmith-dev/core";
+import { propsOfDeclaration, stripTypeParameters, type DtsSource } from "./dts-props.js";
 import { isComponentName } from "./names.js";
 
 export interface DtsComponent {
@@ -31,7 +26,7 @@ interface Ctx {
   packageRoot: string;
   maxHops: number;
   warnings: string[];
-  codes: Map<string, { code: string; body: Statement[] } | null>;
+  codes: Map<string, DtsSource | null>;
 }
 
 const SPECIFIER_SWAP: Record<string, string> = { ".js": ".d.ts", ".mjs": ".d.mts", ".cjs": ".d.cts" };
@@ -65,12 +60,13 @@ async function resolveSpecifier(ctx: Ctx, from: string, spec: string): Promise<s
   return null;
 }
 
-async function load(ctx: Ctx, file: string): Promise<{ code: string; body: Statement[] } | null> {
+async function load(ctx: Ctx, file: string): Promise<DtsSource | null> {
   if (ctx.codes.has(file)) return ctx.codes.get(file) ?? null;
-  let entry: { code: string; body: Statement[] } | null = null;
+  let entry: DtsSource | null = null;
   try {
     const code = await fs.readFile(file, "utf-8");
-    entry = { code, body: parseTsx(code, file).program.body };
+    const body = parseTsx(code, file).program.body;
+    entry = { code, plain: stripTypeParameters(code, body), file, body };
   } catch {
     ctx.warnings.push(`선언 파일을 읽을 수 없음: ${path.relative(ctx.packageRoot, file).split(path.sep).join("/")}`);
   }
@@ -165,160 +161,6 @@ async function exportsOf(ctx: Ctx, file: string, hop: number, stack: string[]): 
   return out;
 }
 
-function textOf(code: string, node: Node): string {
-  return code.slice(node.start ?? 0, node.end ?? 0);
-}
-
-/** 인라인 타입(리터럴·교차)을 별칭으로 감싸 readTypeProps로 읽는다. JSDoc은 슬라이스에 그대로 들어간다 */
-function propsOfTypeNode(code: string, file: string, t: TSType): ComponentProps | null {
-  if (t.type === "TSTypeReference" && t.typeName.type === "Identifier" && !t.typeParameters) {
-    return readTypeProps(code, file, t.typeName.name);
-  }
-  if (t.type === "TSTypeLiteral" || t.type === "TSIntersectionType") {
-    return readTypeProps(`type __T = ${textOf(code, t)};\n`, "__t.d.ts", "__T");
-  }
-  return null;
-}
-
-function nonEmpty(p: ComponentProps | null): p is ComponentProps {
-  return p !== null && p.props.length > 0;
-}
-
-/** `${X}TypeMap`의 `props` 멤버: 교차의 타입 리터럴 부분 + 같은 파일 interface 참조 */
-function propsFromTypeMap(code: string, file: string, body: Statement[], name: string): ComponentProps | null {
-  let alias: TSType | null = null;
-  for (const raw of body) {
-    const s = raw.type === "ExportNamedDeclaration" && raw.declaration ? raw.declaration : raw;
-    if (s.type === "TSTypeAliasDeclaration" && s.id.name === `${name}TypeMap`) alias = s.typeAnnotation;
-  }
-  if (!alias) return null;
-  // 타입 인자/직접 리터럴 중 `props` 멤버를 가진 TSTypeLiteral을 찾는다
-  let propsType: TSType | null = null;
-  const visit = (n: Node | null | undefined, depth = 0): void => {
-    if (!n || propsType || depth > 6) return;
-    if (n.type === "TSTypeLiteral") {
-      for (const m of n.members) {
-        if (m.type === "TSPropertySignature" && m.key.type === "Identifier" && m.key.name === "props" && m.typeAnnotation) {
-          propsType = m.typeAnnotation.typeAnnotation;
-          return;
-        }
-      }
-    } else if (n.type === "TSTypeReference") {
-      for (const p of n.typeParameters?.params ?? []) visit(p, depth + 1);
-    } else if (n.type === "TSIntersectionType") {
-      for (const p of n.types) visit(p, depth + 1);
-    }
-  };
-  visit(alias);
-  if (!propsType) return null;
-  const parts: TSType[] = (propsType as TSType).type === "TSIntersectionType" ? (propsType as { types: TSType[] }).types : [propsType as TSType];
-  const result: ComponentProps = { props: [], inherits: [] };
-  for (const part of parts) {
-    if (part.type === "TSTypeReference" && part.typeName.type === "Identifier" && !part.typeParameters) {
-      const read = readTypeProps(code, file, part.typeName.name);
-      if (read) {
-        result.props.push(...read.props);
-        result.inherits.push(...read.inherits);
-      } else {
-        result.inherits.push(part.typeName.name);
-      }
-    } else if (part.type === "TSTypeLiteral") {
-      const read = propsOfTypeNode(code, file, part);
-      if (read) result.props.push(...read.props);
-    } else {
-      result.inherits.push(textOf(code, part).replace(/\s+/g, " ").trim());
-    }
-  }
-  return result.props.length > 0 || result.inherits.length > 0 ? result : null;
-}
-
-/**
- * `type XProps = AProps | BProps`(같은 파일 interface 참조의 유니온): 변형을 병합한다.
- * 같은 이름 prop은 values를 합집합으로, 나머지 필드는 먼저 나온 것을 유지. 하나라도 못 읽으면 null
- */
-function propsOfUnionAlias(code: string, file: string, body: Statement[], name: string): ComponentProps | null {
-  let alias: TSType | null = null;
-  for (const raw of body) {
-    const s = raw.type === "ExportNamedDeclaration" && raw.declaration ? raw.declaration : raw;
-    if (s.type === "TSTypeAliasDeclaration" && s.id.name === name && !s.typeParameters) alias = s.typeAnnotation;
-  }
-  if (!alias || alias.type !== "TSUnionType") return null;
-  const merged: ComponentProps = { props: [], inherits: [] };
-  for (const part of alias.types) {
-    if (part.type !== "TSTypeReference" || part.typeName.type !== "Identifier") return null;
-    const read = readTypeProps(code, file, part.typeName.name);
-    if (!read) return null;
-    for (const p of read.props) {
-      const prior = merged.props.find((x) => x.name === p.name);
-      if (!prior) merged.props.push({ ...p });
-      else if (p.values) prior.values = [...new Set([...(prior.values ?? []), ...p.values])];
-    }
-    for (const i of read.inherits) if (!merged.inherits.includes(i)) merged.inherits.push(i);
-  }
-  return merged;
-}
-
-/** `XTypeMap = ExtendFooTypeMap<{ props: …; defaultComponent: … }>`에서 상속 출처를 텍스트로 덧붙인다(따라가지는 않는다) */
-function withTypeMapInherits(read: ComponentProps, body: Statement[], name: string): ComponentProps {
-  for (const raw of body) {
-    const s = raw.type === "ExportNamedDeclaration" && raw.declaration ? raw.declaration : raw;
-    if (s.type !== "TSTypeAliasDeclaration" || s.id.name !== `${name}TypeMap`) continue;
-    const t = s.typeAnnotation;
-    if (t.type !== "TSTypeReference" || t.typeName.type !== "Identifier") continue;
-    const m = /^Extend(\w+)TypeMap$/.exec(t.typeName.name);
-    const extra = [...(m ? [`${m[1]}OwnProps`] : []), "RootComponent HTML attributes"];
-    return { props: read.props, inherits: [...new Set([...read.inherits, ...extra])] };
-  }
-  return read;
-}
-
-function paramType(fn: { params: Node[] }): TSType | null {
-  const p = fn.params[0];
-  if (!p) return null;
-  const target = p.type === "AssignmentPattern" ? p.left : p;
-  const ann = (target as { typeAnnotation?: Node | null }).typeAnnotation;
-  return ann && ann.type === "TSTypeAnnotation" ? ann.typeAnnotation : null;
-}
-
-/** 선언 이름 `local`의 props */
-function propsOfDeclaration(code: string, file: string, body: Statement[], local: string): ComponentProps | null {
-  for (const raw of body) {
-    const s = (raw.type === "ExportNamedDeclaration" || raw.type === "ExportDefaultDeclaration") && raw.declaration ? raw.declaration : raw;
-    if ((s.type === "FunctionDeclaration" || s.type === "TSDeclareFunction") && s.id?.name === local) {
-      const t = paramType(s);
-      return t ? propsOfTypeNode(code, file, t) : null;
-    }
-    if (s.type === "ClassDeclaration" && s.id?.name === local) {
-      const args = (s as { superTypeParameters?: { params: TSType[] } | null }).superTypeParameters;
-      const first = args?.params[0];
-      return first ? propsOfTypeNode(code, file, first) : null;
-    }
-    if (s.type === "VariableDeclaration") {
-      for (const d of s.declarations) {
-        if (d.id.type !== "Identifier" || d.id.name !== local) continue;
-        const ann = d.id.typeAnnotation;
-        const t = ann && ann.type === "TSTypeAnnotation" ? ann.typeAnnotation : null;
-        // React.FC<P> 류: 타입 인자가 곧 props
-        if (t && t.type === "TSTypeReference" && t.typeParameters?.params[0]) {
-          const direct = propsOfTypeNode(code, file, t.typeParameters.params[0]);
-          if (nonEmpty(direct)) return direct;
-        }
-        // MUI 배치: XOwnProps → XProps(유니온이면 변형 병합) → XTypeMap['props']
-        let fallback: ComponentProps | null = null;
-        for (const candidate of [`${local}OwnProps`, `${local}Props`]) {
-          const read = readTypeProps(code, file, candidate) ?? propsOfUnionAlias(code, file, body, candidate);
-          if (nonEmpty(read)) return withTypeMapInherits(read, body, local);
-          fallback ??= read;
-        }
-        const viaMap = propsFromTypeMap(code, file, body, local);
-        if (nonEmpty(viaMap)) return viaMap;
-        return viaMap ?? fallback;
-      }
-    }
-  }
-  return null;
-}
-
 /** 엔트리 d.ts에서 대문자 값 export를 모아 선언 파일까지 따라간다 */
 export async function componentsFromDts(
   entryAbs: string,
@@ -340,7 +182,7 @@ export async function componentsFromDts(
     components.push({
       name,
       file: res.file,
-      props: propsOfDeclaration(loaded.code, res.file, loaded.body, res.local),
+      props: propsOfDeclaration(loaded, res.local),
       doc: readComponentDoc(loaded.code, res.file, res.local),
     });
   }

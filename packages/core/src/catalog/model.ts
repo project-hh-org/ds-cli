@@ -13,6 +13,8 @@ export interface CatalogComponent {
   name: string;
   /** 경로: moduleOfFile(root 상대 파일), npm: 패키지명 — 인덱스 ComponentUsage.module과 같은 키 */
   module: string;
+  /** 사용 수 조인용 모듈 키 전체: `module` + DS 디렉터리의 index.* 배럴 중 이 이름을 re-export하는 것의 module. 배럴이 없으면 생략 */
+  modules?: string[];
   origin: CatalogOrigin;
   /** 선언 파일(root 상대 POSIX). npm은 "node_modules/@mui/material/Button/Button.d.ts" */
   file?: string;

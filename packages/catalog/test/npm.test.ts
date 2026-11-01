@@ -15,15 +15,15 @@ describe.each([
     expect(types?.version).toBe(version);
   });
 
-  it("Button 1개: variant·size·color values, file, module", async () => {
+  it("Button·Select·TextField: variant·size·color values, file, module", async () => {
     const root = copyFixture("mui-app");
     installMui(root, fixture);
     const { index } = await auditFixture(root);
     const { components, source, warnings } = await catalogFromPackage(root, "@mui/material", index);
     expect(warnings).toEqual([]);
     expect(source).toMatchObject({ origin: "ds-npm", packageName: "@mui/material", packageVersion: version });
-    expect(components.map((c) => c.name)).toEqual(["Button"]);
-    const button = components[0];
+    expect(components.map((c) => c.name)).toEqual(["Button", "Select", "TextField"]);
+    const button = components.find((c) => c.name === "Button");
     expect(button?.module).toBe("@mui/material");
     expect(button?.origin).toBe("ds-npm");
     expect(button?.file).toBe(`node_modules/@mui/material/${declFile}`);
@@ -39,14 +39,41 @@ describe.each([
     expect(button?.inherits).toEqual(["ButtonBaseOwnProps", "RootComponent HTML attributes"]);
   });
 
-  it("buildCatalog(detect.ds npm)로도 같은 Button", async () => {
+  it("실제 TextField(제네릭 함수 + 조건부 타입)는 25개 이상의 props와 variant values를 낸다", async () => {
+    const root = copyFixture("mui-app");
+    installMui(root, fixture);
+    const { index } = await auditFixture(root);
+    const { components } = await catalogFromPackage(root, "@mui/material", index);
+    const tf = components.find((c) => c.name === "TextField");
+    expect(tf?.props.length).toBeGreaterThanOrEqual(25);
+    expect([...(tf?.props.find((p) => p.name === "variant")?.values ?? [])].sort()).toEqual(["filled", "outlined", "standard"]);
+    expect(tf?.props.find((p) => p.name === "size")?.values).toEqual(["small", "medium"]);
+    expect(tf?.props.find((p) => p.name === "label")).toBeDefined();
+    expect(tf?.inherits?.some((i) => i.startsWith("StandardProps<"))).toBe(true);
+    expect(tf?.inherits?.every((i) => i.length <= 100 && !i.includes("/*"))).toBe(true);
+    expect(tf?.inherits?.some((i) => i.includes("TextFieldProps"))).toBe(false);
+    console.info(`[real-pack] ${version} TextField props=${tf?.props.length}`);
+  });
+
+  it("실제 Select(함수 타입 & 객체 교차, 제네릭 유니온 별칭)는 20개 이상 + variant values", async () => {
+    const root = copyFixture("mui-app");
+    installMui(root, fixture);
+    const { index } = await auditFixture(root);
+    const { components } = await catalogFromPackage(root, "@mui/material", index);
+    const sel = components.find((c) => c.name === "Select");
+    expect(sel?.props.length).toBeGreaterThanOrEqual(20);
+    expect([...(sel?.props.find((p) => p.name === "variant")?.values ?? [])].sort()).toEqual(["filled", "outlined", "standard"]);
+    expect(sel?.propsStatus).toBe("ok");
+  });
+
+  it("buildCatalog(detect.ds npm)로도 같은 컴포넌트", async () => {
     const root = copyFixture("mui-app");
     installMui(root, fixture);
     const { index, detect } = await auditFixture(root);
     expect(detect.ds.kind).toBe("npm");
     const { catalog } = await buildCatalog({ root, detect, index, version: "x" });
-    expect(catalog.components.map((c) => c.name)).toEqual(["Button"]);
-    expect(catalog.stats).toMatchObject({ components: 1, propsOk: 1 });
+    expect(catalog.components.map((c) => c.name)).toEqual(["Button", "Select", "TextField"]);
+    expect(catalog.stats).toMatchObject({ components: 3, propsOk: 3 });
   });
 });
 
@@ -117,22 +144,35 @@ export default Card;
     expect(by.Legacy?.props).toBeNull();
   });
 
-  it("XProps가 변형 interface의 유니온이면 병합한다(TextField 모양)", async () => {
+  it("interface XTypeMap { props } 형태와 함수 타입 & 객체 교차(declare const)를 읽는다", async () => {
     const root = tmpTree({
-      "index.d.ts": "export { default as TextField } from './TextField';\n",
-      "TextField.d.ts": `export interface BaseTextFieldProps { label?: string }
-export interface StandardTextFieldProps extends BaseTextFieldProps { variant?: 'standard' }
-export interface FilledTextFieldProps extends BaseTextFieldProps { variant: 'filled' }
-export interface OutlinedTextFieldProps extends BaseTextFieldProps { variant: 'outlined' }
-export type TextFieldProps = StandardTextFieldProps | FilledTextFieldProps | OutlinedTextFieldProps;
-declare const TextField: React.JSXElementConstructor<TextFieldProps>;
-export default TextField;
+      "index.d.ts": "export { default as Panel } from './Panel';\nexport { default as Pick } from './Pick';\n",
+      "Panel.d.ts": `declare const Panel: Ext<PanelTypeMap>;
+export interface PanelTypeMap { props: PanelBase & { dense?: boolean }; defaultComponent: 'div' }
+interface PanelBase { open?: boolean }
+export default Panel;
+`,
+      "Pick.d.ts": `export interface PickBase<V = unknown> { value?: V; kind?: 'a' | 'b' }
+export type PickProps<V = unknown> = PickBase<V> & { extra?: string };
+declare const Pick: (<V = unknown>(props: PickProps<V>) => null) & { muiName: string };
+export default Pick;
 `,
     });
     const r = await componentsFromDts(path.join(root, "index.d.ts"));
-    const props = r.components[0]?.props?.props ?? [];
-    expect(props.find((p) => p.name === "variant")?.values).toEqual(["standard", "filled", "outlined"]);
-    expect(r.components[0]?.props?.inherits).toEqual(["BaseTextFieldProps"]);
+    const by = Object.fromEntries(r.components.map((c) => [c.name, c]));
+    expect(by.Panel?.props?.props.map((p) => p.name).sort()).toEqual(["dense", "open"]);
+    expect(by.Pick?.props?.props.map((p) => p.name).sort()).toEqual(["extra", "kind", "value"]);
+    expect(by.Pick?.props?.props.find((p) => p.name === "kind")?.values).toEqual(["a", "b"]);
+  });
+
+  it("props를 못 읽은 npm 컴포넌트는 경고 한 줄로 모은다", async () => {
+    const root = tmpTree({
+      "node_modules/pkg/package.json": JSON.stringify({ name: "pkg", version: "1.0.0", types: "index.d.ts" }),
+      "node_modules/pkg/index.d.ts": "export declare function A(): null;\nexport declare function B(): null;\nexport declare function C(p: { x?: 1 }): null;\n",
+    });
+    const { index } = await auditFixture(copyFixture("mui-app"));
+    const r = await catalogFromPackage(root, "pkg", index);
+    expect(r.warnings).toEqual(["props 미추출 2: A, B"]);
   });
 
   it("패키지 밖으로 나가는 지정자는 무시한다", async () => {

@@ -22,6 +22,21 @@ function unwrap(node: Node): Node {
 
 /** 메타 객체의 `component: X` Identifier 이름 */
 function metaComponent(body: Statement[]): string | null {
+  // `import { Button as UIButton }` → UIButton은 Button
+  const imported = new Map<string, string>();
+  for (const s of body) {
+    if (s.type !== "ImportDeclaration") continue;
+    for (const spec of s.specifiers) {
+      if (spec.type === "ImportSpecifier") {
+        imported.set(spec.local.name, spec.imported.type === "Identifier" ? spec.imported.name : spec.imported.value);
+      }
+    }
+  }
+  const name = metaComponentLocal(body);
+  return name === null ? null : (imported.get(name) ?? name);
+}
+
+function metaComponentLocal(body: Statement[]): string | null {
   const def = body.find((s) => s.type === "ExportDefaultDeclaration");
   if (!def || def.type !== "ExportDefaultDeclaration") return null;
   let node: Node = def.declaration;
@@ -83,7 +98,14 @@ export function storyExample(code: string, file: string, maxLines = 20): string 
   } catch {
     return null;
   }
-  const stmt = body.find((s) => s.type === "ExportNamedDeclaration" && s.declaration != null);
+  // 스토리는 값 선언(const·function)뿐 — `export type Story = …`·interface·declare는 건너뛴다
+  const stmt = body.find(
+    (s) =>
+      s.type === "ExportNamedDeclaration" &&
+      s.declaration != null &&
+      (s.declaration.type === "VariableDeclaration" || s.declaration.type === "FunctionDeclaration") &&
+      (s.declaration as { declare?: boolean }).declare !== true,
+  );
   if (!stmt || stmt.start == null || stmt.end == null) return null;
   const lines = code.slice(stmt.start, stmt.end).replace(/\r\n/g, "\n").split("\n");
   if (lines.length <= maxLines) return lines.join("\n");

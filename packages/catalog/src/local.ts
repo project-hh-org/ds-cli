@@ -1,6 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import type { Statement } from "@babel/types";
+import type { ClassDeclaration, Expression, Statement, VariableDeclarator } from "@babel/types";
 import {
   moduleOfFile,
   parseTsx,
@@ -31,14 +31,46 @@ interface ValueExport {
   local: string;
 }
 
-/** 파일 최상위의 값 선언 이름(function·class·const/let/var) */
+const DATA_INIT = new Set([
+  "ObjectExpression",
+  "ArrayExpression",
+  "StringLiteral",
+  "NumericLiteral",
+  "BooleanLiteral",
+  "NullLiteral",
+  "BigIntLiteral",
+  "RegExpLiteral",
+  "TemplateLiteral",
+]);
+
+function unwrapInit(e: Expression): Expression {
+  let n = e;
+  while (n.type === "TSAsExpression" || n.type === "TSSatisfiesExpression" || n.type === "ParenthesizedExpression" || n.type === "TSNonNullExpression") n = n.expression;
+  return n;
+}
+
+/** 객체·배열·리터럴을 초기값으로 가진 const는 컴포넌트가 아니다(옵션 맵, 상수) */
+function isDataConst(d: VariableDeclarator): boolean {
+  return d.init != null && DATA_INIT.has(unwrapInit(d.init).type);
+}
+
+/** 클래스는 React.Component·PureComponent를 상속할 때만 컴포넌트다 */
+function isComponentClass(c: ClassDeclaration): boolean {
+  const sup = c.superClass;
+  if (!sup) return false;
+  const name = sup.type === "Identifier" ? sup.name : sup.type === "MemberExpression" && !sup.computed && sup.property.type === "Identifier" ? sup.property.name : null;
+  return name === "Component" || name === "PureComponent";
+}
+
+/** 파일 최상위의 컴포넌트가 될 수 있는 값 선언 이름(function · Component 클래스 · 데이터가 아닌 const/let/var) */
 function declaredValues(body: Statement[]): Set<string> {
   const out = new Set<string>();
   for (const raw of body) {
     const s = (raw.type === "ExportNamedDeclaration" || raw.type === "ExportDefaultDeclaration") && raw.declaration ? raw.declaration : raw;
-    if ((s.type === "FunctionDeclaration" || s.type === "ClassDeclaration") && s.id) out.add(s.id.name);
+    if (s.type === "FunctionDeclaration" && s.id) out.add(s.id.name);
+    else if (s.type === "ClassDeclaration" && s.id && isComponentClass(s)) out.add(s.id.name);
     else if (s.type === "VariableDeclaration") {
-      for (const d of s.declarations) if (d.id.type === "Identifier") out.add(d.id.name);
+      for (const d of s.declarations) if (d.id.type === "Identifier" && !isDataConst(d)) out.add(d.id.name);
     }
   }
   return out;
@@ -49,7 +81,7 @@ function valueExports(body: Statement[]): ValueExport[] {
   const declared = declaredValues(body);
   const out: ValueExport[] = [];
   const push = (name: string, local: string): void => {
-    if (isComponentName(name) && !out.some((e) => e.name === name)) out.push({ name, local });
+    if (declared.has(local) && isComponentName(name) && !out.some((e) => e.name === name)) out.push({ name, local });
   };
   for (const stmt of body) {
     if (stmt.type === "ExportNamedDeclaration") {
@@ -63,7 +95,7 @@ function valueExports(body: Statement[]): ValueExport[] {
         for (const spec of stmt.specifiers) {
           if (spec.type !== "ExportSpecifier") continue;
           const exported = spec.exported.type === "Identifier" ? spec.exported.name : spec.exported.value;
-          if (declared.has(spec.local.name)) push(exported, spec.local.name);
+          push(exported, spec.local.name);
         }
       }
     } else if (stmt.type === "ExportDefaultDeclaration") {
@@ -73,6 +105,68 @@ function valueExports(body: Statement[]): ValueExport[] {
     }
   }
   return out;
+}
+
+const BARREL_GLOB = "**/index.{tsx,ts,jsx,js}";
+
+/**
+ * dir 아래 index.* 배럴이 re-export하는 컴포넌트에 `modules`(file module + 배럴 module)를 붙인다.
+ * `import { Button } from "@/components/ui"`의 사용 module은 배럴 module이라 파일 module만으로는 조인이 안 된다.
+ * 지원: `export { X, Y as Z } from "./x"`, `export * from "./x"`, 배럴이 다른 배럴을 re-export하는 경우(3단계까지)
+ */
+async function attachBarrelModules(root: string, base: string, components: CatalogComponent[]): Promise<void> {
+  const barrels = (await fg(`${base}${BARREL_GLOB}`, { cwd: root, ignore: [...NON_COMPONENT_FILES], dot: false }))
+    .map((f) => f.split(path.sep).join("/"))
+    .sort(compareCodeUnits);
+  interface Parsed {
+    module: string;
+    named: { name: string; from: string }[];
+    stars: string[];
+  }
+  const parsed: Parsed[] = [];
+  for (const rel of barrels) {
+    let body: Statement[];
+    try {
+      body = parseTsx(await fs.readFile(path.join(root, rel), "utf-8"), rel).program.body;
+    } catch {
+      continue;
+    }
+    const dirOf = path.posix.dirname(rel);
+    const resolve = (spec: string): string | null => (spec.startsWith(".") ? moduleOfFile(path.posix.join(dirOf, spec)) : null);
+    const p: Parsed = { module: moduleOfFile(rel), named: [], stars: [] };
+    for (const stmt of body) {
+      if (stmt.type === "ExportAllDeclaration") {
+        const from = resolve(stmt.source.value);
+        if (from !== null) p.stars.push(from);
+      } else if (stmt.type === "ExportNamedDeclaration" && stmt.source) {
+        const from = resolve(stmt.source.value);
+        if (from === null) continue;
+        for (const spec of stmt.specifiers) {
+          if (spec.type !== "ExportSpecifier") continue;
+          p.named.push({ name: spec.exported.type === "Identifier" ? spec.exported.name : spec.exported.value, from });
+        }
+      }
+    }
+    parsed.push(p);
+  }
+  const key = (c: { module: string; name: string }): string => `${c.module}\0${c.name}`;
+  // 배럴 module → 그 배럴이 내보내는 컴포넌트 키
+  const exportsOf = new Map<string, Set<string>>();
+  for (const p of parsed) exportsOf.set(p.module, new Set());
+  for (let pass = 0; pass < 3; pass++) {
+    for (const p of parsed) {
+      const set = exportsOf.get(p.module) as Set<string>;
+      for (const c of components) {
+        const k = key(c);
+        if (p.stars.some((from) => c.module === from || exportsOf.get(from)?.has(k))) set.add(k);
+        if (p.named.some((n) => n.name === c.name && (c.module === n.from || exportsOf.get(n.from)?.has(k)))) set.add(k);
+      }
+    }
+  }
+  for (const c of components) {
+    const extra = [...exportsOf].filter(([module, set]) => module !== c.module && set.has(key(c))).map(([module]) => module).sort(compareCodeUnits);
+    if (extra.length > 0) c.modules = [c.module, ...extra];
+  }
 }
 
 /** dir(root 상대) 아래 파일의 export된 대문자 값 선언 → CatalogComponent */
@@ -135,5 +229,6 @@ export async function catalogFromDir(
       components.push(comp);
     }
   }
+  await attachBarrelModules(root, base, components);
   return { components, warnings };
 }

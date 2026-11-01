@@ -45,18 +45,6 @@ async function attachExamples(root: string, dir: string, components: CatalogComp
   }
 }
 
-/** 토큰 이름 → 읽은 파일(먼저 읽은 파일 우선). loadTokens가 파일 정보를 주지 않으므로 파일별로 한 번씩 더 읽는다 */
-async function tokenFileMap(root: string, files: string[]): Promise<Map<string, string>> {
-  const out = new Map<string, string>();
-  for (const file of files) {
-    const loaded = await loadTokens(root, [file], []);
-    for (const t of loaded.tokens) {
-      if (t.source === "token-file" && !out.has(t.name)) out.set(t.name, file);
-    }
-  }
-  return out;
-}
-
 export async function buildCatalog(opts: BuildCatalogOptions): Promise<BuildCatalogResult> {
   const { root, detect, index, version } = opts;
   const from = opts.from ?? "auto";
@@ -100,20 +88,20 @@ export async function buildCatalog(opts: BuildCatalogOptions): Promise<BuildCata
     ...new Set([...ds.tokenFiles, ...(initDir !== null ? [initDir === "." ? "tokens.json" : `${initDir}/tokens.json`] : [])]),
   ];
   const loaded = await loadTokens(root, tokenFiles, []);
-  const fileOf = await tokenFileMap(root, loaded.files);
   const tokens: CatalogToken[] = [];
   for (const t of loaded.tokens) {
-    if (t.source !== "token-file") continue;
+    if (t.source !== "token-file" || t.file === undefined) continue;
     tokens.push({
       name: t.name,
       value: t.value,
       normalized: t.normalized,
       category: t.category,
-      file: fileOf.get(t.name) ?? loaded.files[0] ?? "",
+      file: t.file as string,
     });
   }
   tokens.sort((a, b) => compareCodeUnits(a.file, b.file) || compareCodeUnits(a.name, b.name));
   warnings.push(...loaded.warnings.filter((w) => !w.startsWith("토큰 파일에서 색 토큰")));
+  for (const f of loaded.ignored) warnings.push(`토큰 파일 형식을 읽지 않음(건너뜀): ${f}`);
 
   const rank = (c: CatalogComponent): number => (c.origin === "init" ? 1 : 0);
   components.sort((a, b) => rank(a) - rank(b) || compareCodeUnits(a.name, b.name) || compareCodeUnits(a.module, b.module));

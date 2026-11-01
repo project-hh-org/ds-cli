@@ -2,7 +2,19 @@ import path from "node:path";
 import { moduleOfFile, resolveDefinitionFile } from "@dsmith-dev/core";
 import { describe, expect, it } from "vitest";
 import { buildCatalog } from "../src/index.js";
-import { auditFixture, copyFixture, overlay } from "./helpers.js";
+import { BADGE as BADGE_SRC, auditFixture, copyFixture, overlay } from "./helpers.js";
+
+const dtcg = (): string => {
+  const color = (name: string, rgb: number[], hex: string) => [name, { $value: { colorSpace: "srgb", components: rgb, hex } }];
+  const dim = (name: string, value: number) => [name, { $value: { value, unit: "px" } }];
+  return JSON.stringify({
+    color: { $type: "color", ...Object.fromEntries([color("primary", [0.2, 0.4, 0.9], "#3366e6"), color("text", [0, 0, 0], "#000000"), color("bg", [1, 1, 1], "#ffffff"), color("muted", [0.5, 0.5, 0.5], "#808080"), color("danger", [0.9, 0.1, 0.1], "#e61a1a"), color("ok", [0.1, 0.8, 0.2], "#1acc33")]) },
+    spacing: { $type: "dimension", ...Object.fromEntries([dim("1", 4), dim("2", 8), dim("3", 12), dim("4", 16)]) },
+    radius: { $type: "dimension", ...Object.fromEntries([dim("sm", 4), dim("md", 8)]) },
+    text: { $type: "dimension", ...Object.fromEntries([dim("sm", 12), dim("md", 14)]) },
+  });
+};
+const INIT_MANIFEST = JSON.stringify({ version: 1, tool: "init", dsmith: "x", entries: { "design-system/tokens.json": { sha256: "0" } } });
 
 
 describe("buildCatalog: 로컬 DS (fixtures/with-ds-app)", () => {
@@ -108,5 +120,68 @@ export default Card;
     const alert = catalog.components.find((c) => c.name === "Alert");
     expect(alert?.module).toBe("ds-out/components/Alert");
     expect(alert?.props[0]?.values).toEqual(["info", "error"]);
+  });
+
+  it("DTCG tokens.json만 있으면 토큰 14개, file은 design-system/tokens.json", async () => {
+    const root = copyFixture("with-ds-app", { ".dsmith/init.json": INIT_MANIFEST, "design-system/tokens.json": dtcg() });
+    const { index, detect } = await auditFixture(root);
+    const { catalog } = await buildCatalog({ root, detect, index, version: "x" });
+    expect(catalog.tokens).toHaveLength(14);
+    expect(catalog.tokens.every((t) => t.file === "design-system/tokens.json")).toBe(true);
+    expect(catalog.stats.tokens).toBe(14);
+    expect(new Set(catalog.tokens.map((t) => t.category))).toEqual(new Set(["color", "spacing", "radius", "font-size"]));
+  });
+
+  it("CSS와 JSON에 같은 토큰이 있으면 CSS가 이기고 file은 css", async () => {
+    const root = copyFixture("with-ds-app", {
+      "styles/tokens.css": ":root {\n  --color-primary: #112233;\n}\n",
+      ".dsmith/init.json": INIT_MANIFEST,
+      "design-system/tokens.json": dtcg(),
+    });
+    const { index, detect } = await auditFixture(root);
+    const { catalog } = await buildCatalog({ root, detect, index, version: "x" });
+    const css = catalog.tokens.filter((t) => t.file === "styles/tokens.css");
+    expect(css.map((t) => t.name)).toEqual(["--color-primary"]);
+    expect(catalog.tokens.some((t) => t.file === "design-system/tokens.json")).toBe(true);
+    expect(catalog.stats.tokens).toBe(catalog.tokens.length);
+  });
+
+  it("읽지 않는 토큰 파일(theme.ts)은 경고로 알린다", async () => {
+    const root = copyFixture("with-ds-app", { "src/theme.ts": "export const theme = {};\n" });
+    const { index, detect } = await auditFixture(root);
+    const { warnings } = await buildCatalog({ root, detect, index, version: "x" });
+    expect(warnings).toContain("토큰 파일 형식을 읽지 않음(건너뜀): src/theme.ts");
+  });
+
+  it("배럴 index.ts가 re-export하는 컴포넌트는 modules에 배럴 module을 포함한다", async () => {
+    const root = copyFixture("with-ds-app", {
+      "components/ui/index.ts": "export { Button } from './Button';\nexport * from './Badge';\nexport { OldButton as Legacy } from './OldButton';\n",
+      "components/ui/Badge.tsx": BADGE_SRC,
+      "src/pages/UsesBarrel.tsx": "import { Button } from '../../components/ui';\nexport const P = () => <Button>x</Button>;\n",
+    });
+    const { index, detect } = await auditFixture(root);
+    const { catalog } = await buildCatalog({ root, detect, index, version: "x" });
+    const by = Object.fromEntries(catalog.components.map((c) => [c.name, c]));
+    expect(by.Button?.modules).toEqual(["components/ui/Button", "components/ui"]);
+    expect(by.Badge?.modules).toEqual(["components/ui/Badge", "components/ui"]);
+    expect(by.OldButton?.modules).toBeUndefined();
+    const used = index.components.filter((u) => u.name === "Button").map((u) => u.module);
+    expect(used).toContain("components/ui");
+    expect(by.Button?.modules?.some((m) => used.includes(m))).toBe(true);
+  });
+
+  it("짧은 이름(H1)은 컴포넌트, 객체 const·일반 클래스·상수는 아니다", async () => {
+    const root = copyFixture("with-ds-app", {
+      "components/ui/Misc.tsx": `export const H1 = () => null;
+export const VARIANTS = { a: 1 };
+export const Sizes = ["s", "m"];
+export const Label = "x";
+export class Helper {}
+export class Boxed extends React.Component {}
+`,
+    });
+    const { index, detect } = await auditFixture(root);
+    const { catalog } = await buildCatalog({ root, detect, index, version: "x" });
+    expect(catalog.components.filter((c) => c.file === "components/ui/Misc.tsx").map((c) => c.name)).toEqual(["Boxed", "H1"]);
   });
 });
