@@ -4,7 +4,7 @@ import { normalizeColor } from "../src/normalize/color.js";
 import { clusterColors } from "../src/cluster/color-cluster.js";
 import { colorTokenNames } from "../src/cluster/names.js";
 import type { Token } from "../src/model/token.js";
-import { buildTokenDraft, draftCoverage, draftToTokens } from "../src/tokens/draft.js";
+import { buildTokenDraft, draftCoverage, draftToTokens, replaceableToken } from "../src/tokens/draft.js";
 
 function color(hex: string, property: StyleProperty = "color", file = "src/a.tsx"): StyleUsage {
   const normalized = normalizeColor(hex);
@@ -224,5 +224,40 @@ describe("draftToTokens", () => {
     expect(draftToTokens(draft)).toEqual([
       { name: "--space-2", value: "8px", normalized: { kind: "length", px: 8 }, category: "spacing" },
     ]);
+  });
+});
+
+describe("replaceableToken", () => {
+  const tokens: Token[] = [
+    { name: "--color-blue-400", value: "#3b82f6", normalized: normalizeColor("#3b82f6")!, category: "color" },
+    { name: "--space-2", value: "8px", normalized: { kind: "length", px: 8 }, category: "spacing" },
+    { name: "--radius-full", value: "9999px", normalized: { kind: "length", px: 9999 }, category: "radius" },
+  ];
+
+  it("정확히 같거나 가까운 값은 true, 먼 값은 false", () => {
+    expect(replaceableToken(color("#3b82f6"), tokens)).toBe(true);
+    expect(replaceableToken(color("#3c83f7"), tokens)).toBe(true);
+    expect(replaceableToken(color("#ef4444"), tokens)).toBe(false);
+    expect(replaceableToken(len(8, "padding"), tokens)).toBe(true);
+    expect(replaceableToken(len(13, "padding"), tokens)).toBe(false);
+  });
+
+  it("스케일 밖 값이 먼 토큰에 대응돼도 true가 아니다", () => {
+    const draft = buildTokenDraft([len(8, "padding"), len(8, "padding"), len(8, "padding"), len(30, "padding")]);
+    const mapped = draft.mappings.find((m) => m.px === 30);
+    expect(mapped?.token).not.toBeNull();
+    expect(replaceableToken(len(30, "padding"), draftToTokens(draft))).toBe(false);
+  });
+
+  it("토큰 대상 속성이 아니면 false, 999px 이상 모서리는 radius-full이 있을 때만 true", () => {
+    expect(replaceableToken(len(8, "width"), tokens)).toBe(false);
+    expect(replaceableToken(len(999, "border-radius"), tokens)).toBe(true);
+    expect(replaceableToken(len(999, "border-radius"), tokens.filter((t) => t.category !== "radius"))).toBe(false);
+  });
+
+  it("draftCoverage의 바꿀 수 있음은 replaceableToken과 같은 기준이다", () => {
+    const usages = [color("#3b82f6"), color("#ef4444"), len(8, "padding"), len(13, "padding"), len(999, "border-radius")];
+    const cov = draftCoverage(usages, tokens);
+    expect(cov.replaceable).toBe(usages.filter((u) => replaceableToken(u, tokens)).length);
   });
 });

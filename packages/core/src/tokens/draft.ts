@@ -354,6 +354,26 @@ export interface Coverage {
 }
 
 /**
+ * 이 하드코딩 값을 `tokens` 중 하나로 바꿀 수 있는가. 매처(`rankTokens`)가 같은 카테고리에서 exact 또는 close로 판정하면 true.
+ * 999px 이상 모서리(`radius-full` 값)는 `radius-full` 급 토큰(px ≥ `FULL_RADIUS_MIN_PX`)이 있으면 true.
+ * 토큰 대상 속성(`COVERAGE_PROPERTIES`: 색·간격·모서리·글꼴 크기. width·height 제외)이 아니면 false. 커버리지의 분모 제외(0 이하 간격, 평가 제외 사용)는 호출자의 몫이다.
+ * `draftCoverage`가 이 기준으로 "바꿀 수 있음"을 세고, 마이그레이션도 같은 기준을 쓴다.
+ */
+export function replaceableToken(usage: StyleUsage, tokens: Token[]): boolean {
+  if (!COVERAGE_PROPERTIES.includes(usage.property)) return false;
+  const category = tokenCategoryOf(usage.property);
+  if (category === null) return false;
+  const top = rankTokens(usage.normalized, tokens, { category, limit: 1 })[0];
+  if (top !== undefined && (top.confidence === "exact" || top.confidence === "close")) return true;
+  return (
+    category === "radius" &&
+    usage.normalized.kind === "length" &&
+    usage.normalized.px >= FULL_RADIUS_MIN_PX &&
+    tokens.some((t) => t.category === "radius" && t.normalized.kind === "length" && t.normalized.px >= FULL_RADIUS_MIN_PX)
+  );
+}
+
+/**
  * 색·글꼴 크기 토큰은 이 초안이 하드코딩 값에서 직접 만든 것이라 커버리지가 거의 100%다(구성상 그렇다).
  * 그래서 이 숫자는 사실상 간격(4px 스케일에 걸리지 않는 값) 커버리지를 반영한다.
  * 대상 = hardcoded 사용 중 0 이하 간격은 제외하고 `zeroOrNegative`로 따로 센다.
@@ -375,10 +395,6 @@ export function draftCoverage(
   let replaceable = 0;
   let total = 0;
   let zeroOrNegative = 0;
-  const hasFull = tokens.some(
-    (t) => t.category === "radius" && t.normalized.kind === "length" && t.normalized.px >= FULL_RADIUS_MIN_PX,
-  );
-
   for (const u of filterExcluded(styles, opts.excludeDirs)) {
     if (u.source !== "hardcoded" || !isRatedUsage(u) || !COVERAGE_PROPERTIES.includes(u.property)) continue;
     const category = tokenCategoryOf(u.property);
@@ -387,17 +403,7 @@ export function draftCoverage(
       zeroOrNegative += 1;
       continue;
     }
-    const top = rankTokens(u.normalized, tokens, { category, limit: 1 })[0];
-    let ok = top !== undefined && (top.confidence === "exact" || top.confidence === "close");
-    if (
-      !ok &&
-      hasFull &&
-      category === "radius" &&
-      u.normalized.kind === "length" &&
-      u.normalized.px >= FULL_RADIUS_MIN_PX
-    ) {
-      ok = true;
-    }
+    const ok = replaceableToken(u, tokens);
     total += 1;
     byCategory[category].total += 1;
     if (ok) {

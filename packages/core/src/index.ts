@@ -103,7 +103,7 @@ export type {
   ScaleMapping,
   TokenDraft,
 } from "./tokens/draft.js";
-export { COVERAGE_PROPERTIES, buildTokenDraft, draftCoverage, draftToTokens } from "./tokens/draft.js";
+export { COVERAGE_PROPERTIES, buildTokenDraft, draftCoverage, draftToTokens, replaceableToken } from "./tokens/draft.js";
 export type { ComponentDoc } from "./component/props.js";
 export { readComponentDoc, readTypeProps } from "./component/props.js";
 export { moduleOfFile } from "./component/definition.js";
