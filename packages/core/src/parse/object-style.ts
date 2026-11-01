@@ -59,11 +59,14 @@ export interface StyleObjectContext {
   extractor: string;
   /** true면 객체 값(`"&:hover": {…}`, `[bp]: {…}`)을 같은 규칙으로 재귀하고 그 키 자체는 usage를 내지 않는다. 기본 false. */
   nested?: boolean;
-  /** 속성별 분류 override. undefined를 돌려주면 기본 분류(`defaultClassify`)를 쓴다. */
+  /**
+   * 속성별 분류 override. undefined를 돌려주면 기본 분류(`defaultClassify`)를 쓴다.
+   * `defaultClassify(asKey)`는 원래 키 대신 `asKey`를 CSS 속성명으로 보고 분류한다(`bgcolor` → `background-color` 같은 별칭 키용).
+   */
   classify?: (
     key: string,
     value: Expression | PatternLike,
-    defaultClassify: () => StyleObjectUsage | null,
+    defaultClassify: (asKey?: string) => StyleObjectUsage | null,
   ) => StyleObjectUsage | null | undefined;
 }
 
@@ -149,7 +152,8 @@ export function usagesFromStyleObject(obj: ObjectExpression, ctx: StyleObjectCon
     const key = propertyKeyName(prop);
     if (key === null) continue;
     const value = prop.value;
-    const defaultClassify = (): StyleObjectUsage | null => buildUsage(ctx, propertyOf(key, value), value);
+    const defaultClassify = (asKey: string = key): StyleObjectUsage | null =>
+      buildUsage(ctx, propertyOf(asKey, value), value);
     const override = ctx.classify?.(key, value, defaultClassify);
     const result = override === undefined ? defaultClassify() : override;
     if (result !== null) results.push(result);

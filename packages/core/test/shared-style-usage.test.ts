@@ -91,6 +91,20 @@ describe("usagesFromStyleObject", () => {
     ]);
   });
 
+  it("defaultClassify(asKey)는 별칭 키를 다른 CSS 속성으로 보고 분류한다", () => {
+    const code = `x({ bgcolor: "#fff", fontSize: 13 })`;
+    const results = usagesFromStyleObject(firstObject(code), {
+      file: "a.ts",
+      code,
+      extractor: "x",
+      classify: (key, _value, defaultClassify) => (key === "bgcolor" ? defaultClassify("background-color") : undefined),
+    });
+    expect(results.map((r) => [r.usage.property, r.usage.raw, r.usage.normalized.kind])).toEqual([
+      ["background-color", "#fff", "color"],
+      ["font-size", "13", "length"],
+    ]);
+  });
+
   it("리터럴 값은 값 노드 구간, 그 밖은 dynamic(패치 없음)", () => {
     const code = `x({ color: "#fff", padding: 12, margin: m })`;
     const obj = firstObject(code);
