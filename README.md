@@ -49,7 +49,7 @@ npx dsmith init --all        # 결정 없이 추천안으로 스캐폴드(상위
 npx dsmith ai                # 카탈로그와 AGENTS.md DS 섹션
 ```
 
-- 커버리지는 하드코딩 값 중 토큰으로 바꿀 수 있는 비율로, `migrate`가 바꿀 수 있는 예상치다. 색·글꼴 크기 토큰은 이 초안이 하드코딩 값에서 직접 만들기 때문에 사실상 간격·모서리 커버리지를 반영한다.
+- 커버리지는 하드코딩 값 중 토큰으로 치환 가능한 비율로 `migrate` 후보 수와 같다. 요약은 이를 같은 값/정확(`migrate` 기본 대상)과 근사(`--close`로만)로 나눠 보인다. 쓴 `tokens.css`를 아무도 import하지 않으면 같은 안내를 낸다. 색·글꼴 크기 토큰은 이 초안이 하드코딩 값에서 직접 만들기 때문에 사실상 간격·모서리 커버리지를 반영한다.
 - 쓰기 규칙: 토큰 파일은 사람이 고친 것을 `--force` 없이 덮어쓰지 않는다. 스캐폴드는 `--force`로도 덮어쓰지 않는다. `--dry-run`은 `.dsmith/`를 포함해 아무것도 쓰지 않는다. 두 번째 실행은 아무것도 바꾸지 않는다.
 - npm 패키지 DS(예: `@mui/material`)는 `node_modules`가 설치돼 있어야 `.d.ts`를 읽는다. 설치가 없으면 `ai`가 그렇게 알린다.
 - MCP 서버는 `.dsmith/catalog.json`이 있으면 그것을 먼저 읽는다: `get_component`가 `source: "catalog"`로 props·허용 값·폐기·사용 예를 답하고, `search_component`는 아직 쓰이지 않는 DS 컴포넌트도 찾고, `resolve_token`은 카탈로그 토큰을 `source: "catalog"`로 돌려준다. 카탈로그가 없으면 이전과 같이 사용처 인덱스에서 답한다.
@@ -86,13 +86,14 @@ npx dsmith migrate --revert <id>                     # 기록으로 되돌리기
 npx dsmith migrate --list                            # 마이그레이션 기록 목록
 ```
 
-- 후보는 `init`의 커버리지와 같은 규칙으로 고른다. 후보 수 = 계획 + 건너뜀(사유별) + 범위 밖 + close 제외이고, 출력이 이 등식을 보여준다. 숫자는 사람용 출력, `--json`, `.dsmith/reports/migrate-<날짜>.md`가 같다.
+- 후보는 `init`의 커버리지와 같은 규칙으로 고른다. 후보 수 = 계획 + 건너뜀(사유별) + 범위 제한 + close 제외이고, 출력이 이 등식을 보여준다. 가까운 토큰이 없는 값(먼 값)과 동적 값은 후보가 아니라 "범위 밖"으로 따로 센다. 숫자는 사람용 출력, `--json`, `.dsmith/reports/migrate-<날짜>.md`가 같다.
 - 기본은 값이 같은(identical) 매칭과 exact 매칭만 바꾼다. 근사(close, ±2px·색 ΔE 임계 안)는 건수만 알리고, `--close`를 줘야 포함한다. 렌더링되는 값이 바뀔 수 있어서다.
 - 건너뛰는 것: 반투명 색, 값이 여러 개인 단축 속성, 음수·0, SCSS 변수, 토큰 참조를 만들 수 없는 값, UTF-8이 아닌 파일. 사유는 계획 출력과 `--json`의 `plan.skipped`에 나온다. 범위를 좁히려면 `--files <glob>`, `--category <color|spacing|radius|font-size>`, `--only <tokens|components>`.
 - 결정(`decide`)한 중복 컴포넌트는 import를 DS 쪽으로 바꾼다. props 이름·값이 다르면 `decide --map <from>:<to>`(값까지 바뀌면 `prop=value:prop=value`)로 대응을 줘야 하고, 없거나 동적 값이면 그 사용은 보류한다. 지역 정의는 지우지 않고 주석만 단다.
+- migrate가 쓰는 `var(--…)`는 `init`이 만든 `design-system/tokens.css`가 전역에 로드돼야 값을 갖는다. 아무도 import하지 않으면 계획·적용 출력과 리포트에 안내가 나오고(`plan.tokens.loaded`), `app/layout.tsx`·`src/main.tsx`·`globals.css` 같은 전역 엔트리에서 import하면 사라진다. 안내만 하고 적용은 막지 않는다. `init`도 같은 경우 같은 안내를 낸다.
 - Tailwind: `init`이 프리셋(v3 `tailwind.preset.*`, v4 `@theme` CSS)을 함께 만든다. tailwind 설정에 연결돼 있으면 클래스명(`bg-ds-blue-400`)으로, 연결 안 됐으면 임의값(`bg-[color:var(--color-blue-400)]`)으로 바꾸고 그렇다고 알린다.
 - 파일 단위로 재파싱·재추출 검증을 하고, 실패한 파일은 쓰지 않는다. 쓰기 직전 해시를 비교해 계획 뒤 바뀐 파일도 건너뛴다. audit 뒤 파일이 바뀌었으면 `plan.stale`로 알리고 audit를 다시 하라고 한다.
-- `--branch`는 git 2.23 이상, git 작성자 정보(`user.name`·`user.email`), 커밋되지 않은 변경이 없고 `.gitignore`에 걸리지 않는 대상 파일, 아직 없는 브랜치 이름이 있어야 한다. 결과는 셋 중 하나다: 커밋됨 / 일부 파일 실패로 커밋 없이 남음(되돌리기 명령을 출력) / 적용된 것이 없어 브랜치를 버림. push하거나 PR을 열지 않는다.
+- `--branch`는 git 2.23 이상, git 작성자 정보(`user.name`·`user.email`), 커밋되지 않은 변경이 없고 `.gitignore`에 걸리지 않는 대상 파일, 아직 없는 브랜치 이름이 있어야 한다. 치환된 `var()`·프리셋이 가리킬 토큰 파일(`plan.tokens.files`)과 연결된 프리셋 파일이 커밋되지 않았거나 수정됐으면 쓰기 전에 오류로 막는다(먼저 커밋하거나 `--with-tokens`로 같은 커밋에 넣는다. `.dsmith/`는 늘 제외). 결과는 셋 중 하나다: 커밋됨 / 일부 파일 실패로 커밋 없이 남음(되돌리기 명령을 출력) / 적용된 것이 없어 브랜치를 버림. push하거나 PR을 열지 않는다.
 - 종료 코드 1: 롤백된 파일·계획 뒤 바뀐 파일·쓰기 실패가 있거나, `--revert`에서 일부만 되돌렸을 때(적용 뒤 수정된 파일은 건너뜀).
 - 알려진 한계: Tailwind v4에서 `tokens.css`의 `--color-*`·`--radius-*`·`--text-*`가 Tailwind 기본 테마 변수와 같은 이름이면 기본 유틸리티(`bg-blue-400`, `rounded-sm` 등)의 값이 바뀔 수 있다. 이 도구는 이를 다루지 않는다.
 

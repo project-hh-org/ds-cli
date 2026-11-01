@@ -1,7 +1,18 @@
+import { existsSync } from "node:fs";
+import path from "node:path";
 import { runGit, type GitResult } from "@dsmith-dev/core";
 
 /** git 호출은 core `runGit` 하나로만 한다(timeout 필수). 작성자는 레포 설정이 정하고 dsmith는 `--author`를 넘기지 않는다 */
-export type BranchCheck = { ok: true; base: string; baseSha: string } | { ok: false; reason: string };
+export type BranchCheck =
+  /** include = `withTokens`일 때 같은 커밋에 넣을 토큰 파일(untracked이거나 수정된 것). 없으면 생략 */
+  { ok: true; base: string; baseSha: string; include?: string[] } | { ok: false; reason: string };
+
+export interface BranchCheckOptions {
+  /** 계획이 쓴 토큰 파일·연결된 프리셋/테마 파일(root 상대). `.dsmith/` 아래는 늘 제외 */
+  tokenFiles?: string[];
+  /** true면 untracked·수정된 토큰 파일을 오류로 막지 않고 `include`로 돌려준다(커밋에 함께 넣음) */
+  withTokens?: boolean;
+}
 
 const COMMIT_TIMEOUT_MS = 30_000;
 const MIN_GIT = [2, 23] as const;
@@ -25,7 +36,7 @@ export function parseGitVersion(text: string): [number, number] | null {
  * git 2.23 이상(`git switch`), root가 git 작업 트리(커밋 있음), `git var GIT_AUTHOR_IDENT` 성공, 유효한 이름, refs/heads/<name> 없음,
  * 대상 파일이 `.gitignore`에 걸리지 않음, `git status --porcelain -- <files>` 비어 있음(대상 파일이 깨끗). base = 현재 브랜치 이름(분리 HEAD면 sha).
  */
-export async function checkBranch(root: string, name: string, files: string[]): Promise<BranchCheck> {
+export async function checkBranch(root: string, name: string, files: string[], opts: BranchCheckOptions = {}): Promise<BranchCheck> {
   const version = await git(root, ["--version"]);
   if (version.error?.kind === "not-found") return { ok: false, reason: "git을 찾을 수 없음" };
   const parsed = version.ok ? parseGitVersion(version.stdout) : null;
@@ -51,26 +62,52 @@ export async function checkBranch(root: string, name: string, files: string[]): 
   const exists = await git(root, ["rev-parse", "--verify", "-q", `refs/heads/${name}`]);
   if (exists.ok) return { ok: false, reason: `브랜치가 이미 있음: ${name}` };
 
-  if (files.length > 0) {
+  // 토큰·프리셋 파일: 치환된 var()·프리셋이 가리키는 파일이 브랜치에도 있어야 한다. untracked·수정이면 막거나(기본) 커밋에 함께 넣는다(--with-tokens)
+  const tokenFiles = [...new Set(opts.tokenFiles ?? [])].filter((f) => !f.startsWith(".dsmith/") && !files.includes(f)).sort();
+  let include: string[] = [];
+  if (tokenFiles.length > 0) {
+    const tracked = await git(root, ["ls-files", "-z", "--", ...tokenFiles], { timeoutMs: 30_000 });
+    if (!tracked.ok) return { ok: false, reason: `git ls-files 실패: ${firstLine(tracked.stderr)}` };
+    const trackedSet = new Set(tracked.stdout.split("\0").filter((l) => l !== ""));
+    const status = await git(root, ["status", "--porcelain", "--", ...tokenFiles], { timeoutMs: 30_000 });
+    if (!status.ok) return { ok: false, reason: `git status 실패: ${firstLine(status.stderr)}` };
+    const changed = new Set(status.stdout.split("\n").filter((l) => l.trim() !== "").map((l) => l.slice(3)));
+    // 디렉터리 단위 `??`(untracked 폴더)는 안의 파일로 풀어 주지 않으니, 추적되지 않는 파일은 따로 센다
+    const missing = tokenFiles.filter((f) => !trackedSet.has(f) && existsSync(path.join(root, f)));
+    include = tokenFiles.filter((f) => missing.includes(f) || changed.has(f));
+    if (include.length > 0 && opts.withTokens !== true) {
+      const shown = include.slice(0, 5).join(", ");
+      return {
+        ok: false,
+        reason: `토큰 파일이 브랜치에 없음(커밋되지 않았거나 수정됨): ${shown}${include.length > 5 ? ` 외 ${include.length - 5}개` : ""} — 치환된 var()·프리셋이 가리킬 파일이 PR에 빠집니다. 먼저 커밋하거나 --with-tokens로 함께 커밋`,
+      };
+    }
+  }
+
+  const checked = opts.withTokens === true ? [...files, ...include] : files;
+  if (checked.length > 0) {
     // 무시된 파일은 `git status`에 나오지 않지만 `git add`가 거부하니, 쓰기 전에 걸러낸다(추적 중인 파일은 무시 규칙에 걸려도 괜찮다)
-    const ignored = await git(root, ["check-ignore", "--stdin"], { input: `${files.join("\n")}\n`, timeoutMs: 30_000 });
+    const ignored = await git(root, ["check-ignore", "--stdin"], { input: `${checked.join("\n")}\n`, timeoutMs: 30_000 });
     if (ignored.code !== 0 && ignored.code !== 1) return { ok: false, reason: `git check-ignore 실패: ${firstLine(ignored.stderr) || ignored.error?.message || ""}` };
     const hits = ignored.stdout.split("\n").filter((l) => l.trim() !== "");
     if (hits.length > 0) {
       return { ok: false, reason: `치환 대상 파일이 .gitignore에 걸려 커밋할 수 없음: ${hits.slice(0, 5).join(", ")}${hits.length > 5 ? ` 외 ${hits.length - 5}개` : ""}` };
     }
 
-    const status = await git(root, ["status", "--porcelain", "--", ...files], { timeoutMs: 30_000 });
-    if (!status.ok) return { ok: false, reason: `git status 실패: ${firstLine(status.stderr)}` };
-    const dirty = status.stdout.split("\n").filter((l) => l.trim() !== "");
-    if (dirty.length > 0) {
-      const shown = dirty.slice(0, 5).map((l) => l.slice(3));
-      return { ok: false, reason: `치환 대상 파일에 커밋하지 않은 변경이 있음: ${shown.join(", ")}${dirty.length > 5 ? ` 외 ${dirty.length - 5}개` : ""}` };
+    if (files.length > 0) {
+      const status = await git(root, ["status", "--porcelain", "--", ...files], { timeoutMs: 30_000 });
+      if (!status.ok) return { ok: false, reason: `git status 실패: ${firstLine(status.stderr)}` };
+      const dirty = status.stdout.split("\n").filter((l) => l.trim() !== "");
+      if (dirty.length > 0) {
+        const shown = dirty.slice(0, 5).map((l) => l.slice(3));
+        return { ok: false, reason: `치환 대상 파일에 커밋하지 않은 변경이 있음: ${shown.join(", ")}${dirty.length > 5 ? ` 외 ${dirty.length - 5}개` : ""}` };
+      }
     }
   }
 
   const branch = await git(root, ["symbolic-ref", "--short", "-q", "HEAD"]);
-  return { ok: true, base: branch.ok && branch.stdout.trim() !== "" ? branch.stdout.trim() : baseSha, baseSha };
+  const base = branch.ok && branch.stdout.trim() !== "" ? branch.stdout.trim() : baseSha;
+  return { ok: true, base, baseSha, ...(opts.withTokens === true && include.length > 0 ? { include } : {}) };
 }
 
 export async function createBranch(root: string, name: string): Promise<void> {

@@ -12,6 +12,7 @@ import {
   emitTokensTs,
   explainDecision,
   findTailwindConfig,
+  findTokensStylesheetImport,
   isPresetLinked,
   listDecisions,
   localDate,
@@ -29,6 +30,7 @@ import {
   seedDecisions,
   serializeW3c,
   summarizeComponents,
+  TOKENS_NOT_LOADED_NOTE,
   withTokenFiles,
   writeCatalog,
   writeDecisions,
@@ -39,10 +41,11 @@ import {
   type ScaleMapping,
   type StyleUsage,
   type TokenDraft,
+  type TokensStylesheetLoaded,
   type WriteOutcome,
   type WriteStatus,
 } from "@dsmith-dev/core";
-import { isDsSpecifier, readDetect } from "@dsmith-dev/detect";
+import { excludeGlobs, isDsSpecifier, readDetect } from "@dsmith-dev/detect";
 import { normalizeOutDir } from "./out-dir.js";
 import { renderInitReport } from "./report.js";
 import { renderScaffold, type ScaffoldProp } from "./scaffold.js";
@@ -108,6 +111,11 @@ export interface InitResult {
    * linked = tailwind.config의 presets / 진입 CSS의 @import에 연결됨(dry-run이면 현재 파일 기준).
    */
   tailwindPreset: { version: 3 | 4; file: string; linked: boolean } | null;
+  /**
+   * 어딘가에서 `<outDir>/tokens.css`를 import하는가(JS/TS import·CSS @import·HTML link, 연결된 Tailwind v4 테마 CSS) — migrate가 쓰는 `var(--…)`가 값을 가지려면 필요하다.
+   * 토큰 파일을 쓰지 않았으면(보류·쓸 수 없음) 확인하지 않아 null. 안내만 하고 아무것도 막지 않는다.
+   */
+  tokensLoaded: TokensStylesheetLoaded | null;
   /**
    * `.dsmith/catalog.json`과의 관계. refreshed = 카탈로그의 토큰·토큰 파일 해시를 이번 산출로 갱신함, current = 이미 같음,
    * needs-ai = 카탈로그가 없거나 이 산출 디렉터리를 담고 있지 않음(`dsmith ai` 필요), null = dry-run이라 보지 않음
@@ -541,6 +549,17 @@ export async function runInit(opts: InitOptions): Promise<InitResult> {
     tailwindPreset = { version: presetVersion, file: presetRel, linked: await isPresetLinked(root, outDir, presetVersion) };
   }
 
+  // tokens.css를 쓴(또는 이미 같은) 실행만 로드 여부를 본다 — 보류된 실행은 새로 쓴 파일이 아니다
+  const cssStatus = (outcomes[1] as WriteOutcome).status;
+  const tokensLoaded: InitResult["tokensLoaded"] =
+    cssStatus === "created" || cssStatus === "updated" || cssStatus === "unchanged"
+      ? await findTokensStylesheetImport(root, {
+          initDir: outDir,
+          themeLinked: tailwindPreset !== null && tailwindPreset.version === 4 && tailwindPreset.linked,
+          exclude: excludeGlobs(detected.overrides),
+        })
+      : null;
+
   // 7. 커버리지
   const coverage = draftCoverage(index.styles, draftToTokens(draft), { excludeDirs: [outDir] });
 
@@ -586,6 +605,7 @@ export async function runInit(opts: InitOptions): Promise<InitResult> {
     warnings,
     tokenHold,
     tailwindPreset,
+    tokensLoaded,
     catalog: null,
   };
 
@@ -628,8 +648,8 @@ export function formatInitSummary(r: InitResult): string {
   const alphaNote = alphaCount > 0 ? `, 알파 ${alphaCount}건 포함` : "";
   lines.push(
     c.total === 0
-      ? "커버리지: 하드코딩 값이 없음 (migrate 예상치)"
-      : `커버리지: 하드코딩 ${c.total}건 중 ${c.replaceable}건(${rate})을 토큰으로 바꿀 수 있음 (migrate 예상치${alphaNote})`,
+      ? "커버리지: 하드코딩 값이 없음"
+      : `커버리지: 하드코딩 ${c.total}건 중 치환 가능 ${c.replaceable}건(${rate}) (같은 값/정확 ${c.byConfidence.exact}건은 migrate 기본, 근사 ${c.byConfidence.close}건은 --close${alphaNote})`,
   );
   if (r.alphaDropped.length > 0) {
     lines.push(`알파 제외: 투명도가 있는 색 ${r.alphaDropped.length}종은 토큰 값에서 알파가 빠짐 (리포트 참고)`);
@@ -648,6 +668,7 @@ export function formatInitSummary(r: InitResult): string {
       `Tailwind 프리셋: ${p.file} — ${p.linked ? "연결됨" : `연결 안 됨: ${how} migrate가 클래스명(bg-ds-…)으로 치환`}`,
     );
   }
+  if (r.tokensLoaded !== null && !r.tokensLoaded.css) lines.push(`참고: ${TOKENS_NOT_LOADED_NOTE(r.outDir)}`);
   for (const w of r.warnings) lines.push(`경고: ${w}`);
   const stale = r.decisions.stale > 0 ? `, stale ${r.decisions.stale}건` : "";
   // 힌트는 고를 것이 있을 때만(pending·stale)

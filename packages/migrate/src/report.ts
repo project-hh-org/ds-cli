@@ -1,4 +1,4 @@
-import type { Token } from "@dsmith-dev/core";
+import { TOKENS_NOT_LOADED_NOTE, type Token } from "@dsmith-dev/core";
 import type { ApplyResult } from "./apply.js";
 import type { ComponentPlanSummary, ComponentSkipReason } from "./components.js";
 import type { MigratePlan, TokenSkipReason } from "./plan.js";
@@ -107,7 +107,8 @@ function tokenLine(plan: MigratePlan): string {
 export function formatPlanSummary(
   plan: MigratePlan,
   projected: { before: AuditNumbers; after: AuditNumbers } | null,
-  opts: { hint?: boolean } = {},
+  /** `scopeFlags`: 계획에 준 범위 플래그(`--close --files … --category … --only … --max-files …`)를 적용 안내에 그대로 되풀이한다 */
+  opts: { hint?: boolean; scopeFlags?: string } = {},
 ): string {
   const lines: string[] = [];
   const staleCount = plan.stale.changed.length + plan.stale.added.length;
@@ -136,7 +137,10 @@ export function formatPlanSummary(
   lines.push(...componentLines(plan, 8));
   for (const note of plan.notes) lines.push(`참고: ${note}`);
   const anything = plan.planned > 0 || plan.components.imports + plan.components.props + plan.components.annotations > 0;
-  if (anything && opts.hint !== false) lines.push("적용: dsmith migrate --apply   (되돌리기: dsmith migrate --revert <id>)");
+  if (anything && opts.hint !== false) {
+    const flags = opts.scopeFlags === undefined || opts.scopeFlags === "" ? "" : ` ${opts.scopeFlags}`;
+    lines.push(`적용: dsmith migrate --apply${flags}   (되돌리기: dsmith migrate --revert <id>)`);
+  }
   return lines.join("\n");
 }
 
@@ -145,7 +149,10 @@ export function renderMigrateReport(input: { plan: MigratePlan; applied: ApplyRe
   const { plan, applied, before, after } = input;
   const lines: string[] = ["# DS Migrate", ""];
   lines.push(`- 기록: \`${applied.id}\` (\`${applied.record}\`)`);
-  lines.push(`- 토큰 출처: ${tokenLine(plan).slice("토큰: ".length)}`, "");
+  lines.push(`- 토큰 출처: ${tokenLine(plan).slice("토큰: ".length)}`);
+  const initDir = plan.tokens.excludeDirs[0];
+  if (!plan.tokens.loaded.css && initDir !== undefined) lines.push(`- ${TOKENS_NOT_LOADED_NOTE(initDir)}`);
+  lines.push("");
 
   lines.push("## 전/후", "");
   lines.push("| 항목 | 전 | 후 |", "| --- | --- | --- |");

@@ -351,6 +351,8 @@ export interface Coverage {
   byCategory: Record<DraftCategory, { replaceable: number; total: number }>;
   /** 분모에서 뺀 0 이하 간격(padding·margin·gap) 사용 수 */
   zeroOrNegative: number;
+  /** replaceable의 신뢰도 분해: exact(같은 값·정확) = migrate 기본 대상, close(근사) = `--close`로만. exact + close === replaceable */
+  byConfidence: { exact: number; close: number };
 }
 
 export interface Replacement {
@@ -414,6 +416,7 @@ export function draftCoverage(
   let replaceable = 0;
   let total = 0;
   let zeroOrNegative = 0;
+  const byConfidence = { exact: 0, close: 0 };
   for (const u of filterExcluded(styles, opts.excludeDirs)) {
     if (u.source !== "hardcoded" || !isRatedUsage(u) || !COVERAGE_PROPERTIES.includes(u.property)) continue;
     const category = tokenCategoryOf(u.property);
@@ -422,12 +425,13 @@ export function draftCoverage(
       zeroOrNegative += 1;
       continue;
     }
-    const ok = replaceableToken(u, tokens);
+    const best = bestReplacement(u, tokens);
     total += 1;
     byCategory[category].total += 1;
-    if (ok) {
+    if (best !== null) {
       replaceable += 1;
       byCategory[category].replaceable += 1;
+      byConfidence[best.confidence] += 1;
     }
   }
 
@@ -437,6 +441,7 @@ export function draftCoverage(
     rate: total === 0 ? null : Math.round((replaceable / total) * 10000) / 10000,
     byCategory,
     zeroOrNegative,
+    byConfidence,
   };
 }
 

@@ -159,12 +159,22 @@ describe("dsmith migrate — fixture e2e", () => {
     expectInvariants(again.json.plan);
 
     const list = await migrate(root, { list: true });
-    expect((list.json as unknown as { id: string; status: string }[])[0]).toMatchObject({ id: applied.id, status: "applied" });
+    expect((list.json as unknown as { id: string; status: string }[])[0]).toMatchObject({ id: applied.id, status: "applied", close: false });
+    expect(list.text).toMatch(new RegExp(`^${applied.id}  applied  -  파일 \\d+ · 치환 \\d+`));
 
     const reverted = await runMigrateCommand({ root, revert: applied.id });
     expect((reverted.json as { files: { status: string }[] }).files.every((f) => f.status === "reverted")).toBe(true);
     expect(treeHash(root)).toBe(treeBefore);
     expect((await runAudit(root)).result.health.score).toBe(auditBefore.score);
+  }, 120_000);
+
+  it("적용 안내는 계획에 준 --close·--files·--category·--only·--max-files를 그대로 되풀이한다 (M1)", async () => {
+    const { root } = await prepare("examples/legacy-demo", { stateZero: true });
+    const hint = (text: string): string => text.split("\n").find((l) => l.startsWith("적용: dsmith migrate --apply")) ?? "";
+    expect(hint((await migrate(root)).text)).toMatch(/^적용: dsmith migrate --apply   \(되돌리기/);
+    expect(hint((await migrate(root, { close: true })).text)).toMatch(/^적용: dsmith migrate --apply --close   \(/);
+    const scoped = await migrate(root, { close: true, category: "color", only: "tokens", files: ["app/**/*.tsx", "src/**"], maxFiles: "3" });
+    expect(hint(scoped.text)).toContain('--apply --close --files "app/**/*.tsx" "src/**" --category color --only tokens --max-files 3   (');
   }, 120_000);
 
   it("--files · --category · --close · --max-files", async () => {
@@ -305,6 +315,7 @@ describe("dsmith migrate — fixture e2e", () => {
   it("옵션 검증: --branch는 --apply가 있어야 하고, 값 오류는 에러", async () => {
     const { root } = await prepare("fixtures/inline-app");
     await expect(runMigrateCommand({ root, branch: "x" })).rejects.toThrow("--branch는 --apply와 함께");
+    await expect(runMigrateCommand({ root, apply: true, withTokens: true })).rejects.toThrow("--with-tokens는 --branch와 함께");
     await expect(runMigrateCommand({ root, category: "weight" })).rejects.toThrow("--category");
     await expect(runMigrateCommand({ root, maxFiles: "0" })).rejects.toThrow("--max-files");
     await expect(runMigrateCommand({ root, apply: true, revert: "x" })).rejects.toThrow("함께 쓸 수 없습니다");
@@ -313,7 +324,7 @@ describe("dsmith migrate — fixture e2e", () => {
   it("옵션이 등록돼 있다", () => {
     const cmd = buildProgram().commands.find((c) => c.name() === "migrate");
     expect(cmd?.options.map((o) => o.long).sort()).toEqual(
-      ["--apply", "--branch", "--category", "--close", "--files", "--json", "--list", "--max-files", "--only", "--revert", "--root"].sort(),
+      ["--apply", "--branch", "--category", "--close", "--files", "--json", "--list", "--max-files", "--only", "--revert", "--root", "--with-tokens"].sort(),
     );
   });
 });
@@ -449,12 +460,13 @@ describe("dsmith migrate --apply --branch", () => {
     spawnSync("git", ["-c", "user.name=Fixture", "-c", "user.email=fixture@example.com", ...args], { cwd, encoding: "utf-8" }).stdout;
 
   /** legacy-demo(상태 0) + Button 결정 → git 레포(.dsmith는 무시)로 만들어 커밋한다 */
-  async function gitRepo(identity: boolean): Promise<string> {
+  async function gitRepo(identity: boolean, opts: { trackTokens?: boolean } = {}): Promise<string> {
     const { root } = await prepare("examples/legacy-demo", { stateZero: true });
     await runDecideChoose(root, "Button", DS_BUTTON, undefined, { mapping: BUTTON_MAP });
     fs.writeFileSync(path.join(root, ".gitignore"), ".dsmith/\n");
     git(root, "init", "-q", "-b", "main");
-    git(root, "add", ".");
+    // trackTokens: false면 init 산출물(design-system/)을 커밋하지 않아 untracked로 남긴다
+    git(root, "add", ...(opts.trackTokens === false ? [".", ":!design-system"] : ["."]));
     git(root, "commit", "-q", "-m", "init");
     if (identity) {
       git(root, "config", "user.name", "Repo Author");
@@ -509,6 +521,42 @@ describe("dsmith migrate --apply --branch", () => {
     expect(treeHash(root, { includeDsmith: true })).toBe(dirtyTree);
     expect(git(root, "branch", "--list", "ds/new").trim()).toBe("");
   }, 120_000);
+
+  it("토큰 파일이 untracked면 아무것도 쓰기 전에 오류(파일 목록·힌트), 브랜치·트리 그대로 (I2)", async () => {
+    const root = await gitRepo(true, { trackTokens: false });
+    const tree = treeHash(root, { includeDsmith: true });
+    const err = await runMigrateCommand({ root, apply: true, branch: "ds/tok" }).then(
+      () => null,
+      (e: Error) => e,
+    );
+    expect(err?.message).toMatch(/--branch를 쓸 수 없음: 토큰 파일이 브랜치에 없음/);
+    expect(err?.message).toContain("design-system/tokens.css");
+    expect(err?.message).toContain("먼저 커밋하거나 --with-tokens로 함께 커밋");
+    expect(treeHash(root, { includeDsmith: true })).toBe(tree);
+    expect(git(root, "branch", "--list", "ds/tok").trim()).toBe("");
+    expect(git(root, "branch", "--show-current").trim()).toBe("main");
+  }, 120_000);
+
+  it("토큰 파일이 커밋 뒤 수정됐어도 같은 오류", async () => {
+    const root = await gitRepo(true);
+    fs.appendFileSync(path.join(root, "design-system/tokens.css"), "/* 손으로 고침 */\n");
+    await expect(runMigrateCommand({ root, apply: true, branch: "ds/tok" })).rejects.toThrow(/토큰 파일이 브랜치에 없음.*design-system\/tokens\.css/s);
+    expect(git(root, "branch", "--list", "ds/tok").trim()).toBe("");
+  }, 120_000);
+
+  it("--with-tokens: untracked 토큰 파일을 같은 커밋에 넣는다(.dsmith 제외)", async () => {
+    const root = await gitRepo(true, { trackTokens: false });
+    const { json, text, exitCode } = await runMigrateCommand({ root, apply: true, branch: "ds/tok", withTokens: true });
+    expect(exitCode).toBe(0);
+    const applied = (json as Json).applied!;
+    const committed = git(root, "show", "--name-only", "--format=", "HEAD").trim().split("\n").sort();
+    expect(committed).toEqual(expect.arrayContaining(["design-system/tokens.css", "design-system/tokens.json"]));
+    for (const f of applied.files.filter((x) => x.status === "applied")) expect(committed).toContain(f.file);
+    expect(committed.some((f) => f.startsWith(".dsmith"))).toBe(false);
+    expect(git(root, "ls-files", "design-system/tokens.css").trim()).toBe("design-system/tokens.css");
+    expect(text).toMatch(/토큰 파일 \d+개를 함께 커밋/);
+    expect(git(root, "status", "--porcelain", "--", "app", "src", "design-system/tokens.css").trim()).toBe("");
+  }, 180_000);
 
   it("계획이 0건이면 브랜치를 만들지 않는다", async () => {
     const { root } = await prepare("examples/legacy-demo", { stateZero: true });

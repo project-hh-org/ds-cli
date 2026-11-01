@@ -289,6 +289,53 @@ describe("planMigration", () => {
     });
   });
 
+  describe("plan.tokens.loaded — 토큰 스타일시트 로드 여부 (I1)", () => {
+    const NOTE = "토큰 스타일시트가 로드되지 않음: design-system/tokens.css를 전역 엔트리(예: app/layout.tsx, src/main.tsx, globals.css)에서 import하세요 — 치환된 var()가 비어 보입니다";
+    const initRepo = (extra: Record<string, string> = {}): string =>
+      makeRepo({
+        "package.json": JSON.stringify({ name: "x", dependencies: { react: "18" } }),
+        "design-system/tokens.json": "{}\n",
+        "design-system/tokens.css": TOKENS_CSS,
+        "app/layout.tsx": 'import "./globals.css";\nexport default function L() { return <div style={{ color: "#3b82f6" }} />; }\n',
+        "app/globals.css": "body { padding: 16px; }\n",
+        ...extra,
+      });
+
+    it("아무 파일도 tokens.css를 import하지 않으면 loaded false·노트 한 줄, 적용은 막지 않는다", async () => {
+      const root = initRepo();
+      await auditFixture(root);
+      const plan = await planMigration({ root, ...(await loadState(root)) });
+      expect(plan.tokens.loaded).toEqual({ css: false, evidence: null });
+      expect(plan.notes.filter((n) => n.startsWith("토큰 스타일시트가 로드되지 않음"))).toEqual([NOTE]);
+      expect(plan.planned).toBeGreaterThan(0);
+    });
+
+    it("app/layout.tsx가 import하면 loaded true·evidence·노트 없음", async () => {
+      const root = initRepo({
+        "app/layout.tsx": 'import "./globals.css";\nimport "../design-system/tokens.css";\nexport default function L() { return <div style={{ color: "#3b82f6" }} />; }\n',
+      });
+      await auditFixture(root);
+      const plan = await planMigration({ root, ...(await loadState(root)) });
+      expect(plan.tokens.loaded).toEqual({ css: true, evidence: "app/layout.tsx" });
+      expect(plan.notes.some((n) => n.includes("토큰 스타일시트"))).toBe(false);
+    });
+
+    it("globals.css의 @import도 인정한다", async () => {
+      const root = initRepo({ "app/globals.css": '@import "../design-system/tokens.css";\nbody { padding: 16px; }\n' });
+      await auditFixture(root);
+      const plan = await planMigration({ root, ...(await loadState(root)) });
+      expect(plan.tokens.loaded).toEqual({ css: true, evidence: "app/globals.css" });
+    });
+
+    it("init 디렉터리가 없는(사용자 토큰 파일) 레포는 확인 대상이 아니라 loaded true·노트 없음", async () => {
+      const root = syntheticRepo();
+      await auditFixture(root);
+      const plan = await planMigration({ root, ...(await loadState(root)) });
+      expect(plan.tokens.loaded).toEqual({ css: true, evidence: null });
+      expect(plan.notes).toEqual([]);
+    });
+  });
+
   it("Tailwind 프리셋이 없으면 notes 없이 계획한다 (연결 판정은 readTailwindPreset)", async () => {
     const root = syntheticRepo();
     await auditFixture(root);

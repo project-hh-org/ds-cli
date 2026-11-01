@@ -8,6 +8,7 @@ import { Linter } from "eslint";
 import dsmithPlugin from "@dsmith-dev/eslint-plugin";
 import { readDetect, writeDetect } from "@dsmith-dev/detect";
 import { runAudit } from "../src/commands/audit.js";
+import { runDecideChoose } from "../src/commands/decide.js";
 import { runInitCommand } from "../src/commands/init.js";
 import { treeHash } from "./tree-hash.js";
 
@@ -283,5 +284,98 @@ describe("legacy-demo 전 구간: init → migrate → guard", () => {
 
   it("main은 그대로 — 마이그레이션은 브랜치에만 있다", () => {
     expect(git(state.root, "rev-parse", "main").trim()).toBe(state.mainSha);
+  });
+});
+
+/**
+ * Button 결정(--map 3건) + 토큰 스타일시트 안내(I1) + 예상 점수 == 실제 == 재audit(I3):
+ * legacy-demo는 init이 쓴 design-system/tokens.css를 아무도 import하지 않는다 → 안내가 나오고, app/layout.tsx에 import를 더하면 사라진다.
+ */
+const BUTTON_MAP = { "variant=primary": "variant=default", "variant=secondary": "variant=outline", "variant=danger": "variant=destructive" };
+const NOTE_PREFIX = "토큰 스타일시트가 로드되지 않음: design-system/tokens.css를 전역 엔트리";
+
+describe("legacy-demo: tokens.css 로드 안내 · 컴포넌트 결정이 있는 예상 점수", () => {
+  const demo: {
+    root: string;
+    scoreBefore: number;
+    planBefore: { text: string; json: MigrateJson & { plan: PlanJson & { tokens: { loaded: { css: boolean; evidence: string | null } }; notes: string[] } } };
+    planAfter: { text: string; json: MigrateJson & { plan: PlanJson & { tokens: { loaded: { css: boolean; evidence: string | null } }; notes: string[]; components: { imports: number } } } };
+    apply: { text: string; json: MigrateJson; status: number | null };
+    report: string;
+    auditAfter: { score: number; hardcodedShare: number };
+  } = {} as never;
+
+  beforeAll(async () => {
+    const root = tmpDir("dsmith-e2e-mg-btn-");
+    demo.root = root;
+    fs.cpSync(path.join(repoRoot, "examples/legacy-demo"), root, { recursive: true, filter: (p) => !p.split(path.sep).includes(".dsmith") });
+    fs.writeFileSync(path.join(root, ".gitignore"), ".dsmith/\n");
+    git(root, "init", "-q", "-b", "main");
+    git(root, "config", "user.name", "Dahee Hwang");
+    git(root, "config", "user.email", "dahee@project-hh.com");
+    await runAudit(root);
+    const current = (await readDetect(root))!;
+    await writeDetect(root, { ...current, overrides: { ds: { kind: "none", tokenFiles: [] }, state: 0 } });
+    await runAudit(root);
+    await runInitCommand({ root, all: true });
+    demo.scoreBefore = (await runAudit(root)).result.health.score;
+    await runDecideChoose(root, "Button", "src/components/ui/button", undefined, { mapping: BUTTON_MAP });
+
+    // 1) 아무도 tokens.css를 import하지 않는다
+    demo.planBefore = { text: dsmith(root, "migrate").stdout, json: dsmithJson<never>(root, "migrate").json };
+
+    // 2) app/layout.tsx에 import를 더한다
+    const layout = path.join(root, "app/layout.tsx");
+    const src = fs.readFileSync(layout, "utf-8");
+    const edited = src.replace('import "./globals.css";\n', 'import "./globals.css";\nimport "../design-system/tokens.css";\n');
+    expect(edited).not.toBe(src);
+    fs.writeFileSync(layout, edited);
+    demo.planAfter = { text: dsmith(root, "migrate").stdout, json: dsmithJson<never>(root, "migrate").json };
+
+    // 3) 커밋(design-system 포함) → 브랜치 적용
+    git(root, "add", "-A");
+    git(root, "commit", "-q", "-m", "base");
+    const applied = dsmithJson<MigrateJson>(root, "migrate", "--apply", "--branch", "ds/button");
+    demo.apply = { text: dsmith(root, "migrate", "--list").stdout, json: applied.json, status: applied.status };
+    const reportFile = fs.readdirSync(path.join(root, ".dsmith/reports")).find((f) => f.startsWith("migrate-")) ?? "";
+    demo.report = fs.readFileSync(path.join(root, ".dsmith/reports", reportFile), "utf-8");
+    const after = (await runAudit(root)).result.health;
+    demo.auditAfter = { score: after.score, hardcodedShare: after.hardcodedShare };
+  }, 240_000);
+
+  it("tokens.css를 아무도 import하지 않으면 계획 출력·--json에 안내가 나온다 (I1)", () => {
+    expect(demo.planBefore.text).toContain(`참고: ${NOTE_PREFIX}(예: app/layout.tsx, src/main.tsx, globals.css)에서 import하세요 — 치환된 var()가 비어 보입니다`);
+    expect(demo.planBefore.json.plan.tokens.loaded).toEqual({ css: false, evidence: null });
+    expect(demo.planBefore.json.plan.notes.filter((n) => n.startsWith(NOTE_PREFIX))).toHaveLength(1);
+  });
+
+  it("app/layout.tsx에 import를 더하면 안내가 사라지고 evidence가 그 파일이다", () => {
+    expect(demo.planAfter.text).not.toContain("토큰 스타일시트가 로드되지 않음");
+    expect(demo.planAfter.json.plan.tokens.loaded).toEqual({ css: true, evidence: "app/layout.tsx" });
+    expect(demo.planAfter.json.plan.notes.some((n) => n.includes("토큰 스타일시트"))).toBe(false);
+  });
+
+  it("Button 결정이 계획에 들어 있다", () => {
+    expect(demo.planAfter.json.plan.components.imports).toBeGreaterThan(0);
+  });
+
+  it("--apply --branch: 예상 점수 == 실제 == 독립 재audit (I3)", () => {
+    expect(demo.apply.status).toBe(0);
+    const { projected, actual } = demo.apply.json;
+    expect(projected?.after.score).toBe(actual?.after.score);
+    expect(actual?.after.score).toBe(demo.auditAfter.score);
+    expect(projected?.after.hardcodedShare).toBe(actual?.after.hardcodedShare);
+    expect(actual?.after.hardcodedShare).toBe(demo.auditAfter.hardcodedShare);
+    expect(demo.auditAfter.score).toBeGreaterThan(demo.scoreBefore);
+    // 계획 시점의 예상(계획만 실행)도 같은 숫자
+    expect(demo.planAfter.json.projected?.after.score).toBe(demo.auditAfter.score);
+  });
+
+  it("--list는 close 열을 보인다(--close 없이 계획했으니 '-')", () => {
+    expect(demo.apply.text).toMatch(/^\d{8}-\d{6}  applied  -  파일 \d+/m);
+  });
+
+  it("안내가 없는 계획의 리포트 파일에는 안내 줄이 없다", () => {
+    expect(demo.report).not.toContain("토큰 스타일시트가 로드되지 않음");
   });
 });

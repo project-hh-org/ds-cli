@@ -150,7 +150,7 @@ const CSS_COMMENTS = new RegExp(`(${STRING_LITERAL})|\\/\\*[\\s\\S]*?\\*\\/`, "g
  * 블록 주석과 `//` 주석(js)을 뺀다(생성 파일의 안내 주석이 연결로 오인되지 않게).
  * 문자열 리터럴을 먼저 잡아 그대로 두므로 글롭 `"./src/*.tsx"`나 `"http://…"`는 주석으로 오인되지 않는다. CSS는 블록 주석만.
  */
-function stripComments(text: string, lang: "js" | "css" = "js"): string {
+export function stripComments(text: string, lang: "js" | "css" = "js"): string {
   return text.replace(lang === "js" ? JS_COMMENTS : CSS_COMMENTS, (_m, str: string | undefined) => str ?? "");
 }
 

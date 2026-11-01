@@ -276,6 +276,38 @@ describe("planMigration: 멤버 태그만 쓰는 파일 (Imp4)", () => {
   });
 });
 
+describe("planMigration: 네임스페이스 import (M6)", () => {
+  it("named import와 `import * as L` + <L.Button>을 함께 쓰는 파일은 계획 단계에서 non-jsx-use로 보류한다(rolled-back이 아니다)", async () => {
+    const root = repo({
+      "app/mixed.tsx": `import { Button } from "../src/components/Button";\nimport * as Legacy from "../src/components/Button";\n\nexport const M = () => (\n  <div>\n    <Button kind="primary">a</Button>\n    <Legacy.Button kind="danger">b</Legacy.Button>\n  </div>\n);\n`,
+    });
+    const { plan } = await setup(root, MAP);
+    const held = plan.componentHeld.find((h) => h.file === "app/mixed.tsx");
+    expect(held).toMatchObject({ item: "Button", reason: "non-jsx-use" });
+    expect(held?.detail).toContain("Legacy.Button");
+    expect(plan.components.held["rolled-back"]).toBeUndefined();
+    expect(plan.files.map((f) => f.file)).toEqual(["app/page.tsx"]);
+  });
+
+  it("네임스페이스로만 쓰는 파일도 보류로 알린다", async () => {
+    const root = repo({
+      "app/ns.tsx": `import * as Legacy from "../src/components/Button";\n\nexport const N = () => <Legacy.Button kind="primary">a</Legacy.Button>;\n`,
+    });
+    const { plan } = await setup(root, MAP);
+    expect(plan.componentHeld.find((h) => h.file === "app/ns.tsx")).toMatchObject({ reason: "non-jsx-use", line: 1 });
+    expect(plan.files.map((f) => f.file)).toEqual(["app/page.tsx"]);
+  });
+
+  it("다른 멤버(<Legacy.Card>)만 쓰는 네임스페이스는 이 항목과 상관없어 보류하지 않는다", async () => {
+    const root = repo({
+      "app/other.tsx": `import { Button } from "../src/components/Button";\nimport * as Legacy from "../src/components/Button";\n\nexport const O = () => (\n  <div>\n    <Button kind="primary">a</Button>\n    <Legacy.Card />\n  </div>\n);\n`,
+    });
+    const { plan } = await setup(root, MAP);
+    expect(plan.componentHeld.find((h) => h.file === "app/other.tsx")).toBeUndefined();
+    expect(plan.files.map((f) => f.file)).toContain("app/other.tsx");
+  });
+});
+
 describe("planMigration: 별칭 import (M2)", () => {
   it("import { Button as LegacyButton } 파일도 계획·적용하고 별칭을 유지한다", async () => {
     // 결정 항목(Button)은 별칭 없이 쓰는 app/page.tsx 덕에 생기고, 별칭 파일도 같은 항목으로 계획된다

@@ -505,6 +505,52 @@ describe("runInit: 보류 이유 문구", () => {
   });
 });
 
+describe("runInit: 요약 문구와 tokens.css 로드 안내 (M3 · I1)", () => {
+  const HINT = "토큰 스타일시트가 로드되지 않음: design-system/tokens.css를 전역 엔트리(예: app/layout.tsx, src/main.tsx, globals.css)에서 import하세요 — 치환된 var()가 비어 보입니다";
+
+  it("커버리지 줄은 치환 가능 수를 같은 값·정확(migrate 기본)과 근사(--close)로 나눠 실제 숫자로 보인다", async () => {
+    const root = await legacyDemo(true);
+    const r = await run(root, { all: true });
+    const { exact, close } = r.coverage.byConfidence;
+    expect(exact + close).toBe(r.coverage.replaceable);
+    expect(close).toBeGreaterThan(0);
+    const text = formatInitSummary(r);
+    expect(text).toContain(`치환 가능 ${r.coverage.replaceable}건`);
+    expect(text).toContain(`같은 값/정확 ${exact}건은 migrate 기본, 근사 ${close}건은 --close`);
+    expect(text).not.toContain("migrate 예상치");
+  });
+
+  it("아무도 tokens.css를 import하지 않으면 요약·리포트·결과에 안내가 나온다", async () => {
+    const root = await legacyDemo(true);
+    const r = await run(root, { all: true });
+    expect(r.tokensLoaded).toEqual({ css: false, evidence: null });
+    expect(formatInitSummary(r)).toContain(HINT);
+    expect(read(root, r.report as string)).toContain(HINT);
+  });
+
+  it("app/layout.tsx가 import하면 안내가 없다", async () => {
+    const root = await legacyDemo(true);
+    const layout = path.join(root, "app/layout.tsx");
+    fs.writeFileSync(layout, `import "../design-system/tokens.css";\n${fs.readFileSync(layout, "utf-8")}`);
+    await auditFixture(root);
+    await forceStateZero(root);
+    const r = await run(root, { all: true });
+    expect(r.tokensLoaded).toEqual({ css: true, evidence: "app/layout.tsx" });
+    expect(formatInitSummary(r)).not.toContain("토큰 스타일시트가 로드되지 않음");
+    expect(read(root, r.report as string)).not.toContain("토큰 스타일시트가 로드되지 않음");
+  });
+
+  it("토큰 파일을 쓰지 못한 실행(보류)은 로드 여부를 따지지 않는다", async () => {
+    const root = await legacyDemo(true);
+    await run(root, { all: true });
+    fs.appendFileSync(path.join(root, "design-system/tokens.css"), "/* 사람이 고침 */\n");
+    const held = await run(root, { all: true });
+    expect(held.tokenHold).toBe("modified");
+    expect(held.tokensLoaded).toBeNull();
+    expect(formatInitSummary(held)).not.toContain("토큰 스타일시트가 로드되지 않음");
+  });
+});
+
 describe("runInit: Tailwind 프리셋", () => {
   const PRESET = "design-system/tailwind.preset.ts";
 

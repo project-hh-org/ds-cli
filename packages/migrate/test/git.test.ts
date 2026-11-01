@@ -104,6 +104,43 @@ describe("checkBranch / createBranch / commitFiles", () => {
     expect(!check.ok && check.reason).toContain("a.ts");
   });
 
+  it("토큰 파일이 untracked·수정이면 오류(목록·힌트), 깨끗하면 통과 (I2)", async () => {
+    const root = repo(true);
+    fs.writeFileSync(path.join(root, "tokens.css"), ":root { --a: 1px; }\n");
+    fs.writeFileSync(path.join(root, "preset.ts"), "export default {};\n");
+    git(root, "add", "preset.ts");
+    git(root, "commit", "-q", "-m", "preset");
+    const untracked = await checkBranch(root, "ds/x", ["a.ts"], { tokenFiles: ["tokens.css", "preset.ts"] });
+    expect(!untracked.ok && untracked.reason).toContain("tokens.css");
+    expect(!untracked.ok && untracked.reason).not.toContain("preset.ts");
+    expect(!untracked.ok && untracked.reason).toContain("먼저 커밋하거나 --with-tokens로 함께 커밋");
+
+    fs.appendFileSync(path.join(root, "preset.ts"), "// 수정\n");
+    const both = await checkBranch(root, "ds/x", ["a.ts"], { tokenFiles: ["tokens.css", "preset.ts"] });
+    expect(!both.ok && both.reason).toMatch(/tokens\.css.*preset\.ts|preset\.ts.*tokens\.css/);
+
+    git(root, "add", "tokens.css", "preset.ts");
+    git(root, "commit", "-q", "-m", "tokens");
+    expect((await checkBranch(root, "ds/x", ["a.ts"], { tokenFiles: ["tokens.css", "preset.ts"] })).ok).toBe(true);
+  });
+
+  it("withTokens: untracked·수정된 토큰 파일을 include로 돌려주고, 무시되는 파일은 오류", async () => {
+    const root = repo(true);
+    fs.writeFileSync(path.join(root, "tokens.css"), ":root { --a: 1px; }\n");
+    fs.writeFileSync(path.join(root, "tokens.json"), "{}\n");
+    git(root, "add", "tokens.json");
+    git(root, "commit", "-q", "-m", "json");
+    fs.appendFileSync(path.join(root, "tokens.json"), "\n");
+    fs.mkdirSync(path.join(root, ".dsmith"));
+    fs.writeFileSync(path.join(root, ".dsmith", "x.json"), "{}");
+    const check = await checkBranch(root, "ds/x", ["a.ts"], { tokenFiles: ["tokens.css", "tokens.json", ".dsmith/x.json"], withTokens: true });
+    expect(check).toMatchObject({ ok: true, include: ["tokens.css", "tokens.json"] });
+
+    fs.writeFileSync(path.join(root, ".gitignore"), "tokens.css\n");
+    const ignored = await checkBranch(root, "ds/x", ["a.ts"], { tokenFiles: ["tokens.css"], withTokens: true });
+    expect(!ignored.ok && ignored.reason).toContain(".gitignore");
+  });
+
   it("git 레포가 아니면 오류", async () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "dsmith-nogit-"));
     dirs.push(root);

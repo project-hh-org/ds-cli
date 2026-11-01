@@ -206,6 +206,15 @@ describe("draftCoverage", () => {
     expect(cov.byCategory.color).toEqual({ replaceable: 2, total: 3 });
   });
 
+  it("바꿀 수 있는 수를 exact(같은 값·정확)와 close(근사)로 나눠 센다 — migrate 기본은 exact, --close가 close까지 (M3)", () => {
+    const usages = [color("#3b82f6"), len(8, "padding"), len(7, "padding"), len(9, "margin"), len(13, "padding")];
+    const cov = draftCoverage(usages, tokens);
+    expect(cov.replaceable).toBe(4);
+    expect(cov.byConfidence).toEqual({ exact: 2, close: 2 });
+    expect(cov.byConfidence.exact + cov.byConfidence.close).toBe(cov.replaceable);
+    expect(draftCoverage([], tokens).byConfidence).toEqual({ exact: 0, close: 0 });
+  });
+
   it("total 0이면 rate는 null", () => {
     expect(draftCoverage([], tokens).rate).toBeNull();
   });

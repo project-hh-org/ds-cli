@@ -60,6 +60,16 @@ describe("migrations store", () => {
     const list = await listMigrations(root);
     expect(list[0]).toMatchObject({ status: "applied", branch: "b", summary: { tokens: 2, components: 0, files: 1 } });
     expect(list[1]?.status).toBe("reverted");
+    expect(list.map((m) => m.close)).toEqual([false, false, false]);
+  });
+
+  it("listMigrations: --close로 계획한 기록은 close true (M2)", async () => {
+    await writeMigration(root, rec("20261101-100000", { close: true }));
+    await writeMigration(root, rec("20261101-110000"));
+    expect((await listMigrations(root)).map((m) => [m.id, m.close])).toEqual([
+      ["20261101-110000", false],
+      ["20261101-100000", true],
+    ]);
   });
 
   it("기록이 없으면 빈 목록", async () => {

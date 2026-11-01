@@ -1,5 +1,5 @@
-import { COVERAGE_PROPERTIES, isRatedUsage, tokenCategoryOf, type StyleUsage, type Token } from "@dsmith-dev/core";
-import type { MigratePlan, UsageRef } from "./plan.js";
+import { COVERAGE_PROPERTIES, isRatedUsage, tokenCategoryOf, type ComponentUsage, type StyleUsage, type Token } from "@dsmith-dev/core";
+import type { FilePlan, MigratePlan, UsageRef } from "./plan.js";
 
 export function usageKey(u: UsageRef): string {
   return `${u.file}:${u.line}:${u.column}:${u.property}:${u.extractor}:${u.raw}`;
@@ -11,6 +11,25 @@ export function projectStyles(styles: StyleUsage[], plan: MigratePlan): StyleUsa
   for (const f of plan.files) for (const r of f.replacements) keys.add(usageKey(r));
   if (keys.size === 0) return styles;
   return styles.map((u) => (u.source === "hardcoded" && keys.has(usageKey(u)) ? { ...u, source: "token" } : u));
+}
+
+/**
+ * 계획된 import 편집을 컴포넌트 사용에 반영한 사본(나머지는 같은 객체) — 편집 뒤 audit이 읽을 모양으로 맞춘다:
+ * 편집이 있는 파일에서 그 항목의 사용은 module·importedFrom이 대상 module이 되고 지역 정의 표시는 사라진다.
+ * duplicate는 가져온 원래 이름(별칭이면 `imported`)과 옮길 module(`from`)로, 지역 정의는 지역에 선언된 같은 이름으로 고른다.
+ */
+export function projectComponents(components: ComponentUsage[], plan: MigratePlan): ComponentUsage[] {
+  const byFile = new Map<string, FilePlan["importTargets"]>();
+  for (const f of plan.files) if (f.importTargets.length > 0) byFile.set(f.file, f.importTargets);
+  if (byFile.size === 0) return components;
+  return components.map((c) => {
+    const target = byFile.get(c.file)?.find((t) =>
+      t.kind === "duplicate" ? (c.imported ?? c.name) === t.item && t.from.includes(c.module) : c.name === t.item && c.declaredLocally === true,
+    );
+    if (target === undefined) return c;
+    const { declaredLocally: _declaredLocally, ...rest } = c;
+    return { ...rest, importedFrom: target.module, module: target.module };
+  });
 }
 
 /**

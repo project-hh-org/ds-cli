@@ -22,6 +22,7 @@ import {
   createBranch,
   formatPlanSummary,
   planExcludes,
+  projectComponents,
   projectStyles,
   withFreshStyles,
   renderMigrateReport,
@@ -48,6 +49,8 @@ export interface MigrateCommandOptions {
   maxFiles?: string | undefined;
   apply?: boolean | undefined;
   branch?: string | undefined;
+  /** --branch 커밋에 untracked·수정된 토큰·프리셋 파일도 넣는다 */
+  withTokens?: boolean | undefined;
   revert?: string | undefined;
   list?: boolean | undefined;
 }
@@ -109,10 +112,21 @@ function componentPart(applied: ApplyResult): string {
   return ` · 컴포넌트 import ${applied.components} · prop ${applied.props}${applied.annotations > 0 ? ` · 지역 정의 주석 ${applied.annotations}` : ""}`;
 }
 
+/** 계획에 준 범위 플래그를 적용 안내에 되풀이할 문자열(`--close --files "…" --category … --only … --max-files …`) */
+function scopeFlagsOf(opts: MigrateCommandOptions, category: string | undefined, only: string | undefined): string {
+  const parts: string[] = [];
+  if (opts.close === true) parts.push("--close");
+  if (opts.files !== undefined && opts.files.length > 0) parts.push("--files", ...opts.files.map((g) => `"${g}"`));
+  if (category !== undefined) parts.push("--category", category);
+  if (only !== undefined) parts.push("--only", only);
+  if (opts.maxFiles !== undefined) parts.push("--max-files", opts.maxFiles);
+  return parts.join(" ");
+}
+
 function formatList(items: Awaited<ReturnType<typeof listMigrations>>): string {
   if (items.length === 0) return "마이그레이션 기록 없음";
   return items
-    .map((m) => `${m.id}  ${m.status}  파일 ${m.summary.files} · 치환 ${m.summary.tokens}${m.summary.components > 0 ? ` · 컴포넌트 ${m.summary.components}` : ""}${m.branch === undefined ? "" : ` · 브랜치 ${m.branch}`}`)
+    .map((m) => `${m.id}  ${m.status}  ${m.close ? "close" : "-"}  파일 ${m.summary.files} · 치환 ${m.summary.tokens}${m.summary.components > 0 ? ` · 컴포넌트 ${m.summary.components}` : ""}${m.branch === undefined ? "" : ` · 브랜치 ${m.branch}`}`)
     .join("\n");
 }
 
@@ -150,6 +164,7 @@ async function runMigrate(opts: MigrateCommandOptions, live: { branch: { name: s
   const modes = [opts.list === true, opts.revert !== undefined, opts.apply === true].filter(Boolean).length;
   if (modes > 1) throw new Error("--list, --revert <id>, --apply는 함께 쓸 수 없습니다");
   if (opts.branch !== undefined && opts.apply !== true) throw new Error("--branch는 --apply와 함께 씁니다");
+  if (opts.withTokens === true && opts.branch === undefined) throw new Error("--with-tokens는 --branch와 함께 씁니다");
 
   if (opts.list === true) {
     const items = await listMigrations(root);
@@ -180,13 +195,18 @@ async function runMigrate(opts: MigrateCommandOptions, live: { branch: { name: s
   // 전/예상 점수는 audit 뒤 바뀐 파일까지 반영한 값이어야 한다: 계획이 디스크에서 다시 읽은 파일의 사용으로 인덱스를 갈아 끼운다
   const freshIndex = withFreshStyles(index, fresh);
   const before = numbersOf(detect, freshIndex, plan);
-  const projectedAfter = numbersOf(detect, { ...freshIndex, styles: projectStyles(freshIndex.styles, plan) }, plan);
+  // 토큰 치환과 계획된 컴포넌트 import 편집을 함께 반영해 편집 뒤 audit이 읽을 모양으로 맞춘다
+  const projectedAfter = numbersOf(
+    detect,
+    { ...freshIndex, styles: projectStyles(freshIndex.styles, plan), components: projectComponents(freshIndex.components, plan) },
+    plan,
+  );
   const projected = { before, after: projectedAfter };
 
   if (opts.apply !== true) {
     return {
       json: { plan, projected, applied: null, actual: null },
-      text: formatPlanSummary(plan, projected),
+      text: formatPlanSummary(plan, projected, { scopeFlags: scopeFlagsOf(opts, category, only) }),
     };
   }
 
@@ -199,13 +219,20 @@ async function runMigrate(opts: MigrateCommandOptions, live: { branch: { name: s
 
   // --branch: 아무것도 쓰기 전에 git 상태를 확인한다(식별 정보·같은 이름 브랜치·대상 파일이 깨끗한가)
   let branch: NonNullable<MigrationRecord["branch"]> | undefined;
+  let tokenCommitFiles: string[] = [];
   if (opts.branch !== undefined) {
+    // 토큰 파일과 (연결된) 프리셋 파일도 브랜치에 있어야 한다 — 치환된 var()·프리셋이 가리킬 파일이 PR에서 빠지지 않게
     const check = await checkBranch(
       root,
       opts.branch,
       plan.files.map((f) => f.file),
+      {
+        tokenFiles: [...plan.tokens.files, ...(plan.preset !== null && plan.preset.linked ? [plan.preset.file] : [])],
+        withTokens: opts.withTokens === true,
+      },
     );
     if (!check.ok) throw new Error(`--branch를 쓸 수 없음: ${check.reason}`);
+    tokenCommitFiles = check.include ?? [];
     await createBranch(root, opts.branch);
     live.branch = { name: opts.branch, base: check.base };
     branch = { name: opts.branch, base: check.base, baseSha: check.baseSha, commit: null };
@@ -237,7 +264,7 @@ async function runMigrate(opts: MigrateCommandOptions, live: { branch: { name: s
       );
     } else {
       try {
-        const sha = await commitFiles(root, appliedPaths, commitMessage(applied.replaced, applied.components));
+        const sha = await commitFiles(root, [...appliedPaths, ...tokenCommitFiles], commitMessage(applied.replaced, applied.components));
         branch.commit = sha;
         const record = await readMigration(root, applied.id);
         if (record !== null) {
@@ -245,6 +272,7 @@ async function runMigrate(opts: MigrateCommandOptions, live: { branch: { name: s
           await writeMigration(root, record);
         }
         branchLines.push(`브랜치 ${branch.name}에 커밋 ${sha.slice(0, 7)} — PR은 직접 여세요`);
+        if (tokenCommitFiles.length > 0) branchLines.push(`토큰 파일 ${tokenCommitFiles.length}개를 함께 커밋: ${tokenCommitFiles.join(", ")}`);
       } catch (err) {
         exitCode = 1;
         branchLines.push(`커밋하지 못함: ${(err as Error).message} — 브랜치 ${branch.name}에 변경이 커밋되지 않은 채 남아 있음`);

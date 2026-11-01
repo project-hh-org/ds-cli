@@ -113,6 +113,7 @@ interface MigrateCliOptions {
   only?: string;
   close?: boolean;
   maxFiles?: string;
+  withTokens?: boolean;
   apply?: boolean;
   branch?: string;
   revert?: string;
@@ -309,7 +310,8 @@ export function buildProgram(): Command {
     .option("--close", "근사(close: ±2px·색 ΔE 임계 안) 매칭도 포함. 기본은 같은 값·exact만 계획하고 close 후보는 건수만 알린다(렌더링되는 값이 바뀔 수 있음)")
     .option("--max-files <n>", "파일 순으로 앞에서 n개 파일만")
     .option("--apply", "계획을 적용(파일을 쓴다)")
-    .option("--branch <name>", "적용을 새 git 브랜치에 커밋(--apply와 함께)")
+    .option("--branch <name>", "적용을 새 git 브랜치에 커밋(--apply와 함께). 토큰·프리셋 파일이 커밋되지 않았거나 수정됐으면 쓰기 전에 오류")
+    .option("--with-tokens", "--branch 커밋에 untracked·수정된 토큰·프리셋 파일도 함께 넣는다(.dsmith/는 늘 제외)")
     .option("--revert <id>", "기록된 마이그레이션을 되돌린다(적용 뒤 고친 파일은 건너뜀)")
     .option("--list", "마이그레이션 기록 목록")
     .action(async (opts: MigrateCliOptions) => {

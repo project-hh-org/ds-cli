@@ -70,20 +70,20 @@ export async function readMigration(root: string, id: string): Promise<Migration
 /** id 내림차순(최신 먼저). 읽을 수 없는 파일은 건너뛴다. */
 export async function listMigrations(
   root: string,
-): Promise<{ id: string; status: MigrationRecord["status"]; summary: MigrationRecord["summary"]; branch?: string }[]> {
+): Promise<{ id: string; status: MigrationRecord["status"]; summary: MigrationRecord["summary"]; close: boolean; branch?: string }[]> {
   let names: string[];
   try {
     names = (await fs.readdir(dirOf(root))).filter((f) => f.endsWith(".json"));
   } catch {
     return [];
   }
-  const out: { id: string; status: MigrationRecord["status"]; summary: MigrationRecord["summary"]; branch?: string }[] = [];
+  const out: { id: string; status: MigrationRecord["status"]; summary: MigrationRecord["summary"]; close: boolean; branch?: string }[] = [];
   for (const name of names) {
     const id = name.slice(0, -".json".length);
     try {
       const rec = await readMigration(root, id);
       if (rec === null) continue;
-      out.push({ id, status: rec.status, summary: rec.summary, ...(rec.branch === undefined || rec.branch === null ? {} : { branch: rec.branch.name }) });
+      out.push({ id, status: rec.status, summary: rec.summary, close: rec.close === true, ...(rec.branch === undefined || rec.branch === null ? {} : { branch: rec.branch.name }) });
     } catch {
       // 깨진 기록은 목록에서 뺀다
     }

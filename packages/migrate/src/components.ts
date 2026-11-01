@@ -601,22 +601,67 @@ function findNonTagUse(body: Base[], locals: Set<string>): { name: string; node:
   return found;
 }
 
+/** `locals`(네임스페이스 import 이름)의 `.item` 멤버 사용(`<NS.item>`·`NS.item`) 중 첫 곳 */
+function findNamespaceMemberUse(body: Base[], locals: Set<string>, item: string): { local: string; node: Base } | null {
+  let found: { local: string; node: Base } | null = null;
+  const visit = (node: unknown): void => {
+    if (found !== null) return;
+    if (Array.isArray(node)) {
+      for (const child of node) visit(child);
+      return;
+    }
+    if (typeof node !== "object" || node === null) return;
+    const n = node as Base & Record<string, unknown>;
+    if (typeof n.type !== "string" || n.type === "ImportDeclaration") return;
+    const object = n.object as (Base & { name?: string }) | undefined;
+    const property = n.property as (Base & { name?: string }) | undefined;
+    const viaJsx = n.type === "JSXMemberExpression" && object?.type === "JSXIdentifier";
+    const viaMember = (n.type === "MemberExpression" || n.type === "OptionalMemberExpression") && n.computed !== true && object?.type === "Identifier";
+    if ((viaJsx || viaMember) && object?.name !== undefined && locals.has(object.name) && property?.name === item) {
+      found = { local: object.name, node: n };
+      return;
+    }
+    for (const [k, value] of Object.entries(n)) {
+      if (k === "loc" || k === "leadingComments" || k === "trailingComments" || k === "innerComments") continue;
+      if (typeof value === "object" && value !== null) visit(value);
+    }
+  };
+  visit(body);
+  return found;
+}
+
 function planItem(ctx: FileCtx, t: ChosenTarget, held: HeldComponentEdit[]): ItemPlan | null {
   if (t.file !== null && t.file === ctx.file) return null;
   const moves: MovedSpec[] = [];
   let renamed: ImportDecl | null = null;
+  const namespaces: { decl: ImportDecl; local: string }[] = [];
   for (const { node, key } of ctx.decls) {
     if (node.importKind === "type" || node.importKind === "typeof") continue;
     if (!t.options.includes(key) || key === t.module) continue;
     for (const spec of node.specifiers) {
       if (spec.importKind === "type" || spec.importKind === "typeof") continue;
-      if (spec.type === "ImportDefaultSpecifier") {
+      if (spec.type === "ImportNamespaceSpecifier") {
+        namespaces.push({ decl: node, local: spec.local.name });
+      } else if (spec.type === "ImportDefaultSpecifier") {
         if (spec.local.name === t.item) moves.push({ decl: node, spec, local: spec.local.name });
       } else if (spec.type === "ImportSpecifier") {
         if (importedName(spec) === t.item) moves.push({ decl: node, spec, local: spec.local.name });
         else if (spec.local.name === t.item) renamed = node;
       }
     }
+  }
+  // `import * as L` + `<L.Item>`: 멤버 접근은 import를 옮겨도 그대로라 재검증이 실패한다 — 계획 단계에서 JSX 태그가 아닌 사용으로 보류한다
+  const nsUse = namespaces.length === 0 ? null : findNamespaceMemberUse(ctx.body, new Set(namespaces.map((n) => n.local)), t.item);
+  if (nsUse !== null) {
+    const decl = namespaces.find((n) => n.local === nsUse.local)!.decl;
+    held.push({
+      item: t.item,
+      file: ctx.file,
+      line: lineOf(decl),
+      reason: "non-jsx-use",
+      detail: `${nsUse.local}.${t.item}을(를) 네임스페이스 import로 사용(${lineOf(nsUse.node)}줄) — prop 대응을 확인할 수 없음`,
+    });
+    return null;
   }
   if (moves.length === 0 && renamed === null) return null;
   const first = moves[0]?.decl ?? renamed!;

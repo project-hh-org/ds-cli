@@ -32,6 +32,26 @@ describe("report", () => {
     expect(text).not.toContain("dsmith migrate --apply");
   });
 
+  it("적용 안내는 계획에 쓴 범위 플래그(--close·--files·--category·--only)를 그대로 되풀이한다 (M1)", async () => {
+    const root = syntheticRepo();
+    await auditFixture(root);
+    const plan = await planMigration({ root, ...(await loadState(root)), close: true });
+    const text = formatPlanSummary(plan, null, { scopeFlags: '--close --files "src/*.tsx" --category color' });
+    expect(text.endsWith('적용: dsmith migrate --apply --close --files "src/*.tsx" --category color   (되돌리기: dsmith migrate --revert <id>)')).toBe(true);
+  });
+
+  it("토큰 스타일시트가 로드되지 않았으면 리포트 파일에도 같은 한 줄이 든다 (I1)", async () => {
+    const root = syntheticRepo();
+    await auditFixture(root);
+    const state = await loadState(root);
+    const plan = await planMigration({ root, ...state });
+    const note = "토큰 스타일시트가 로드되지 않음: design-system/tokens.css를 전역 엔트리(예: app/layout.tsx, src/main.tsx, globals.css)에서 import하세요 — 치환된 var()가 비어 보입니다";
+    const withNote = { ...plan, tokens: { ...plan.tokens, excludeDirs: ["design-system"], loaded: { css: false, evidence: null } }, notes: [...plan.notes, note] };
+    const applied = await applyMigration(root, plan, { extractors: state.extractors, version: "t", now: new Date(2026, 10, 1, 9, 0, 0) });
+    expect(renderMigrateReport({ plan: withNote, applied, before: nums(52, 0.6), after: nums(63, 0.4) })).toContain(`- ${note}`);
+    expect(renderMigrateReport({ plan, applied, before: nums(52, 0.6), after: nums(63, 0.4) })).not.toContain("토큰 스타일시트");
+  });
+
   it("리포트 파일은 전/후·치환·건너뜀·되돌리기 절을 가진다", async () => {
     const root = syntheticRepo();
     await auditFixture(root);

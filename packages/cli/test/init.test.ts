@@ -75,7 +75,10 @@ describe("dsmith init", () => {
     const text = human.stdout as string;
     expect(text).toContain(`색 ${result.tokens.color} · 간격 ${result.tokens.spacing}`);
     expect(text).toContain(`병합된 원값 ${result.tokens.mergedValues}`);
-    expect(text).toContain(`하드코딩 ${result.coverage.total}건 중 ${result.coverage.replaceable}건`);
+    expect(text).toContain(`하드코딩 ${result.coverage.total}건 중 치환 가능 ${result.coverage.replaceable}건`);
+    expect(text).toContain(`같은 값/정확 ${result.coverage.byConfidence.exact}건은 migrate 기본, 근사 ${result.coverage.byConfidence.close}건은 --close`);
+    expect(result.tokensLoaded).toEqual({ css: false, evidence: null });
+    expect(text).toContain("토큰 스타일시트가 로드되지 않음: design-system/tokens.css를");
     expect(text).toContain("스캐폴드: 생성 0 · 유지 2 · 건너뜀 0");
   });
 

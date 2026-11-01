@@ -7,6 +7,7 @@ import {
   bestReplacement,
   extractFileStyles,
   extractorMatchers,
+  findTokensStylesheetImport,
   isRatedUsage,
   isTranslucentColor,
   listCssFiles,
@@ -18,6 +19,7 @@ import {
   readTailwindPreset,
   sha256Text,
   tokenCategoryOf,
+  TOKENS_NOT_LOADED_NOTE,
   type DecisionKind,
   type Index,
   type TextPatch,
@@ -96,12 +98,27 @@ export interface FilePlan {
   components: PlannedComponentEdit[];
   /** 적용 뒤 재추출 검증: 이 파일의 컴포넌트 사용 중 item의 module이 전부 module이어야 한다(import를 옮긴 항목) */
   componentChecks: { item: string; module: string }[];
+  /**
+   * 이 파일에서 import를 옮기는 항목과 옮길 대상 module(duplicate·지역 정의 모두) — 예상 점수가 컴포넌트 편집을 반영하는 데 쓴다.
+   * from = 결정 기록의 선택지(이 module들에서 온 사용만 옮긴다)
+   */
+  importTargets: { item: string; kind: "duplicate" | "local-definition"; module: string; from: string[] }[];
   /** 최종(비중첩, start 오름차순) */
   patches: TextPatch[];
 }
 
 export interface MigratePlan {
-  tokens: { source: "token-file" | "catalog"; files: string[]; count: number; excludeDirs: string[] };
+  tokens: {
+    source: "token-file" | "catalog";
+    files: string[];
+    count: number;
+    excludeDirs: string[];
+    /**
+     * init의 tokens.css를 어딘가에서 import하는가(JS/TS import·CSS @import·HTML link, 또는 연결된 Tailwind v4 테마 CSS).
+     * false면 치환된 var(--…)가 값을 갖지 못한다 — 적용을 막지는 않고 안내만 한다. init 디렉터리가 없으면 확인 대상이 아니라 true·evidence null
+     */
+    loaded: { css: boolean; evidence: string | null };
+  };
   preset: { version: 3 | 4; file: string; linked: boolean } | null;
   scope: {
     /** 범위 안에서 다시 추출한 파일 수 */
@@ -253,6 +270,18 @@ export async function analyzeMigration(opts: MigrateOptions): Promise<{ plan: Mi
       `Tailwind 프리셋(${preset.file})이 tailwind 설정에 연결되지 않아 임의값(bg-[color:var(--…)])으로 치환함 — 연결하면 클래스명(bg-ds-…)으로 바뀜`,
     );
   }
+  // migrate가 쓰는 var(--…)는 init의 tokens.css가 전역에 로드돼야 값을 갖는다. 확인 대상은 init 디렉터리의 tokens.css뿐(사용자 토큰 파일은 알 수 없다)
+  const initDir = rt.excludeDirs[0] ?? null;
+  const tokenCssPath = initDir === null ? null : initDir === "." ? "tokens.css" : `${initDir}/tokens.css`;
+  const loaded: MigratePlan["tokens"]["loaded"] =
+    initDir === null || tokenCssPath === null || !rt.files.includes(tokenCssPath)
+      ? { css: true, evidence: null }
+      : await findTokensStylesheetImport(root, {
+          initDir,
+          themeLinked: preset !== null && preset.version === 4 && preset.linked,
+          exclude: excludeGlobs(detect.overrides),
+        });
+  if (!loaded.css && initDir !== null) notes.push(TOKENS_NOT_LOADED_NOTE(initDir));
   const refCtx: TokenRefContext = preset !== null && preset.linked ? { preset } : {};
 
   for (const extractor of extractors) await extractor.prepare?.(root);
@@ -569,12 +598,18 @@ export async function analyzeMigration(opts: MigrateOptions): Promise<{ plan: Mi
     }
     if (tokenKept.length === 0 && compEdits.length === 0) continue;
     const componentChecks = importChecks(compEdits);
+    const importedItems = new Set(compEdits.filter((e) => e.kind === "import").map((e) => e.item));
+    const importTargets: FilePlan["importTargets"] = (compTargets ?? [])
+      .filter((t) => importedItems.has(t.item))
+      .map((t) => ({ item: t.item, kind: t.kind, module: t.module, from: t.options }))
+      .sort((a, b) => (a.item < b.item ? -1 : a.item > b.item ? 1 : 0));
     filePlans.push({
       file,
       sha256: sha256Text(code),
       replacements: tokenKept,
       components: compEdits,
       componentChecks,
+      importTargets,
       patches: partitionPatches([...tokenKept.map((r) => r.patch), ...compEdits.map((e) => e.patch)]).accepted,
     });
   }
@@ -637,7 +672,7 @@ export async function analyzeMigration(opts: MigrateOptions): Promise<{ plan: Mi
   stale.changed.sort();
   stale.added.sort();
   const plan: MigratePlan = {
-    tokens: { source: rt.source, files: rt.files, count: rt.tokens.length, excludeDirs: rt.excludeDirs },
+    tokens: { source: rt.source, files: rt.files, count: rt.tokens.length, excludeDirs: rt.excludeDirs, loaded },
     preset: preset === null ? null : { version: preset.version, file: preset.file, linked: preset.linked },
     scope,
     includeClose,
