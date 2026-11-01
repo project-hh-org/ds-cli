@@ -1,8 +1,21 @@
 {
   "name": "@dsmith-dev/detect",
   "version": "0.0.0",
-  "description": "dsmith 레포 환경 감지(스타일링·DS·프레임워크·Storybook·lint)와 시작 상태 판정",
+  "description": "Repository detection for dsmith: styling approach, design system, framework, Storybook and lint",
+  "keywords": ["design-system", "dsmith", "detect", "tailwind", "css-in-js"],
+  "license": "MIT",
+  "author": "Dahee Hwang <dahee@project-hh.com>",
+  "homepage": "https://github.com/project-hh-org/dsmith#readme",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/project-hh-org/dsmith.git",
+    "directory": "packages/detect"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
   "type": "module",
+  "sideEffects": false,
   "engines": {
     "node": ">=20"
   },

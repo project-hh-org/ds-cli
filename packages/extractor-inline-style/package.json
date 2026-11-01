@@ -1,8 +1,21 @@
 {
   "name": "@dsmith-dev/extractor-inline-style",
   "version": "0.0.0",
-  "description": "dsmith JSX inline style 추출기",
+  "description": "dsmith extractor for JSX inline style objects",
+  "keywords": ["design-system", "dsmith", "extractor", "inline-style", "jsx"],
+  "license": "MIT",
+  "author": "Dahee Hwang <dahee@project-hh.com>",
+  "homepage": "https://github.com/project-hh-org/dsmith#readme",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/project-hh-org/dsmith.git",
+    "directory": "packages/extractor-inline-style"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
   "type": "module",
+  "sideEffects": false,
   "engines": {
     "node": ">=20"
   },

@@ -1,8 +1,21 @@
 {
   "name": "dsmith",
   "version": "0.0.0",
-  "description": "디자인시스템 라이프사이클 CLI — detect · audit",
+  "description": "Design-system lifecycle CLI: detect your styling setup and audit hardcoded style values",
+  "keywords": ["design-system", "design-tokens", "cli", "audit", "dsmith"],
+  "license": "MIT",
+  "author": "Dahee Hwang <dahee@project-hh.com>",
+  "homepage": "https://github.com/project-hh-org/dsmith#readme",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/project-hh-org/dsmith.git",
+    "directory": "packages/cli"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
   "type": "module",
+  "sideEffects": false,
   "engines": {
     "node": ">=20"
   },

@@ -1,8 +1,21 @@
 {
   "name": "@dsmith-dev/extractor-mui-sx",
   "version": "0.0.0",
-  "description": "dsmith MUI sx prop 추출기",
+  "description": "dsmith extractor for the MUI sx prop",
+  "keywords": ["design-system", "dsmith", "extractor", "mui", "sx"],
+  "license": "MIT",
+  "author": "Dahee Hwang <dahee@project-hh.com>",
+  "homepage": "https://github.com/project-hh-org/dsmith#readme",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/project-hh-org/dsmith.git",
+    "directory": "packages/extractor-mui-sx"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
   "type": "module",
+  "sideEffects": false,
   "engines": {
     "node": ">=20"
   },

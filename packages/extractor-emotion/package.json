@@ -1,8 +1,21 @@
 {
   "name": "@dsmith-dev/extractor-emotion",
   "version": "0.0.0",
-  "description": "dsmith emotion(css prop·@emotion/styled) 추출기",
+  "description": "dsmith extractor for Emotion (css tag, css prop, @emotion/styled)",
+  "keywords": ["design-system", "dsmith", "extractor", "emotion", "css-in-js"],
+  "license": "MIT",
+  "author": "Dahee Hwang <dahee@project-hh.com>",
+  "homepage": "https://github.com/project-hh-org/dsmith#readme",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/project-hh-org/dsmith.git",
+    "directory": "packages/extractor-emotion"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
   "type": "module",
+  "sideEffects": false,
   "engines": {
     "node": ">=20"
   },

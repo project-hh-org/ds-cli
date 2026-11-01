@@ -1,8 +1,21 @@
 {
   "name": "@dsmith-dev/extractor-css",
   "version": "0.0.0",
-  "description": "dsmith .css/.scss 파일 추출기",
+  "description": "dsmith extractor for .css and .scss files",
+  "keywords": ["design-system", "dsmith", "extractor", "css", "scss"],
+  "license": "MIT",
+  "author": "Dahee Hwang <dahee@project-hh.com>",
+  "homepage": "https://github.com/project-hh-org/dsmith#readme",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/project-hh-org/dsmith.git",
+    "directory": "packages/extractor-css"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
   "type": "module",
+  "sideEffects": false,
   "engines": {
     "node": ">=20"
   },
