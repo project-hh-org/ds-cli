@@ -1,5 +1,5 @@
 import path from "node:path";
-import { extractFileStyles, extractorMatchers, isRatedUsage, type ExtractorMatcher } from "@dsmith-dev/core";
+import { DEFAULT_GUARD_POLICY, evaluateFile, extractFileStyles, extractorMatchers, isRatedUsage, type ExtractorMatcher } from "@dsmith-dev/core";
 import type { Extractor, StyleProperty, StyleUsage } from "@dsmith-dev/extractor-api";
 import type { Workspace } from "../workspace.js";
 import { resolveNormalized } from "./resolve-token.js";
@@ -87,12 +87,24 @@ export function lintSnippet(ws: Workspace, extractors: Extractor[], input: LintS
   for (const u of styles.filter(isRatedUsage)) {
     if (u.source === "token") summary.token += 1;
     else if (u.source === "dynamic") summary.dynamic += 1;
-    else if (u.source === "hardcoded") {
-      summary.hardcoded += 1;
-      const v: Violation = { line: u.line, column: u.column, property: u.property, raw: u.raw, extractor: u.extractor };
-      normalizedOf.set(v, u.normalized);
-      violations.push(v);
-    }
+    else if (u.source === "hardcoded") summary.hardcoded += 1;
+  }
+  // 위반은 core 규칙 엔진이 낸다(ESLint 플러그인·guard --ci와 같은 함수). 토큰 제안은 suggestionFor가 따로 붙인다.
+  const findings = evaluateFile({
+    file,
+    usages: styles,
+    components: [],
+    tokens: [],
+    ds: { modules: [], components: [] },
+    preferred: [],
+    policy: DEFAULT_GUARD_POLICY,
+  });
+  for (const f of findings) {
+    const u = f.usageIndex === undefined ? undefined : styles[f.usageIndex];
+    if (f.rule !== "no-hardcoded-style" || u === undefined) continue;
+    const v: Violation = { line: u.line, column: u.column, property: u.property, raw: u.raw, extractor: u.extractor };
+    normalizedOf.set(v, u.normalized);
+    violations.push(v);
   }
   violations.sort((a, b) => a.line - b.line || a.column - b.column);
   // filename 없이 기본 파일(tsx)로 읽었는데 아무 Extractor도 돌지 않았거나(스크립트처럼 보이지 않는 코드), CSS 같은 코드에서 아무것도 못 읽었으면 filename 누락이 원인이다.
