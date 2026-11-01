@@ -6,9 +6,11 @@ export type EditCheck = { ok: true } | { ok: false; reason: string };
 const SCRIPT_FILE = /\.(tsx|jsx|ts|js|mjs|cjs|mts|cts)$/i;
 const STYLE_FILE = /\.(css|scss)$/i;
 
-function parseErrors(code: string, file: string): number | null {
+/** Babel 복구 오류의 종류 목록(reasonCode ?? code). 파싱이 던지면 null */
+function parseErrorCodes(code: string, file: string): string[] | null {
   try {
-    return parseTsx(code, file).errors?.length ?? 0;
+    const errors = (parseTsx(code, file).errors ?? []) as { reasonCode?: string; code?: string; message?: string }[];
+    return errors.map((e) => e.reasonCode ?? e.code ?? e.message ?? "unknown");
   } catch {
     return null;
   }
@@ -45,16 +47,23 @@ function balance(text: string, lineComments: boolean): { braces: number; parens:
 
 /**
  * 편집 전후를 다시 읽어 구문이 더 나빠지지 않았는지 본다(의미 검증은 호출자의 재추출 몫).
- * - .tsx/.jsx/.ts/.js/.mjs/.cjs/.mts/.cts: `parseTsx`가 던지면 실패, 아니면 after 오류 수 ≤ before 오류 수
+ * - .tsx/.jsx/.ts/.js/.mjs/.cjs/.mts/.cts: `parseTsx`가 던지면 실패, 아니면 after의 오류 종류(reasonCode ?? code) 다중집합이 before의 부분집합
  * - .css/.scss: 선언 수가 같고, 따옴표·주석 밖 `{`·`}`·`(`·`)` 균형이 before와 같아야 함
  * - 그 밖: 검증할 수 없는 파일 형식
  */
 export function validateEdit(file: string, before: string, after: string): EditCheck {
   if (SCRIPT_FILE.test(file)) {
-    const b = parseErrors(before, file);
-    const a = parseErrors(after, file);
+    const b = parseErrorCodes(before, file);
+    const a = parseErrorCodes(after, file);
     if (a === null) return { ok: false, reason: "편집 뒤 파일을 파싱할 수 없음" };
-    if (b !== null && a > b) return { ok: false, reason: `편집 뒤 구문 오류가 늘어남 (${b} → ${a})` };
+    // after의 오류 종류 다중집합이 before의 부분집합이어야 한다(오류 하나를 고치고 다른 하나를 만드는 교체도 거른다)
+    const left = new Map<string, number>();
+    for (const code of b ?? []) left.set(code, (left.get(code) ?? 0) + 1);
+    for (const code of a) {
+      const n = left.get(code) ?? 0;
+      if (n === 0) return { ok: false, reason: `편집 뒤 새 구문 오류가 생김 (${code})` };
+      left.set(code, n - 1);
+    }
     return { ok: true };
   }
   if (STYLE_FILE.test(file)) {

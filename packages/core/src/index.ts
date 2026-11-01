@@ -86,11 +86,11 @@ export { readDecisions, recordDecision, writeDecisions } from "./decisions/store
 export type { DecisionCandidate } from "./decisions/candidates.js";
 export { candidatesOf, decisionCandidates, listDecisions, similarItems } from "./decisions/candidates.js";
 export { readGitHistory } from "./decisions/git-history.js";
-export type { GitResult } from "./git/run.js";
+export type { GitError, GitResult } from "./git/run.js";
 export { runGit } from "./git/run.js";
 export { findInitDir, readInitHashes } from "./fs/init-dir.js";
 export type { PatchConflict, TextPatch } from "./patch/apply.js";
-export { applyPatches, invertPatches, partitionPatches } from "./patch/apply.js";
+export { applyPatches, invertPatches, invertRecordedPatches, partitionPatches } from "./patch/apply.js";
 export type { EditCheck } from "./patch/validate.js";
 export { validateEdit } from "./patch/validate.js";
 export { sha256Text, writePatchedFile } from "./patch/write.js";

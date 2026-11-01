@@ -1,8 +1,10 @@
+import { createHash } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { applyPatches, invertPatches, partitionPatches, type TextPatch } from "../src/patch/apply.js";
+import type { MigrationPatch } from "../src/migrations/model.js";
+import { applyPatches, invertPatches, invertRecordedPatches, partitionPatches, type TextPatch } from "../src/patch/apply.js";
 import { validateEdit } from "../src/patch/validate.js";
 import { sha256Text, writePatchedFile } from "../src/patch/write.js";
 
@@ -50,6 +52,12 @@ describe("applyPatches", () => {
     expect(applyPatches("ab", [p(1, 1, "X"), p(1, 1, "Y")])).toBe("aXYb");
   });
 
+  it("서로게이트 쌍을 가르는 오프셋은 Error", () => {
+    const code = "a😀b";
+    expect(() => applyPatches(code, [p(2, 3, "x")])).toThrow(/서로게이트/);
+    expect(applyPatches(code, [p(1, 3, "x")])).toBe("axb");
+  });
+
   it("겹치거나 범위를 벗어나면 Error", () => {
     expect(() => applyPatches("0123456789", [p(0, 5, "a"), p(3, 8, "b")])).toThrow();
     expect(() => applyPatches("012", [p(1, 9, "a")])).toThrow();
@@ -69,21 +77,37 @@ describe("invertPatches", () => {
     const rand = rng(20261101);
     for (let n = 0; n < 20; n++) {
       const len = 20 + Math.floor(rand() * 60);
-      const code = Array.from({ length: len }, () => String.fromCharCode(97 + Math.floor(rand() * 26))).join("");
+      // 영문·한글·이모지(서로게이트 쌍)·CRLF를 섞은 문자 단위 — 패치 경계는 항상 문자 경계
+      const alphabet = ["a", "b", "c", "가", "나", "다", "😀", "🎨", "\r\n", "\n", " "];
+      const units = Array.from({ length: len }, () => alphabet[Math.floor(rand() * alphabet.length)]!);
+      const offsets = [0];
+      for (const u of units) offsets.push(offsets[offsets.length - 1]! + u.length);
+      const code = units.join("");
+      const reps = ["", "#", "var(--x)", "한글", "😀😀", "\r\n"];
       const patches: TextPatch[] = [];
       let at = 0;
       while (at < len) {
-        const start = at + Math.floor(rand() * 8);
-        if (start > len) break;
+        const start = Math.min(len, at + Math.floor(rand() * 8));
         const end = Math.min(len, start + Math.floor(rand() * 6));
-        const replacement = "#".repeat(Math.floor(rand() * 9));
-        patches.push(p(start, end, replacement));
+        patches.push(p(offsets[start]!, offsets[end]!, reps[Math.floor(rand() * reps.length)]!));
+        if (rand() < 0.3) patches.push(p(offsets[end]!, offsets[end]!, reps[1 + Math.floor(rand() * 5)]!)); // 같은 위치 삽입
+        if (rand() < 0.3) patches.push(p(offsets[end]!, offsets[end]!, reps[1 + Math.floor(rand() * 5)]!));
+        if (end >= len) break;
         at = end;
       }
       expect(patches.length).toBeGreaterThan(0);
       const after = applyPatches(code, patches);
       expect(applyPatches(after, invertPatches(code, patches)), `case ${n}`).toBe(code);
     }
+  });
+
+  it("원문 없이 기록된 original만으로 되돌린다(MigrationPatch 왕복)", () => {
+    const code = "a 😀 가나 #fff\r\n b #000 c";
+    const raw: TextPatch[] = [p(7, 11, "var(--c-1)"), p(18, 18, "!"), p(19, 23, "")];
+    const recorded: MigrationPatch[] = raw.map((x) => ({ ...x, original: code.slice(x.start, x.end) }));
+    const after = applyPatches(code, raw);
+    expect(applyPatches(after, invertRecordedPatches(recorded))).toBe(code);
+    expect(() => invertPatches(null, raw)).toThrow();
   });
 
   it("늘고 줄고 빈 치환이 섞여도 왕복", () => {
@@ -115,6 +139,13 @@ describe("validateEdit", () => {
 
   it("scss의 // 주석 안 괄호는 세지 않는다", () => {
     expect(validateEdit("a.scss", "a { color: #fff; }", "a { color: var(--c); } // )").ok).toBe(true);
+  });
+
+  it("오류를 하나 고치고 다른 종류를 만드는 교체는 개수가 같아도 거른다", () => {
+    const before = "const a = 1;\nconst a = 2;\n"; // VarRedeclaration
+    const swapped = "const a = 1;\nconst x = 1;\nfunction f(p, p) { 'use strict'; }\n"; // ParamDupe
+    expect(validateEdit("a.ts", before, swapped).ok).toBe(false);
+    expect(validateEdit("a.ts", before, "const a = 1;\nconst x = 2;\n")).toEqual({ ok: true });
   });
 
   it("그 밖의 확장자는 검증할 수 없음", () => {
@@ -160,6 +191,14 @@ describe("writePatchedFile", () => {
     } finally {
       fs.rmSync(outside, { recursive: true, force: true });
     }
+  });
+
+  it("UTF-8이 아닌 파일은 해시가 맞아도 쓰지 않는다", async () => {
+    const bytes = Buffer.from([0x61, 0xff, 0xfe, 0x62]);
+    fs.writeFileSync(path.join(root, "b.ts"), bytes);
+    const sha = createHash("sha256").update(bytes).digest("hex");
+    expect(await writePatchedFile(root, "b.ts", sha, "x")).toEqual({ written: false, reason: "UTF-8이 아닌 파일" });
+    expect(fs.readFileSync(path.join(root, "b.ts"))).toEqual(bytes);
   });
 
   it("root 밖 경로·없는 파일은 쓰지 않는다", async () => {

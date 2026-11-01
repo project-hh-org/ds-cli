@@ -5,6 +5,10 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { Catalog } from "../src/catalog/model.js";
 import { writeCatalog } from "../src/catalog/store.js";
 import { readCatalogTokens, withTokenFiles } from "../src/catalog/tokens.js";
+import { buildTokenDraft } from "../src/tokens/draft.js";
+import { emitTokensCss } from "../src/tokens/emit.js";
+import { serializeW3c } from "../src/tokens/w3c.js";
+import { normalizeColor } from "../src/normalize/color.js";
 import { loadReplacementTokens } from "../src/tokens/replacement-tokens.js";
 
 let root: string;
@@ -41,6 +45,37 @@ async function writeFreshCatalog(tokenFile: string): Promise<void> {
 }
 
 describe("loadReplacementTokens", () => {
+  it("init 산출 쌍(tokens.css + tokens.json)에서 CSS 토큰도 DTCG path를 갖는다", async () => {
+    const mk = (hex: string, px?: number) => ({
+      file: "src/a.tsx", line: 1, column: 1, property: px === undefined ? ("color" as const) : ("padding" as const), raw: hex,
+      normalized: px === undefined ? normalizeColor(hex)! : { kind: "length" as const, px },
+      source: "hardcoded" as const, extractor: "test",
+    });
+    const draft = buildTokenDraft([mk("#3b82f6"), mk("#3b82f6"), mk("#111111"), mk("8px", 8), mk("8px", 8), mk("16px", 16)]);
+    put("design-system/tokens.css", emitTokensCss(draft));
+    put("design-system/tokens.json", serializeW3c(draft));
+    const r = await loadReplacementTokens(root, []);
+    expect(r.source).toBe("token-file");
+    expect(r.tokens.length).toBeGreaterThan(2);
+    for (const t of r.tokens) {
+      expect(t.file, t.name).toBe("design-system/tokens.css");
+      expect(t.path, t.name).toBe(t.name.slice(2).replace(/-/, "."));
+    }
+  });
+
+  it("해시를 기록하지 않은 카탈로그는 신선도를 검증할 수 없으니 none + 경고", async () => {
+    put("src/theme.css", CSS);
+    const read = await readCatalogTokens(root, ["src/theme.css"]);
+    await writeCatalog(root, {
+      version: 1, dsmith: "0.0.0", sources: [{ origin: "ds-local", dir: "src/ds" }], components: [], tokens: read.tokens,
+      stats: { components: 0, propsOk: 0, deprecated: 0, tokens: read.tokens.length },
+    });
+    const r = await loadReplacementTokens(root, []);
+    expect(r.source).toBe("none");
+    expect(r.tokens).toEqual([]);
+    expect(r.warnings.join("\n")).toContain("해시");
+  });
+
   it("init 산출만 있고 detect tokenFiles가 비어도 token-file, excludeDirs [design-system]", async () => {
     put("design-system/tokens.json", JSON_TOKENS);
     put("design-system/tokens.css", CSS);

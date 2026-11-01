@@ -99,11 +99,14 @@ export async function loadTokens(
 
   const tokens: LoadedToken[] = [];
   const seen = new Set<string>();
+  const byName = new Map<string, LoadedToken>();
   for (const { code, file } of sources) {
     for (const token of readCssVariableTokens(code, file, aliases)) {
       if (seen.has(token.name)) continue;
       seen.add(token.name);
-      tokens.push({ ...token, source: "token-file", file });
+      const loaded: LoadedToken = { ...token, source: "token-file", file };
+      byName.set(token.name, loaded);
+      tokens.push(loaded);
     }
   }
   for (const { code, file } of jsonSources) {
@@ -115,7 +118,19 @@ export async function loadTokens(
       continue;
     }
     for (const token of read.tokens) {
-      if (seen.has(token.name)) continue;
+      if (seen.has(token.name)) {
+        // CSS가 먼저 이름을 차지했어도 같은 값이면 W3C의 DTCG 경로를 CSS 토큰에 실어 준다(init 산출은 tokens.css·tokens.json 쌍)
+        const css = byName.get(token.name);
+        if (
+          css !== undefined &&
+          css.path === undefined &&
+          token.path !== undefined &&
+          JSON.stringify(css.normalized) === JSON.stringify(token.normalized)
+        ) {
+          css.path = token.path;
+        }
+        continue;
+      }
       seen.add(token.name);
       tokens.push({ ...token, source: "token-file", file });
     }

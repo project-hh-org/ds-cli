@@ -361,7 +361,7 @@ export interface Replacement {
 
 /**
  * 이 하드코딩 값을 바꿀 `tokens` 중 하나. 매처(`rankTokens`) 1위가 같은 카테고리에서 exact 또는 close면 그 토큰.
- * 아니면 999px 이상 모서리(`radius-full` 값)는 px ≥ `FULL_RADIUS_MIN_PX`인 첫 radius 토큰(px가 같으면 "exact", 아니면 "close", distance = |차|).
+ * 아니면 999px 이상 모서리(`radius-full` 값)는 px ≥ `FULL_RADIUS_MIN_PX`인 radius 토큰 중 px가 가장 가까운 것(동률이면 먼저 나온 것)(px가 같으면 "exact", 아니면 "close", distance = |차|).
  * 토큰 대상 속성(`COVERAGE_PROPERTIES`: 색·간격·모서리·글꼴 크기. width·height 제외)이 아니거나 바꿀 토큰이 없으면 null.
  * 커버리지의 분모 제외(0 이하 간격, 평가 제외 사용)는 호출자의 몫이다.
  * `draftCoverage`의 "바꿀 수 있음"(`replaceableToken`)과 마이그레이션이 이 함수 하나를 쓴다.
@@ -376,13 +376,13 @@ export function bestReplacement(usage: StyleUsage, tokens: Token[]): Replacement
   }
   if (category === "radius" && usage.normalized.kind === "length" && usage.normalized.px >= FULL_RADIUS_MIN_PX) {
     const px = usage.normalized.px;
-    const full = tokens.find(
-      (t) => t.category === "radius" && t.normalized.kind === "length" && t.normalized.px >= FULL_RADIUS_MIN_PX,
-    );
-    if (full !== undefined && full.normalized.kind === "length") {
-      const distance = Math.abs(full.normalized.px - px);
-      return { token: full, confidence: distance === 0 ? "exact" : "close", distance };
+    let best: Replacement | null = null;
+    for (const t of tokens) {
+      if (t.category !== "radius" || t.normalized.kind !== "length" || t.normalized.px < FULL_RADIUS_MIN_PX) continue;
+      const distance = Math.abs(t.normalized.px - px);
+      if (best === null || distance < best.distance) best = { token: t, confidence: distance === 0 ? "exact" : "close", distance };
     }
+    return best;
   }
   return null;
 }

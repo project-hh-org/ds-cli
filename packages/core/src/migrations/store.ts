@@ -1,3 +1,4 @@
+import { constants } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { atomicWrite } from "../fs/safe-write.js";
@@ -15,18 +16,23 @@ function assertId(id: string): void {
 
 const pad = (n: number): string => String(n).padStart(2, "0");
 
-/** `YYYYMMDD-HHMMSS`(로컬 시각). 같은 id의 기록이 이미 있으면 `-2`, `-3`… */
+/**
+ * `YYYYMMDD-HHMMSS`(로컬 시각). 같은 id의 기록이 이미 있으면 `-2`, `-3`…
+ * 빈 파일을 `wx`(배타 생성)로 만들어 id를 예약하므로 동시에 부르는 호출끼리 같은 id를 받지 못한다.
+ * 예약 파일은 곧 `writeMigration`이 같은 id로 덮어쓴다(그 사이 `readMigration`은 빈 파일을 "기록 없음"으로 본다).
+ */
 export async function newMigrationId(root: string, now: Date): Promise<string> {
   const base = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
-  let existing: Set<string>;
-  try {
-    existing = new Set((await fs.readdir(dirOf(root))).filter((f) => f.endsWith(".json")).map((f) => f.slice(0, -".json".length)));
-  } catch {
-    existing = new Set();
-  }
-  if (!existing.has(base)) return base;
-  for (let n = 2; ; n++) {
-    if (!existing.has(`${base}-${n}`)) return `${base}-${n}`;
+  await fs.mkdir(dirOf(root), { recursive: true });
+  for (let n = 1; ; n++) {
+    const id = n === 1 ? base : `${base}-${n}`;
+    try {
+      const handle = await fs.open(path.join(dirOf(root), `${id}.json`), constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY);
+      await handle.close();
+      return id;
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code !== "EEXIST") throw err;
+    }
   }
 }
 
@@ -47,11 +53,18 @@ export async function readMigration(root: string, id: string): Promise<Migration
     if ((err as NodeJS.ErrnoException).code === "ENOENT") return null;
     throw err;
   }
+  if (text === "") return null; // newMigrationId가 예약만 해 둔 파일
+  let parsed: unknown;
   try {
-    return JSON.parse(text) as MigrationRecord;
+    parsed = JSON.parse(text);
   } catch (err) {
     throw new Error(`${MIGRATIONS_DIR}/${id}.json을 JSON으로 읽을 수 없음: ${(err as Error).message}`);
   }
+  const version = (parsed as { version?: unknown } | null)?.version;
+  if (version !== 1) {
+    throw new Error(`${MIGRATIONS_DIR}/${id}.json의 version이 ${String(version)}이라 읽을 수 없음 (이 dsmith는 1만 읽는다 — dsmith를 올리세요)`);
+  }
+  return parsed as MigrationRecord;
 }
 
 /** id 내림차순(최신 먼저). 읽을 수 없는 파일은 건너뛴다. */

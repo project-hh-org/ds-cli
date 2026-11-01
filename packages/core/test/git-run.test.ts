@@ -48,6 +48,33 @@ describe("runGit", () => {
     }
   });
 
+  it("실패 종류를 구분한다: not-found · spawn(없는 cwd) · timeout", async () => {
+    const path0 = process.env.PATH;
+    process.env.PATH = "";
+    try {
+      const r = await runGit(tmp, ["--version"]);
+      expect(r).toMatchObject({ ok: false, code: null, error: { kind: "not-found" } });
+    } finally {
+      process.env.PATH = path0;
+    }
+    const bad = await runGit(path.join(tmp, "없는-디렉터리"), ["--version"]);
+    expect(bad).toMatchObject({ ok: false, code: null, error: { kind: "spawn" } });
+    await runGit(tmp, ["init", "-q"]);
+    const slow = await runGit(tmp, ["-c", "alias.slow=!sleep 5", "slow"], { timeoutMs: 200 });
+    expect(slow).toMatchObject({ ok: false, code: null, error: { kind: "timeout" } });
+    const nonzero = await runGit(tmp, ["rev-parse", "--verify", "-q", "refs/heads/none"]);
+    expect(nonzero.ok).toBe(false);
+    expect(nonzero.error).toBeUndefined();
+  });
+
+  it("input이 없으면 stdin을 닫아 표준 입력을 읽는 명령이 멈추지 않는다", async () => {
+    await runGit(tmp, ["init", "-q"]);
+    const t0 = Date.now();
+    const r = await runGit(tmp, ["hash-object", "--stdin"], { timeoutMs: 4000 });
+    expect(r.ok).toBe(true);
+    expect(Date.now() - t0).toBeLessThan(3000);
+  });
+
   it("input을 표준 입력으로 넘긴다", async () => {
     await runGit(tmp, ["init", "-q"]);
     const r = await runGit(tmp, ["hash-object", "--stdin"], { input: "hello\n" });

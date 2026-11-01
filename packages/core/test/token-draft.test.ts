@@ -293,6 +293,15 @@ describe("bestReplacement", () => {
     expect(bestReplacement(len(999, "border-radius"), tokens.filter((t) => t.category !== "radius"))).toBeNull();
   });
 
+  it("999px 이상 모서리 폴백은 첫 토큰이 아니라 px가 가장 가까운 토큰", () => {
+    const two: Token[] = [
+      { name: "--radius-pill", value: "9999px", normalized: { kind: "length", px: 9999 }, category: "radius" },
+      { name: "--radius-full", value: "1000px", normalized: { kind: "length", px: 1000 }, category: "radius" },
+    ];
+    expect(bestReplacement(len(999, "border-radius"), two)).toMatchObject({ token: { name: "--radius-full" }, distance: 1 });
+    expect(bestReplacement(len(9999, "border-radius"), two)).toMatchObject({ token: { name: "--radius-pill" }, confidence: "exact" });
+  });
+
   it("replaceableToken은 bestReplacement !== null과 항상 같다", () => {
     const usages = [color("#3b82f6"), color("#ef4444"), len(8, "padding"), len(13, "padding"), len(999, "border-radius"), len(8, "width")];
     for (const u of usages) expect(replaceableToken(u, tokens)).toBe(bestReplacement(u, tokens) !== null);

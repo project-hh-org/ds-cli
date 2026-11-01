@@ -29,8 +29,14 @@ export async function writePatchedFile(
     const realRoot = await fs.realpath(rootAbs);
     const realDir = await fs.realpath(path.dirname(abs));
     if (realDir !== realRoot && !inside(realRoot, realDir)) return { written: false, reason: "root 밖 경로" };
-    const current = createHash("sha256").update(await fs.readFile(abs)).digest("hex");
+    const bytes = await fs.readFile(abs);
+    const current = createHash("sha256").update(bytes).digest("hex");
     if (current !== expectedSha) return { written: false, reason: "계획 뒤 파일이 바뀜" };
+    try {
+      new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(bytes);
+    } catch {
+      return { written: false, reason: "UTF-8이 아닌 파일" };
+    }
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code === "ENOENT") return { written: false, reason: "파일이 없음" };
     return { written: false, reason: `파일을 확인할 수 없음: ${(err as Error).message}` };

@@ -1,7 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { readCatalog } from "../catalog/store.js";
-import { staleCatalogTokenFiles } from "../catalog/tokens.js";
+import { recordedTokenFiles, staleCatalogTokenFiles } from "../catalog/tokens.js";
 import { findInitDir } from "../fs/init-dir.js";
 import { loadTokens, tokensFromCatalog, type LoadedToken } from "./load.js";
 
@@ -62,7 +62,10 @@ export async function loadReplacementTokens(root: string, detectTokenFiles: stri
     const catalog = await readCatalog(root);
     if (catalog !== null && catalog.tokens.length > 0) {
       const stale = await staleCatalogTokenFiles(root, catalog);
-      if (stale.length === 0) {
+      if (recordedTokenFiles(catalog).length === 0) {
+        // 해시를 기록하지 않은 카탈로그는 신선도를 검증할 수 없다 — 검증 안 된 토큰은 쓰지 않는다
+        warnings.push("카탈로그에 토큰 파일 해시가 없어 토큰을 쓰지 않음 (dsmith ai로 갱신)");
+      } else if (stale.length === 0) {
         const fromCatalog = tokensFromCatalog(catalog.tokens, []);
         return {
           source: "catalog",
@@ -72,8 +75,9 @@ export async function loadReplacementTokens(root: string, detectTokenFiles: stri
           excludeDirs,
           warnings,
         };
+      } else {
+        warnings.push(`카탈로그의 토큰 파일이 바뀌어 토큰을 쓰지 않음: ${stale.join(", ")} (dsmith ai로 갱신)`);
       }
-      warnings.push(`카탈로그의 토큰 파일이 바뀌어 토큰을 쓰지 않음: ${stale.join(", ")} (dsmith ai로 갱신)`);
     }
   } catch (err) {
     warnings.push((err as Error).message);

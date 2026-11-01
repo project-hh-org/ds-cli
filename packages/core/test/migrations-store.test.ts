@@ -66,6 +66,21 @@ describe("migrations store", () => {
     expect(await listMigrations(root)).toEqual([]);
   });
 
+  it("newMigrationId는 동시에 불러도 서로 다른 id를 예약한다", async () => {
+    const now = new Date(2026, 10, 1, 9, 0, 0);
+    const ids = await Promise.all(Array.from({ length: 6 }, () => newMigrationId(root, now)));
+    expect(new Set(ids).size).toBe(6);
+    expect(ids).toContain("20261101-090000");
+    expect(await listMigrations(root)).toEqual([]); // 예약만 된 id는 목록·읽기에서 기록 없음
+    expect(await readMigration(root, ids[0]!)).toBeNull();
+  });
+
+  it("version이 1이 아닌 기록은 분명한 Error", async () => {
+    fs.mkdirSync(path.join(root, MIGRATIONS_DIR), { recursive: true });
+    fs.writeFileSync(path.join(root, MIGRATIONS_DIR, "x.json"), JSON.stringify({ ...rec("x"), version: 2 }));
+    await expect(readMigration(root, "x")).rejects.toThrow(/version이 2/);
+  });
+
   it("id에 경로 조각이 있으면 Error", async () => {
     await expect(readMigration(root, "../x")).rejects.toThrow();
     await expect(readMigration(root, "a/b")).rejects.toThrow();
