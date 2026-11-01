@@ -11,6 +11,7 @@
     { "path": "packages/extractor-mui-sx" },
     { "path": "packages/detect" },
     { "path": "packages/agent-skill" },
+    { "path": "packages/mcp-server" },
     { "path": "packages/cli" }
   ]
 }
