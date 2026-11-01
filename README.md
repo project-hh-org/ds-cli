@@ -21,12 +21,20 @@ node packages/cli/dist/bin.js audit --root <repo>
 
 ### 감지 결과 고치기 (`overrides`)
 
-감지가 틀렸으면 `<repo>/.dsmith/detect.json`에 `overrides`를 추가한다. 다시 감지해도 보존되고 새 결과 위에 적용된다(`state`, `activeExtractors`, `ds`).
+감지가 틀렸으면 `<repo>/.dsmith/detect.json`에 `overrides`를 추가한다. 다시 감지해도 보존되고 새 결과 위에 적용된다(`state`, `activeExtractors`, `ds`, `exclude`).
 
 ```json
 {
-  "overrides": { "state": 2 }
+  "overrides": { "state": 2, "exclude": ["legacy/**"] }
 }
+```
+
+### 분석 제외 (`--exclude`, `overrides.exclude`)
+
+기본 제외: `node_modules`, `dist`, `.next`, `build`, `coverage`, `.dsmith`, 압축 스타일시트(`*.min.css`·`*.min.scss`), `vendor/`. `public/`은 손으로 쓴 CSS를 두는 앱이 있어 기본 제외가 아니다. 더 뺄 경로는 `detect`·`audit`의 `--exclude <glob...>`(여러 번 가능, 이번 실행만)나 `overrides.exclude`(저장)로 주며, 둘 다 기본 제외에 더해진다(대체하지 않음).
+
+```
+node packages/cli/dist/bin.js audit --root <repo> --exclude "public/**" "legacy/**"
 ```
 
 ## 지원하는 스타일링 방식

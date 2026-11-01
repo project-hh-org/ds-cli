@@ -2,10 +2,15 @@ import path from "node:path";
 import { detect, MONOREPO_ROOT_EVIDENCE, writeDetect, type DetectResult } from "@dsmith/detect";
 import { metas } from "../registry.js";
 
+export interface RunOptions {
+  /** 기본 제외와 detect.json `overrides.exclude`에 더할 glob(CLI `--exclude`). 저장하지 않는다. */
+  exclude?: string[];
+}
+
 /** detect를 실행하고 `.dsmith/detect.json`에 저장한다. 결과는 provisional이다. */
-export async function runDetect(root: string): Promise<DetectResult> {
+export async function runDetect(root: string, opts: RunOptions = {}): Promise<DetectResult> {
   const absRoot = path.resolve(root);
-  const result = await detect(absRoot, undefined, { available: metas() });
+  const result = await detect(absRoot, undefined, { available: metas(), exclude: opts.exclude ?? [] });
   await writeDetect(absRoot, result);
   return result;
 }

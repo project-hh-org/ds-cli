@@ -9,9 +9,10 @@ import {
   type ComponentUsage,
   type Index,
 } from "@dsmith/core";
-import { detect, sharesFromIndex, writeDetect, type DetectResult } from "@dsmith/detect";
+import { detect, excludeGlobs, sharesFromIndex, writeDetect, type DetectResult } from "@dsmith/detect";
 import type { AuditResult } from "../audit-result.js";
 import { buildExtractors, metas } from "../registry.js";
+import type { RunOptions } from "./detect.js";
 import { localDate, renderAuditReport } from "../report/audit-report.js";
 
 export type { AuditResult } from "../audit-result.js";
@@ -142,17 +143,21 @@ export function computeAudit(detectResult: DetectResult, index: Index): AuditRes
 /**
  * 감지(잠정) → 인덱싱 → 재감지(정제) → 집계 → 리포트 저장.
  * 대상 레포에는 `.dsmith/`만 쓴다.
+ * 제외 glob = 기본 제외 + detect.json `overrides.exclude` + `opts.exclude`(감지·인덱싱 모두).
  */
-export async function runAudit(rootArg: string): Promise<{ result: AuditResult; reportPath: string }> {
+export async function runAudit(rootArg: string, opts: RunOptions = {}): Promise<{ result: AuditResult; reportPath: string }> {
   const root = path.resolve(rootArg);
+  const runExclude = opts.exclude ?? [];
 
-  const provisional = await detect(root, undefined, { available: metas() });
+  const provisional = await detect(root, undefined, { available: metas(), exclude: runExclude });
   await writeDetect(root, provisional);
 
-  const index = await indexRepo(root, buildExtractors(provisional.activeExtractors));
+  const index = await indexRepo(root, buildExtractors(provisional.activeExtractors), {
+    exclude: excludeGlobs(provisional.overrides, runExclude),
+  });
   await writeIndex(root, index);
 
-  const refined = await detect(root, index, { available: metas() });
+  const refined = await detect(root, index, { available: metas(), exclude: runExclude });
   await writeDetect(root, refined);
 
   const result = computeAudit(refined, index);

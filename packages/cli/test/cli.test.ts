@@ -1,6 +1,8 @@
+import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { auditWarnings, localDate } from "../src/report/audit-report.js";
 import type { Index } from "@dsmith/core";
@@ -317,5 +319,68 @@ describe("플러그인 경계 (CLI)", () => {
     write("notes.txt", "brand #3b82f6\n");
     const detected = await runDetect(tmp);
     expect(detected.activeExtractors).toEqual(["inline-style"]);
+  });
+});
+
+describe("제외 (--exclude, overrides.exclude)", () => {
+  const here = path.dirname(fileURLToPath(import.meta.url));
+  const bin = path.resolve(here, "../dist/bin.js");
+
+  function copyFixture(name: string): void {
+    const src = path.resolve(here, "../../../fixtures", name);
+    fs.cpSync(src, tmp, { recursive: true, filter: (p) => !p.split(path.sep).includes(".dsmith") });
+  }
+
+  function legacyRepo(): void {
+    write("package.json", JSON.stringify({ name: "app", dependencies: { react: "^18" } }));
+    write("src/A.tsx", `export const A = () => <div style={{ color: "#3B82F6", padding: 8 }} />;\n`);
+    write("legacy/Old.tsx", `export const Old = () => <div style={{ color: "#EF4444", margin: 13 }} />;\n`);
+  }
+
+  it("압축·vendor 스타일시트를 fixture에 심어도 기본 제외라 점수·activeExtractors가 그대로다", async () => {
+    copyFixture("mixed-app");
+    const before = (await runAudit(tmp)).result;
+    write("public/vendor/swiper.min.css", ".swiper{color:#123456;margin:7px;padding:3px}\n".repeat(50));
+    write("vendor/big.min.css", "a{color:#abcdef;padding:11px}\n".repeat(50));
+    const after = (await runAudit(tmp)).result;
+    expect(after.detect.activeExtractors).toEqual(before.detect.activeExtractors);
+    expect(after.health).toEqual(before.health);
+    expect(after.index.files).toEqual(before.index.files);
+  });
+
+  it("runAudit의 exclude는 기본 제외에 더해져 감지·인덱스 모두에서 빠진다", async () => {
+    legacyRepo();
+    const all = (await runAudit(tmp)).result;
+    expect(all.index.files.scanned).toBe(2);
+    const { result } = await runAudit(tmp, { exclude: ["legacy/**"] });
+    expect(result.index.files.scanned).toBe(1);
+    expect(result.hardcoded.byFile.map((f) => f.file)).toEqual(["src/A.tsx"]);
+    // 실행 옵션은 detect.json overrides로 저장하지 않는다.
+    const saved = JSON.parse(fs.readFileSync(path.join(tmp, ".dsmith", "detect.json"), "utf-8"));
+    expect(saved.overrides).toBeUndefined();
+  });
+
+  it("detect.json의 overrides.exclude를 audit 인덱싱이 읽는다", async () => {
+    legacyRepo();
+    const first = await runDetect(tmp);
+    fs.writeFileSync(
+      path.join(tmp, ".dsmith", "detect.json"),
+      JSON.stringify({ ...first, overrides: { exclude: ["legacy/**"] } }, null, 2),
+    );
+    const { result } = await runAudit(tmp);
+    expect(result.index.files.scanned).toBe(1);
+    expect(result.detect.overrides).toEqual({ exclude: ["legacy/**"] });
+  });
+
+  it("CLI --exclude는 여러 번·여러 값으로 줄 수 있다 (detect·audit)", () => {
+    legacyRepo();
+    write("old/B.tsx", `export const B = () => <div style={{ color: "#111111" }} />;\n`);
+    const run = (...args: string[]) =>
+      JSON.parse(execFileSync(process.execPath, [bin, ...args, "--root", tmp, "--json"], { encoding: "utf-8" }));
+    expect(run("audit").index.files.scanned).toBe(3);
+    expect(run("audit", "--exclude", "legacy/**", "old/**").index.files.scanned).toBe(1);
+    expect(run("audit", "--exclude", "legacy/**", "--exclude", "old/**").index.files.scanned).toBe(1);
+    const detected = run("detect", "--exclude", "legacy/**", "old/**", "src/**");
+    expect(detected.styling.methods).toEqual([{ name: "inline-style", evidence: ["fallback"], share: 0 }]);
   });
 });

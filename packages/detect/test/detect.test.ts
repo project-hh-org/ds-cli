@@ -366,6 +366,44 @@ describe("Extractor signals로 감지·활성화 (플러그인 경계)", () => {
   });
 });
 
+describe("제외 (exclude)", () => {
+  it("압축 스타일시트와 vendor/는 기본 제외라 css 근거가 되지 않는다 (public/은 제외하지 않음)", async () => {
+    repo({
+      "package.json": pkg(),
+      "public/vendor/swiper.min.css": "a{color:red}",
+      "assets/lib.min.css": "a{color:red}",
+      "vendor/a.scss": "a{color:red}",
+    });
+    expect((await detect(tmp)).styling.methods.map((m) => m.name)).not.toContain("css");
+    repo({ "public/site.css": "a{color:red}" });
+    expect((await detect(tmp)).styling.methods.find((m) => m.name === "css")?.evidence).toEqual(["public/site.css"]);
+  });
+
+  it("opts.exclude는 기본 제외에 더해져 소스·스타일시트·signals·DS·storybook 스캔에 모두 적용된다", async () => {
+    repo({
+      "package.json": pkg(),
+      "legacy/A.tsx": "export const A = () => <div style={{ color: 'red' }} />;",
+      "legacy/old.css": "a{}",
+      "legacy/tokens.css": ":root{}",
+      "legacy/A.stories.tsx": "export default {};",
+      "legacy/notes.txt": "x",
+      "src/B.tsx": "export const B = 1;",
+    });
+    const TXT: ExtractorMeta = { name: "txt", files: ["**/*.txt"], parses: "none", signals: { files: ["**/*.txt"] } };
+    const before = await detect(tmp, undefined, { available: [...AVAILABLE, TXT] });
+    expect(before.styling.methods.map((m) => m.name)).toEqual(["inline-style", "css", "txt"]);
+    expect(before.ds.tokenFiles).toEqual(["legacy/tokens.css"]);
+    expect(before.storybook).toBe(true);
+
+    const r = await detect(tmp, undefined, { available: [...AVAILABLE, TXT], exclude: ["legacy/**"] });
+    expect(r.styling.methods).toEqual([{ name: "inline-style", evidence: ["fallback"], share: 0 }]);
+    expect(r.ds.tokenFiles).toEqual([]);
+    expect(r.storybook).toBe(false);
+    // 실행 옵션은 overrides로 저장하지 않는다.
+    expect(r.overrides).toBeUndefined();
+  });
+});
+
 describe("ds 감지", () => {
   it("components/ui 디렉터리와 tokens.css가 있으면 local DS와 토큰 파일을 보고한다", async () => {
     repo({ "package.json": pkg(), "components/ui": null, "tokens.css": ":root{}" });
@@ -581,6 +619,23 @@ describe("overrides", () => {
     const again = await detect(tmp);
     expect(again.activeExtractors).toEqual(["emotion", "mui-sx"]);
     expect(again.overrides).toEqual({ activeExtractors: ["emotion", "sx", "mui-sx"] });
+  });
+
+  it("overrides.exclude는 기본 제외에 더해져 감지 스캔에 적용되고 보존된다", async () => {
+    repo({ "package.json": pkg(), "legacy/old.css": "a{color:red}", "legacy/A.tsx": "export const A = () => <div style={{ color: 'red' }} />;" });
+    const first = await detect(tmp, undefined, { available: AVAILABLE });
+    expect(first.styling.methods.map((m) => m.name)).toEqual(["inline-style", "css"]);
+    await writeDetect(tmp, { ...first, overrides: { exclude: ["legacy/**"] } });
+    const again = await detect(tmp, undefined, { available: AVAILABLE });
+    expect(again.styling.methods).toEqual([{ name: "inline-style", evidence: ["fallback"], share: 0 }]);
+    expect(again.overrides).toEqual({ exclude: ["legacy/**"] });
+  });
+
+  it("overrides.exclude가 문자열 배열이 아니면 detect.json 경로를 담은 오류를 던진다", async () => {
+    repo({ "package.json": pkg() });
+    const first = await detect(tmp);
+    await writeDetect(tmp, { ...first, overrides: { exclude: "legacy/**" as unknown as string[] } });
+    await expect(detect(tmp)).rejects.toThrow(/\.dsmith\/detect\.json.*overrides\.exclude/);
   });
 
   it("overrides가 없으면 기존 파일과 무관하게 새로 감지한다", async () => {

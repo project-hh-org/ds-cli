@@ -39,8 +39,8 @@ function isPrimitive(name: string): boolean {
   return PRIMITIVE_PREFIXES.some((p) => name.startsWith(p));
 }
 
-export async function detectDs(root: string, deps: string[]): Promise<DsDetection> {
-  const tokenFiles = await listFiles(root, [TOKEN_FILES]);
+export async function detectDs(root: string, deps: string[], exclude: string[] = []): Promise<DsDetection> {
+  const tokenFiles = await listFiles(root, [TOKEN_FILES], exclude);
 
   const packageNames = findNpmDsPackages(deps);
   let localDir: string | undefined;

@@ -46,11 +46,11 @@ function cap(files: string[], label: (f: string) => string): string[] {
   return files.slice(0, EVIDENCE_FILE_CAP).map(label);
 }
 
-async function tailwindEvidence(root: string, deps: string[]): Promise<string[]> {
+async function tailwindEvidence(root: string, deps: string[], exclude: string[]): Promise<string[]> {
   const evidence: string[] = [];
   if (deps.includes("tailwindcss")) evidence.push("package.json: tailwindcss");
-  evidence.push(...(await listFiles(root, [TAILWIND_CONFIGS])));
-  for (const css of await listFiles(root, ["**/*.css"])) {
+  evidence.push(...(await listFiles(root, [TAILWIND_CONFIGS], exclude)));
+  for (const css of await listFiles(root, ["**/*.css"], exclude)) {
     let content: string;
     try {
       content = await fs.readFile(path.join(root, css), "utf-8");
@@ -83,14 +83,16 @@ function indexShare(index: Index, extractor: string): number {
 export interface StylingInput {
   deps: string[];
   sources: SourceFile[];
+  /** 기본 제외에 더할 glob. 파일 목록을 새로 훑을 때 적용한다(`sources`는 이미 적용된 상태로 받는다). */
+  exclude?: string[];
 }
 
 /** 파일·의존성 근거로 스타일링 방식을 감지한다. Extractor 해석(폴백)·index 비율·모노레포 표시는 호출자가 이어서 적용한다. */
 export async function detectStyling(root: string, input: StylingInput): Promise<StylingDetection> {
-  const { deps, sources } = input;
+  const { deps, sources, exclude = [] } = input;
   const methods: StylingDetection["methods"] = [];
 
-  const twEvidence = await tailwindEvidence(root, deps);
+  const twEvidence = await tailwindEvidence(root, deps, exclude);
   if (twEvidence.length > 0) {
     const hasTailwindDep = deps.includes("tailwindcss");
     methods.push({
@@ -110,12 +112,14 @@ export async function detectStyling(root: string, input: StylingInput): Promise<
   }
 
   // 일반 스타일시트. 파일 이름에 `.module.`이 들어가면 css-modules 쪽이다.
-  const cssFiles = (await listFiles(root, ["**/*.{css,scss}"])).filter((f) => !path.posix.basename(f).includes(".module."));
+  const cssFiles = (await listFiles(root, ["**/*.{css,scss}"], exclude)).filter(
+    (f) => !path.posix.basename(f).includes(".module."),
+  );
   if (cssFiles.length > 0) {
     methods.push({ name: "css", evidence: cap(cssFiles, (f) => f), share: 0 });
   }
 
-  const moduleFiles = await listFiles(root, ["**/*.module.{css,scss}"]);
+  const moduleFiles = await listFiles(root, ["**/*.module.{css,scss}"], exclude);
   if (moduleFiles.length > 0) {
     methods.push({
       name: "css-modules",
@@ -168,7 +172,7 @@ export async function detectSignalMethods(
   input: StylingInput,
   available: ExtractorMeta[] | undefined,
 ): Promise<StylingDetection["methods"]> {
-  const { deps, sources } = input;
+  const { deps, sources, exclude = [] } = input;
   const candidates: { name: string; signals: ExtractorSignals }[] = [];
   for (const { name, signals } of available ?? []) {
     if (signals === undefined || BUILTIN_METHODS.has(name) || candidates.some((c) => c.name === name)) continue;
@@ -178,7 +182,7 @@ export async function detectSignalMethods(
 
   // code 신호가 있을 때만 스타일시트를 읽는다. JS/TS 소스는 detect가 이미 읽은 것을 쓴다.
   const codeSamples = candidates.some((c) => c.signals.code !== undefined)
-    ? [...sources, ...(await loadFiles(root, STYLESHEETS))]
+    ? [...sources, ...(await loadFiles(root, STYLESHEETS, exclude))]
     : sources;
 
   const methods: StylingDetection["methods"] = [];
@@ -191,7 +195,7 @@ export async function detectSignalMethods(
     }
     if (signals.files !== undefined) {
       // glob 목록을 한 번에 넘겨 `!` 부정 패턴이 나머지 패턴에 적용되게 한다.
-      const first = (await listFiles(root, signals.files))[0];
+      const first = (await listFiles(root, signals.files, exclude))[0];
       if (first !== undefined) evidence.push(first);
     }
     if (signals.code !== undefined) {

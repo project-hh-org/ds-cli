@@ -21,17 +21,27 @@ export interface Index {
 export interface IndexOptions {
   /** 대상 glob. 지정하면 기본값(Extractor가 선언한 files의 합집합 + JS/TS 소스)을 대체한다. */
   include?: string[];
-  /** 추가로 제외할 glob. 기본 제외(node_modules, dist, .next, build, coverage, .dsmith)에 더해지며 대체하지 않는다. */
+  /** 추가로 제외할 glob. 기본 제외(`DEFAULT_EXCLUDE`)에 더해지며 대체하지 않는다. */
   exclude?: string[];
 }
 
-const DEFAULT_EXCLUDE = [
+/**
+ * 인덱서·detect가 공유하는 기본 제외 glob.
+ * 압축 스타일시트(`*.min.css`·`*.min.scss`)와 `vendor/`는 서드파티 코드라 손으로 쓴 스타일이 아니다 —
+ * 하나만 섞여도(예: `public/vendor/swiper.min.css`) 하드코딩 비율이 크게 흔들린다.
+ * `public/`은 제외하지 않는다: CRA·Vite·Next 앱이 `public/`에 손으로 쓴 CSS(`public/styles.css` 등)를 두기도 하고,
+ * 그 안의 서드파티 파일은 대개 `vendor/`나 `.min.`으로 이미 걸러진다. 더 빼려면 `--exclude`·`overrides.exclude`를 쓴다.
+ */
+export const DEFAULT_EXCLUDE: readonly string[] = [
   "**/node_modules/**",
   "**/dist/**",
   "**/.next/**",
   "**/build/**",
   "**/coverage/**",
   "**/.dsmith/**",
+  "**/*.min.css",
+  "**/*.min.scss",
+  "**/vendor/**",
 ];
 
 /** 컴포넌트 사용 분석(Babel 파싱)은 JS/TS 소스에만 적용한다. */

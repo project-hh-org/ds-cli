@@ -5,7 +5,7 @@ import path from "node:path";
 import { JS_FILES } from "@dsmith/extractor-api";
 import { inlineStyleExtractor } from "@dsmith/extractor-inline-style";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { indexRepo } from "../src/index/indexer.js";
+import { DEFAULT_EXCLUDE, indexRepo } from "../src/index/indexer.js";
 
 let tmp: string;
 beforeEach(() => {
@@ -236,6 +236,52 @@ describe("indexRepo", () => {
     const index = await indexRepo(tmp, [spy], { include: ["**/*.{tsx,jsx,ts,js}"], exclude: [] });
     expect(seen).toEqual(["src/a.tsx"]);
     expect(index.files.scanned).toBe(1);
+  });
+
+  it("압축 스타일시트(*.min.css·*.min.scss)와 vendor/ 디렉터리는 기본으로 제외하고, public/은 제외하지 않는다", async () => {
+    put("src/app.css", `a { color: red; }`);
+    put("x.min.css", `a{color:red}`);
+    put("styles/y.min.scss", `a{color:red}`);
+    put("vendor/a.css", `a { color: red; }`);
+    put("public/vendor/swiper.min.css", `a{color:red}`);
+    put("src/vendor/lib.js", `const a = 1;`);
+    put("public/site.css", `a { color: red; }`);
+    const seen: string[] = [];
+    const spy = {
+      name: "spy",
+      files: ["**/*.{css,scss}"],
+      parses: "none" as const,
+      appliesTo: (ctx: { file: string }) => {
+        seen.push(ctx.file);
+        return false;
+      },
+      extract: () => [],
+      write: () => null,
+    };
+    await indexRepo(tmp, [spy]);
+    expect(seen).toEqual(["public/site.css", "src/app.css"]);
+  });
+
+  it("DEFAULT_EXCLUDE를 내보내고 exclude 옵션은 그 위에 더해진다", async () => {
+    expect(DEFAULT_EXCLUDE).toEqual(expect.arrayContaining(["**/node_modules/**", "**/*.min.css", "**/vendor/**"]));
+    expect(DEFAULT_EXCLUDE).not.toContain("**/public/**");
+    put("legacy/a.css", `a { color: red; }`);
+    put("src/b.css", `a { color: red; }`);
+    put("vendor/c.css", `a { color: red; }`);
+    const seen: string[] = [];
+    const spy = {
+      name: "spy",
+      files: ["**/*.css"],
+      parses: "none" as const,
+      appliesTo: (ctx: { file: string }) => {
+        seen.push(ctx.file);
+        return false;
+      },
+      extract: () => [],
+      write: () => null,
+    };
+    await indexRepo(tmp, [spy], { exclude: ["legacy/**"] });
+    expect(seen).toEqual(["src/b.css"]);
   });
 
   it("한 파일의 extractor 하나라도 던지면 그 파일은 skipped이고 styles·components에 아무것도 남기지 않는다", async () => {
