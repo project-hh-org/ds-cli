@@ -17,6 +17,7 @@
     { "path": "../extractor-styled" },
     { "path": "../extractor-emotion" },
     { "path": "../extractor-mui-sx" },
+    { "path": "../guard" },
     { "path": "../init" },
     { "path": "../migrate" },
     { "path": "../mcp-server" }

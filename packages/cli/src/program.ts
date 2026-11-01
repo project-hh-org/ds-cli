@@ -13,6 +13,7 @@ import {
   runDecideList,
 } from "./commands/decide.js";
 import { detectHints, formatDetectSummary, runDetect } from "./commands/detect.js";
+import { runGuardCiCommand, runGuardInitCommand } from "./commands/guard.js";
 import { runInitCommand } from "./commands/init.js";
 import { formatInstallSummary, runInstall } from "./commands/install.js";
 import { runMcp } from "./commands/mcp.js";
@@ -88,6 +89,22 @@ interface InitCliOptions {
   force?: boolean;
 }
 
+interface GuardCliOptions {
+  root?: string;
+  json?: boolean;
+  ci?: boolean;
+  base?: string;
+  comment?: boolean;
+}
+
+interface GuardInitCliOptions {
+  root?: string;
+  ci?: string;
+  dryRun?: boolean;
+  force?: boolean;
+  json?: boolean;
+}
+
 interface MigrateCliOptions {
   root: string;
   json?: boolean;
@@ -105,7 +122,7 @@ interface MigrateCliOptions {
 /** `dsmith` 커맨드 트리. 실행(parse)은 bin.ts가 하고, 테스트는 이 트리를 직접 들여다본다. */
 export function buildProgram(): Command {
   const program = new Command();
-  program.name("dsmith").description("디자인시스템 라이프사이클 CLI").exitOverride();
+  program.name("dsmith").description("디자인시스템 라이프사이클 CLI").exitOverride().enablePositionalOptions();
 
   common(program.command("detect").description("레포 환경을 감지하고 .dsmith/detect.json에 저장")).action(
     async (opts: CommonOptions) => {
@@ -299,6 +316,45 @@ export function buildProgram(): Command {
       const { json, text, exitCode } = await runMigrateCommand(opts);
       process.stdout.write(opts.json ? `${JSON.stringify(json, null, 2)}\n` : `${text}\n`);
       if (exitCode !== undefined && exitCode !== 0) process.exitCode = exitCode;
+    });
+
+  const guard = program
+    .command("guard")
+    .description(
+      "디자인시스템 드리프트 방어. `guard init`은 .dsmith/guard.json·ESLint 설정·(--ci github) 워크플로를 만들고, `guard --ci --base <ref>`는 PR이 base 대비 새로 들인 하드코딩·DS 밖·deprecated 컴포넌트를 센다",
+    )
+    .enablePositionalOptions()
+    .option("--root <dir>", "대상 레포 경로")
+    .option("--json", "결과를 JSON으로만 stdout에 출력")
+    .option("--ci", "PR diff 검사 실행(--base 필요). 신규 하드코딩이 임계값을 넘으면 종료 코드 1")
+    .option("--base <ref>", "비교 기준 ref(예: origin/main). merge-base 이후 변경만 본다")
+    .option("--comment", "GitHub PR에 결과 코멘트를 upsert(GITHUB_TOKEN 필요, 실패해도 종료 코드는 그대로)")
+    .action(async (opts: GuardCliOptions) => {
+      if (opts.ci !== true) throw new Error("guard는 `guard init` 또는 `guard --ci --base <ref>`로 실행합니다");
+      const result = await runGuardCiCommand({ root: opts.root ?? process.cwd(), base: opts.base, comment: opts.comment });
+      process.stdout.write(opts.json ? `${JSON.stringify(result, null, 2)}\n` : result.body);
+      process.exitCode = result.exitCode;
+    });
+
+  guard
+    .command("init")
+    .description(
+      ".dsmith/guard.json 스냅샷을 만들고 eslint.config에 @dsmith-dev/eslint-plugin 블록을 끼워 넣는다. 사용자가 고친 블록은 --force 없이 덮어쓰지 않음. 스냅샷은 마지막에 쓰며 커밋해야 한다",
+    )
+    .option("--root <dir>", "대상 레포 경로")
+    .option("--ci <provider>", "CI 워크플로도 생성(github)")
+    .option("--dry-run", "아무것도 쓰지 않고 쓸 내용과 diff만 출력")
+    .option("--force", "사용자가 고친 영역도 덮어쓴다")
+    .option("--json", "결과를 JSON으로만 stdout에 출력")
+    .action(async (opts: GuardInitCliOptions, cmd: Command) => {
+      const parent = cmd.parent?.opts<GuardCliOptions>() ?? {};
+      const { result, text } = await runGuardInitCommand({
+        root: opts.root ?? parent.root ?? process.cwd(),
+        ci: opts.ci,
+        dryRun: opts.dryRun,
+        force: opts.force,
+      });
+      process.stdout.write(opts.json === true || parent.json === true ? `${JSON.stringify(result, null, 2)}\n` : `${text}\n`);
     });
 
   return program;
