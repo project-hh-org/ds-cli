@@ -107,8 +107,20 @@ describe("inlineStyleExtractor", () => {
     });
   });
 
-  it("style={styles.box}는 usage를 만들지 않는다", () => {
-    const code = `export const D = () => <div style={styles.box} />;`;
+  it("style 참조(식별자·멤버·호출)는 dynamic other 한 건으로 센다", () => {
+    const code = `export const D = () => (\n  <>\n    <div style={styles.box} />\n    <div style={s} />\n    <div style={getStyle(1)} />\n    <div style={styles?.x} />\n  </>\n);`;
+    const usages = inlineStyleExtractor.extract({ root: "/", file: "d.tsx", code });
+    expect(usages.map((u) => [u.property, u.raw, u.source, u.normalized.kind, u.line, u.column])).toEqual([
+      ["other", "styles.box", "dynamic", "unknown", 3, 16],
+      ["other", "s", "dynamic", "unknown", 4, 16],
+      ["other", "getStyle(1)", "dynamic", "unknown", 5, 16],
+      ["other", "styles?.x", "dynamic", "unknown", 6, 16],
+    ]);
+    expect(usages.every((u) => u.extractor === "inline-style" && inlineStyleExtractor.write(u, "x") === null)).toBe(true);
+  });
+
+  it("style={undefined}·문자열 style은 usage를 만들지 않는다", () => {
+    const code = `export const D = () => <><div style={undefined} /><div style="color: red" /></>;`;
     expect(inlineStyleExtractor.extract({ root: "/", file: "d.tsx", code })).toEqual([]);
   });
 

@@ -7,8 +7,8 @@ exports[`fixtures/emotion-app > emotion이 켜지고, css prop 객체의 중첩 
 - 날짜: <date>
 - state: 0
 - provisional: false
-- 분석한 파일: 3개 (스타일 사용 8, 컴포넌트 사용 2)
-- 동적 값: 0
+- 분석한 파일: 3개 (스타일 사용 9, 컴포넌트 사용 2)
+- 동적 값: 1
 
 건강 점수: 20
 

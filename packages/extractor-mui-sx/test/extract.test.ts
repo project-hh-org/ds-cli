@@ -221,9 +221,28 @@ describe("muiSxExtractor extract", () => {
     expect(summary(JSX(`{ ...base, [key]: 1, m() {}, p: 1 }`))).toEqual([["padding", "1", "token"]]);
   });
 
-  it("sx가 식별자·함수 호출이면 usage 없음", () => {
-    expect(extractAll(JSX(`styles`))).toEqual([]);
-    expect(extractAll(JSX(`makeSx(1)`))).toEqual([]);
+  it("sx 참조(식별자·멤버·호출)는 dynamic other 한 건으로 센다", () => {
+    const one = (sx: string) => extractAll(JSX(sx)).map((u) => [u.property, u.raw, u.source, u.normalized.kind]);
+    expect(one(`styles`)).toEqual([["other", "styles", "dynamic", "unknown"]]);
+    expect(one(`styles.root`)).toEqual([["other", "styles.root", "dynamic", "unknown"]]);
+    expect(one(`makeSx(1)`)).toEqual([["other", "makeSx(1)", "dynamic", "unknown"]]);
+    const [u] = extractAll(JSX(`styles.root`));
+    expect(u).toMatchObject({ extractor: "mui-sx", line: 2, column: JSX(`styles.root`).split("\n")[1]!.indexOf("styles") });
+    expect(muiSxExtractor.write(u!, "x")).toBeNull();
+  });
+
+  it("배열·조건·논리식 안의 참조도 하나씩 dynamic으로 센다", () => {
+    expect(summary(JSX(`[styles.a, on && styles.b, { p: 1 }, on ? s : { m: 1 }]`))).toEqual([
+      ["other", "styles.a", "dynamic"],
+      ["other", "styles.b", "dynamic"],
+      ["padding", "1", "token"],
+      ["other", "s", "dynamic"],
+      ["margin", "1", "token"],
+    ]);
+  });
+
+  it("sx={undefined}는 usage 없음", () => {
+    expect(extractAll(JSX(`undefined`))).toEqual([]);
   });
 
   it("style·css prop은 건드리지 않는다", () => {

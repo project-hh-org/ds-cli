@@ -135,6 +135,12 @@ describe("fixtures/emotion-app", () => {
     );
     expect(hover).toHaveLength(1);
     expect(hover[0]).toMatchObject({ extractor: "emotion", source: "hardcoded", property: "color" });
+    // Panel.tsx의 `css={panel}` 참조는 dynamic other 한 건이다(점수 대상 아님, 점수 불변).
+    expect(result.dynamicCount).toBe(1);
+    expect(index.styles).toContainEqual(
+      expect.objectContaining({ file: "src/components/Panel.tsx", raw: "panel", property: "other", source: "dynamic" }),
+    );
+    expect(result.health.score).toBe(20);
     expect(report).toMatchSnapshot();
   });
 });

@@ -160,7 +160,45 @@ export function extractCssInJs(
       }
       return;
     }
+    if (isStyleReference(node)) {
+      pushReference(node);
+      return;
+    }
     fromObjects(node);
+  };
+
+  /** 다른 곳에 정의된 스타일 참조(`s`, `styles.x`, `make()`). 맡은 `css(...)`·`styled(...)` 호출은 CallExpression 방문이 센다. */
+  const isStyleReference = (node: Expression): boolean => {
+    switch (node.type) {
+      case "Identifier":
+        return node.name !== "undefined";
+      case "MemberExpression":
+      case "OptionalMemberExpression":
+      case "OptionalCallExpression":
+        return true;
+      case "CallExpression": {
+        const owns = node.callee.type === "Identifier" && own.tags.has(node.callee.name);
+        return !owns && !isStyledTarget(node.callee, own.styled);
+      }
+      default:
+        return false;
+    }
+  };
+
+  /** 값을 알 수 없지만 커버리지에서 빠지지 않도록 참조 하나를 dynamic `other` 한 건으로 센다. 치환 구간은 없다. */
+  const pushReference = (node: Expression): void => {
+    const { start, end, loc } = node;
+    if (start == null || end == null || loc == null) return;
+    usages.push({
+      file: ctx.file,
+      line: loc.start.line,
+      column: loc.start.column,
+      property: "other",
+      raw: ctx.code.slice(start, end),
+      normalized: { kind: "unknown" },
+      source: "dynamic",
+      extractor: extractorName,
+    });
   };
 
   traverse(ast, {

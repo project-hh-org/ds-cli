@@ -75,7 +75,7 @@ describe("emotionExtractor.extract", () => {
     ]);
   });
 
-  it("css prop: 객체, 함수, 배열, import된 css`` 는 한 번만 센다", () => {
+  it("css prop: 객체, 함수, 배열, import된 css`` 는 한 번만 센다(배열 안 참조 base는 dynamic other)", () => {
     const code =
       `import { css } from "@emotion/react";\n` +
       "const a = <div css={css`color: #111;`} />;\n" +
@@ -83,10 +83,30 @@ describe("emotionExtractor.extract", () => {
       "const c = <div css={(t) => ({ color: t.fg })} />;";
     expect(summary(code)).toEqual([
       ["color", "#111", "hardcoded"],
+      ["other", "base", "dynamic"],
       ["color", "#222", "hardcoded"],
       ["color", "#333", "hardcoded"],
       ["color", "t.fg", "dynamic"],
     ]);
+  });
+
+  it("css prop 참조(식별자·멤버·호출)는 dynamic other 한 건으로 센다", () => {
+    const code =
+      "const a = <div css={s} />;\n" +
+      "const b = <div css={styles.x} />;\n" +
+      "const c = <div css={make(1)} />;";
+    const usages = extractAll(code);
+    expect(usages.map((u) => [u.property, u.raw, u.source, u.normalized.kind, u.line, u.column])).toEqual([
+      ["other", "s", "dynamic", "unknown", 1, 20],
+      ["other", "styles.x", "dynamic", "unknown", 2, 20],
+      ["other", "make(1)", "dynamic", "unknown", 3, 20],
+    ]);
+    expect(usages.every((u) => u.extractor === "emotion" && emotionExtractor.write(u, "x") === null)).toBe(true);
+  });
+
+  it("css prop의 import된 css({...}) 호출은 객체만 세고 참조로 세지 않는다", () => {
+    const code = `import { css } from "@emotion/react";\nconst a = <div css={css({ color: "#111" })} />;`;
+    expect(summary(code)).toEqual([["color", "#111", "hardcoded"]]);
   });
 
   it("css prop: 함수가 돌려주는 객체의 중첩 선택자를 재귀한다", () => {
@@ -109,9 +129,13 @@ describe("emotionExtractor.extract", () => {
     ]);
   });
 
-  it("css prop: 배열 안의 논리식은 오른쪽을 본다", () => {
-    const code = 'const a = <div css={[base, on && { color: "#333" }]} />;';
-    expect(summary(code)).toEqual([["color", "#333", "hardcoded"]]);
+  it("css prop: 배열 안의 논리식은 오른쪽을 본다(참조 base는 dynamic other)", () => {
+    const code = 'const a = <div css={[base, on && { color: "#333" }, on && styles.x]} />;';
+    expect(summary(code)).toEqual([
+      ["other", "base", "dynamic"],
+      ["color", "#333", "hardcoded"],
+      ["other", "styles.x", "dynamic"],
+    ]);
   });
 
   it("css prop: 배열 밖 논리식·조건식 안의 css`` 도 본다", () => {
