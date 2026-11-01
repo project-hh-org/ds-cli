@@ -1,5 +1,5 @@
 import { posix } from "node:path";
-import type { File, JSXMemberExpression, JSXOpeningElement } from "@babel/types";
+import type { Declaration, File, JSXMemberExpression, JSXOpeningElement, Statement } from "@babel/types";
 import type { ComponentUsage } from "../model/component-usage.js";
 import { traverse } from "../parse/tsx.js";
 import {
@@ -88,6 +88,29 @@ function componentName(node: JSXOpeningElement): { name: string; root: string } 
   return null;
 }
 
+/**
+ * 파일 최상위에 선언한 이름: `function X`, `const/let/var X =`(구조 분해 제외), `class X`,
+ * 그리고 이것들의 `export`·`export default` 형태.
+ */
+function topLevelDeclaredNames(ast: File): Set<string> {
+  const names = new Set<string>();
+  const add = (decl: Statement | Declaration | null | undefined): void => {
+    if (decl === null || decl === undefined) return;
+    if ((decl.type === "FunctionDeclaration" || decl.type === "ClassDeclaration") && decl.id) names.add(decl.id.name);
+    if (decl.type === "VariableDeclaration") {
+      for (const d of decl.declarations) if (d.id.type === "Identifier") names.add(d.id.name);
+    }
+  };
+  for (const stmt of ast.program.body) {
+    if (stmt.type === "ExportNamedDeclaration") add(stmt.declaration);
+    else if (stmt.type === "ExportDefaultDeclaration") {
+      const d = stmt.declaration;
+      if (d.type === "FunctionDeclaration" || d.type === "ClassDeclaration") add(d);
+    } else add(stmt);
+  }
+  return names;
+}
+
 export function extractComponentUsage(
   file: string,
   ast: File,
@@ -104,6 +127,7 @@ export function extractComponentUsage(
     for (const spec of stmt.specifiers) imports.set(spec.local.name, source);
   }
 
+  const declared = topLevelDeclaredNames(ast);
   const usages: ComponentUsage[] = [];
   traverse(ast, {
     JSXOpeningElement(path) {
@@ -116,14 +140,16 @@ export function extractComponentUsage(
         props.push(attr.name.type === "JSXIdentifier" ? attr.name.name : `${attr.name.namespace.name}:${attr.name.name.name}`);
       }
       const source = imports.get(found.root);
-      usages.push({
+      const usage: ComponentUsage = {
         file,
         line,
         name: found.name,
         importedFrom: source?.importedFrom ?? null,
         module: source?.module ?? "",
         props,
-      });
+      };
+      if (source === undefined && declared.has(found.root)) usage.declaredLocally = true;
+      usages.push(usage);
     },
   });
   return usages;

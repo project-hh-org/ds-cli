@@ -139,6 +139,20 @@ describe("runAudit", () => {
     expect(result.components.filter((c) => c.name === "Card").map((c) => c.module).sort()).toEqual(["", "src/Card"]);
   });
 
+  it("두 파일에서 import 없이 쓰여도 어느 파일에도 최상위 선언이 없으면(props·지역 변수) 지역 재정의가 아니다", async () => {
+    write("package.json", JSON.stringify({ name: "app", dependencies: { react: "^18" } }));
+    write(
+      "src/A.tsx",
+      `export function A({ Icon, as }) { const Tag = as ?? "div"; return <Tag><Icon /></Tag>; }\nconst Header = () => <header />;\nexport const X = () => <Header />;\n`,
+    );
+    write(
+      "src/B.tsx",
+      `export function B({ Icon, as }) { const Tag = as ?? "span"; return <Tag><Icon /></Tag>; }\nfunction Header() { return <header />; }\nexport const Y = () => <Header />;\n`,
+    );
+    const { result } = await runAudit(tmp);
+    expect(result.localDefinitions).toEqual([{ name: "Header", files: 2 }]);
+  });
+
   it("두 파일 이상에서 import 없이 쓴 이름은 지역 재정의로 모은다(한 파일만이면 제외)", async () => {
     subpathAndLocalRepo();
     const { result, reportPath } = await runAudit(tmp);

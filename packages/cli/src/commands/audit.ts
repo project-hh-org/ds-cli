@@ -70,11 +70,14 @@ function duplicatesOf(components: AuditResult["components"]): AuditResult["dupli
   return names.length === 0 ? [] : [{ names, reason: "same-name-different-source" }];
 }
 
-/** import 없이(importedFrom null) 둘 이상의 파일에서 쓴 이름. 파일 수 내림차순, 같으면 이름순, 상위 20개. */
+/**
+ * import 없이 쓰고 그 파일 최상위에 선언도 있는(declaredLocally) 이름 중 둘 이상의 파일에 있는 것.
+ * props·지역 변수로 받은 컴포넌트는 정의가 아니므로 세지 않는다. 파일 수 내림차순, 같으면 이름순, 상위 20개.
+ */
 function localDefinitionsOf(usages: ComponentUsage[]): AuditResult["localDefinitions"] {
   const filesByName = new Map<string, Set<string>>();
   for (const c of usages) {
-    if (c.importedFrom !== null) continue;
+    if (c.importedFrom !== null || c.declaredLocally !== true) continue;
     const files = filesByName.get(c.name) ?? new Set<string>();
     files.add(c.file);
     filesByName.set(c.name, files);

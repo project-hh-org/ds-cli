@@ -79,7 +79,15 @@ describe("extractComponentUsage", () => {
       `const Local = () => <i />; const a = <Local b="1" {...rest} a={2} disabled />;`,
     );
     expect(result).toEqual([
-      { file: "src/App.tsx", line: 1, name: "Local", importedFrom: null, module: "", props: ["b", "a", "disabled"] },
+      {
+        file: "src/App.tsx",
+        line: 1,
+        name: "Local",
+        importedFrom: null,
+        module: "",
+        props: ["b", "a", "disabled"],
+        declaredLocally: true,
+      },
     ]);
   });
 
@@ -194,6 +202,64 @@ describe("extractComponentUsage — module", () => {
       "src/ui/Button.tsx",
     );
     expect(result.map((u) => u.module)).toEqual(["src/ui", "src/ui", "src/ui"]);
+  });
+});
+
+describe("extractComponentUsage — declaredLocally", () => {
+  const declared = (code: string) =>
+    Object.fromEntries(usages(code).map((u) => [u.name, u.declaredLocally ?? false]));
+
+  it("파일 최상위에 선언한 이름(function·const/let/var·class·export·export default function)은 true", () => {
+    const result = declared(
+      [
+        `function A() { return null; }`,
+        `const B = styled.div\`\`;`,
+        `let C = () => null;`,
+        `var D = () => null;`,
+        `class E {}`,
+        `export function F() { return null; }`,
+        `export const G = () => null;`,
+        `export class H {}`,
+        `export default function I() { return null; }`,
+        `const x = <><A /><B /><C /><D /><E /><F /><G /><H /><I /><B.Item /></>;`,
+      ].join("\n"),
+    );
+    expect(result).toEqual({
+      A: true,
+      B: true,
+      C: true,
+      D: true,
+      E: true,
+      F: true,
+      G: true,
+      H: true,
+      I: true,
+      "B.Item": true,
+    });
+  });
+
+  it("props·지역 변수·구조 분해로 받은 컴포넌트는 선언으로 보지 않는다(필드 없음)", () => {
+    const result = usages(
+      [
+        `export function Card({ Icon, as }) {`,
+        `  const Tag = as ?? "div";`,
+        `  return <Tag><Icon /><Missing /></Tag>;`,
+        `}`,
+        `const { Slot } = parts;`,
+        `const y = <Slot />;`,
+      ].join("\n"),
+    );
+    expect(result.map((u) => [u.name, "declaredLocally" in u])).toEqual([
+      ["Tag", false],
+      ["Icon", false],
+      ["Missing", false],
+      ["Slot", false],
+    ]);
+  });
+
+  it("import한 이름은 같은 이름의 선언이 있어도 declaredLocally를 붙이지 않는다", () => {
+    const result = usages(`import { Button } from "./Button"; const a = <Button />;`);
+    expect("declaredLocally" in (result[0] ?? {})).toBe(false);
   });
 });
 

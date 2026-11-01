@@ -11,4 +11,10 @@ export interface ComponentUsage {
    */
   module: string;
   props: string[];
+  /**
+   * import 없이(importedFrom null) 쓴 이름이 그 파일 최상위에 선언돼 있으면 true
+   * (`function X`, `const/let/var X =`, `class X`, `export default function X`). 아니면 필드가 없다.
+   * props·지역 변수로 받은 컴포넌트(`<Icon />`, `const Tag = as ?? "div"`)를 지역 재정의 집계에서 빼는 데 쓴다.
+   */
+  declaredLocally?: boolean;
 }
