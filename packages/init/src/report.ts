@@ -143,6 +143,24 @@ export function renderInitReport(r: InitResult, draft: TokenDraft): string {
     lines.push("");
   }
 
+  if (r.tailwindPreset !== null) {
+    const p = r.tailwindPreset;
+    lines.push("## Tailwind 프리셋", "");
+    lines.push(`- 파일: \`${p.file}\` (Tailwind v${p.version})`);
+    lines.push(`- 연결: ${p.linked ? "연결됨" : "연결 안 됨"}`);
+    if (!p.linked) {
+      lines.push(
+        p.version === 4
+          ? `- 진입 CSS에서 \`@import "tailwindcss";\` 다음 줄에 \`@import "./${p.file}";\`를 추가하면 migrate가 클래스명(\`bg-ds-…\`)으로 치환합니다(경로는 CSS 파일 위치 기준으로 맞추세요).`
+          : "- tailwind.config의 `presets`에 프리셋을 추가하면 migrate가 클래스명(`bg-ds-…`)으로 치환합니다.",
+      );
+    }
+    lines.push(
+      "- 클래스 키는 `ds-` 접두(`bg-ds-blue-400`, `p-ds-2`, `rounded-ds-sm`, `text-ds-xs`)로 Tailwind 기본 테마와 겹치지 않으며, 값은 `tokens.css` 변수 참조라 `tokens.css`가 전역에 로드돼 있어야 합니다.",
+      "",
+    );
+  }
+
   lines.push("## 결정", "");
   lines.push(`pending ${r.decisions.pending}건 (\`/ds-decide\`로 고르기), stale ${r.decisions.stale}건`, "");
   return lines.join("\n");

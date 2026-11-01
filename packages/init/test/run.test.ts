@@ -504,3 +504,164 @@ describe("runInit: 보류 이유 문구", () => {
     expect(report).toContain("추론 토큰의 members");
   });
 });
+
+describe("runInit: Tailwind 프리셋", () => {
+  const PRESET = "design-system/tailwind.preset.ts";
+
+  it("legacy-demo(v3, config .ts): tailwind.preset.ts를 만들고 연결 안 됨을 안내한다", async () => {
+    const root = await legacyDemo(true);
+    const r = await run(root, { all: true });
+
+    expect(r.tailwindPreset).toEqual({ version: 3, file: PRESET, linked: false });
+    expect(fs.existsSync(path.join(root, "design-system/tailwind.preset.cjs"))).toBe(false);
+    const text = read(root, PRESET);
+    expect(text).toContain("export default {");
+    expect(text).toMatch(/"ds-[a-z0-9-]+": "var\(--color-[a-z0-9-]+\)"/);
+    expect(statuses(r).at(-1)).toBe("created");
+    expect(r.outcomes.at(-1)?.file).toBe(PRESET);
+
+    const summary = formatInitSummary(r);
+    expect(summary).toContain(
+      `Tailwind 프리셋: ${PRESET} — 연결 안 됨: tailwind.config의 presets에 추가하면 migrate가 클래스명(bg-ds-…)으로 치환`,
+    );
+    expect(read(root, r.report as string)).toContain("## Tailwind 프리셋");
+    // 3파일 묶음은 그대로
+    expect(r.tokenHold).toBeNull();
+    expect(statuses(r).slice(0, 3)).toEqual(["created", "created", "created"]);
+  });
+
+  it("tailwind.config가 프리셋을 연결하면 linked true, 요약은 '연결됨'", async () => {
+    const root = copyFixture("examples/legacy-demo", {
+      "tailwind.config.ts":
+        'import dsPreset from "./design-system/tailwind.preset";\nexport default { presets: [dsPreset], content: ["./src/**/*.tsx"] };\n',
+    });
+    roots.push(root);
+    await auditFixture(root);
+    await forceStateZero(root);
+    const r = await run(root, { all: true });
+    expect(r.tailwindPreset).toEqual({ version: 3, file: PRESET, linked: true });
+    expect(formatInitSummary(r)).toContain(`Tailwind 프리셋: ${PRESET} — 연결됨`);
+  });
+
+  it("두 번째 실행은 전부 unchanged이고 트리 해시가 같다", async () => {
+    const root = await legacyDemo(true);
+    await run(root, { all: true });
+    const before = treeHash(root);
+    const second = await run(root, { all: true });
+    expect(statuses(second).every((s) => s === "unchanged")).toBe(true);
+    expect(second.warnings).toEqual([]);
+    expect(treeHash(root)).toBe(before);
+  });
+
+  it("--dry-run은 아무것도 쓰지 않고 프리셋을 '쓸 예정'에 올린다", async () => {
+    const root = await legacyDemo(true);
+    const before = treeHash(root);
+    const r = await run(root, { all: true, dryRun: true });
+    expect(treeHash(root)).toBe(before);
+    expect(fs.existsSync(path.join(root, PRESET))).toBe(false);
+    expect(r.tailwindPreset?.file).toBe(PRESET);
+    expect(formatInitSummary(r)).toContain(`쓸 예정: ${PRESET} (created)`);
+  });
+
+  it("사람이 고친 프리셋은 skipped-modified이고, 토큰 3파일은 정상 갱신된다(묶음 밖)", async () => {
+    const root = await legacyDemo(true);
+    await run(root, { all: true });
+    fs.appendFileSync(path.join(root, PRESET), "// 내가 고침\n");
+    fs.writeFileSync(
+      path.join(root, "src/extra-zzz.tsx"),
+      'export const Extra = () => <div style={{ color: "#123456", padding: 8 }} />;\n',
+    );
+    await auditFixture(root);
+    const tokensBefore = read(root, "design-system/tokens.css");
+    const r = await run(root, { all: true });
+
+    expect(r.tokenHold).toBeNull();
+    expect(statuses(r).slice(0, 3)).toEqual(["updated", "updated", "updated"]);
+    expect(read(root, "design-system/tokens.css")).not.toBe(tokensBefore);
+    expect(r.outcomes.at(-1)).toMatchObject({ status: "skipped-modified" });
+    expect(read(root, PRESET)).toContain("// 내가 고침");
+  });
+
+  it("반대로 토큰 파일을 고쳐 3파일이 보류돼도 프리셋은 독립적으로 쓴다", async () => {
+    const root = await legacyDemo(true);
+    await run(root, { all: true });
+    fs.appendFileSync(path.join(root, "design-system/tokens.css"), "/* 고침 */\n");
+    fs.rmSync(path.join(root, PRESET));
+    const r = await run(root, { all: true });
+    expect(r.tokenHold).toBe("modified");
+    expect(r.outcomes.at(-1)).toMatchObject({ status: "created" });
+  });
+
+  it("tailwind가 아닌 styled-app은 프리셋이 없고 tailwindPreset은 null", async () => {
+    const root = copyFixture("fixtures/styled-app");
+    roots.push(root);
+    await auditFixture(root);
+    await forceStateZero(root);
+    const r = await run(root, { all: true });
+    expect(r.tailwindPreset).toBeNull();
+    expect(listFiles(root, "design-system").some((f) => f.includes("tailwind"))).toBe(false);
+    expect(formatInitSummary(r)).not.toContain("Tailwind 프리셋");
+    expect(read(root, r.report as string)).not.toContain("## Tailwind 프리셋");
+  });
+
+  it("옛 .cjs 프리셋이 있으면 경고 1건을 내고 파일은 보존한다", async () => {
+    const root = copyFixture("examples/legacy-demo", { "design-system/tailwind.preset.cjs": "module.exports = {};\n" });
+    roots.push(root);
+    await auditFixture(root);
+    await forceStateZero(root);
+    const r = await run(root, { all: true });
+    const old = r.warnings.filter((w) => w.includes("옛 프리셋"));
+    expect(old).toEqual([
+      "옛 프리셋 design-system/tailwind.preset.cjs이 남아 있음 — 확장자 없는 import가 그 파일을 먼저 집을 수 있으니 지우세요",
+    ]);
+    expect(read(root, "design-system/tailwind.preset.cjs")).toBe("module.exports = {};\n");
+    expect(fs.existsSync(path.join(root, PRESET))).toBe(true);
+    expect(formatInitSummary(r)).toContain("경고: 옛 프리셋");
+  });
+
+  it("config가 .js인 v3 레포는 tailwind.preset.cjs를 만든다", async () => {
+    const root = copyFixture("fixtures/tailwind-app");
+    roots.push(root);
+    fs.rmSync(path.join(root, "tailwind.config.ts"));
+    fs.writeFileSync(path.join(root, "tailwind.config.js"), "module.exports = { content: ['./app/**/*.tsx'] };\n");
+    await auditFixture(root);
+    await forceStateZero(root);
+    const r = await run(root, { all: true });
+    expect(r.tailwindPreset).toEqual({ version: 3, file: "design-system/tailwind.preset.cjs", linked: false });
+    expect(read(root, "design-system/tailwind.preset.cjs")).toContain("module.exports = {");
+  });
+
+  it("v4 레포는 tailwind.theme.css(@theme inline)를 만들고, 진입 CSS가 @import하면 linked", async () => {
+    const root = copyFixture("fixtures/tailwind-app", {
+      "package.json": JSON.stringify({ name: "tw4", dependencies: { next: "^14.2.0", react: "^18.3.0", tailwindcss: "^4.1.0" } }),
+      "app/globals.css": '@import "tailwindcss";\n',
+    });
+    roots.push(root);
+    await auditFixture(root);
+    await forceStateZero(root);
+    const first = await run(root, { all: true });
+    expect(first.tailwindPreset).toEqual({ version: 4, file: "design-system/tailwind.theme.css", linked: false });
+    expect(read(root, "design-system/tailwind.theme.css")).toContain("@theme inline {");
+    expect(formatInitSummary(first)).toContain("연결 안 됨: 진입 CSS에서 @import하면");
+
+    fs.writeFileSync(path.join(root, "app/globals.css"), '@import "tailwindcss";\n@import "../design-system/tailwind.theme.css";\n');
+    await auditFixture(root);
+    const second = await run(root, { all: true });
+    expect(second.tailwindPreset?.linked).toBe(true);
+    expect(statuses(second).every((s) => s === "unchanged")).toBe(true);
+  });
+
+  it("tailwind인데 버전을 알 수 없으면 프리셋을 만들지 않고 경고한다", async () => {
+    const root = copyFixture("fixtures/tailwind-app", {
+      "package.json": JSON.stringify({ name: "twx", dependencies: { next: "^14.2.0", react: "^18.3.0", tailwindcss: "latest" } }),
+    });
+    roots.push(root);
+    fs.rmSync(path.join(root, "tailwind.config.ts"));
+    await auditFixture(root);
+    await forceStateZero(root);
+    const r = await run(root, { all: true });
+    expect(r.tailwindPreset).toBeNull();
+    expect(r.warnings).toContain("Tailwind 버전을 알 수 없어 프리셋을 만들지 않음");
+    expect(listFiles(root, "design-system").some((f) => f.includes("tailwind"))).toBe(false);
+  });
+});

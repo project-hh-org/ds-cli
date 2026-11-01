@@ -8,16 +8,22 @@ import {
   draftCoverage,
   draftToTokens,
   emitTokensCss,
+  emitTailwindPreset,
   emitTokensTs,
   explainDecision,
+  findTailwindConfig,
+  listCssFiles,
   listDecisions,
   localDate,
   managedFileHash,
+  presetFileName,
+  presetFormatFor,
   readCatalog,
   readCatalogTokens,
   readComponentProps,
   readDecisions,
   readIndex,
+  readTailwindPreset,
   recordDecision,
   regionKey,
   safeWrite,
@@ -98,6 +104,11 @@ export interface InitResult {
   warnings: string[];
   /** 토큰 3파일을 함께 보류한 이유: modified = 사람이 고침(--force로 덮어씀), invalid = 쓸 수 없는 경로(깨진 심볼릭 링크 등 — --force로도 못 씀), 보류 없음 = null */
   tokenHold: "modified" | "invalid" | null;
+  /**
+   * Tailwind 프리셋(v3 `tailwind.preset.{ts,cjs}` / v4 `tailwind.theme.css`). tailwind가 아니거나 버전을 몰라 만들지 않으면 null.
+   * linked = tailwind.config의 presets / 진입 CSS의 @import에 연결됨(dry-run이면 현재 파일 기준).
+   */
+  tailwindPreset: { version: 3 | 4; file: string; linked: boolean } | null;
   /**
    * `.dsmith/catalog.json`과의 관계. refreshed = 카탈로그의 토큰·토큰 파일 해시를 이번 산출로 갱신함, current = 이미 같음,
    * needs-ai = 카탈로그가 없거나 이 산출 디렉터리를 담고 있지 않음(`dsmith ai` 필요), null = dry-run이라 보지 않음
@@ -484,12 +495,47 @@ export async function runInit(opts: InitOptions): Promise<InitResult> {
       }
     });
   }
-  const toWrite: PlannedWrite[] = [...(blocked ? [] : tokenWrites), ...planned.values()];
+  // Tailwind 프리셋은 토큰 3파일 묶음 밖의 managed 단독 write다(사람이 고쳐도 토큰 파일은 정상 갱신).
+  const tailwindDetected = detected.styling.methods.some((m) => m.name === "tailwind");
+  const tailwindVersion = detected.styling.tailwindVersion;
+  let presetWrite: PlannedWrite | null = null;
+  let presetVersion: 3 | 4 | null = null;
+  let presetRel: string | null = null;
+  if (tailwindDetected && tailwindVersion === undefined) {
+    warnings.push("Tailwind 버전을 알 수 없어 프리셋을 만들지 않음");
+  } else if (tailwindDetected && tailwindVersion !== undefined) {
+    const format = presetFormatFor(tailwindVersion, await findTailwindConfig(root));
+    const name = presetFileName(format);
+    presetVersion = tailwindVersion;
+    presetRel = `${outDir}/${name}`;
+    presetWrite = tokenWrite(name, emitTailwindPreset(draft, format, { outDir }));
+    // 확장자 없는 import는 .cjs와 .ts가 함께 있으면 .cjs를 먼저 집는다 — 다른 형식의 옛 파일은 지우지 않고 알린다.
+    if (tailwindVersion === 3) {
+      for (const other of ["tailwind.preset.ts", "tailwind.preset.cjs"]) {
+        if (other !== name && (await fileExists(path.join(root, outDir, other)))) {
+          warnings.push(`옛 프리셋 ${outDir}/${other}이 남아 있음 — 확장자 없는 import가 그 파일을 먼저 집을 수 있으니 지우세요`);
+        }
+      }
+    }
+  }
+
+  const toWrite: PlannedWrite[] = [...(blocked ? [] : tokenWrites), ...planned.values(), ...(presetWrite ? [presetWrite] : [])];
   const written = await safeWrite(toWrite, { ...safeOpts, dryRun });
   const outcomeOf = new Map<string, WriteOutcome>();
   toWrite.forEach((w, i) => outcomeOf.set(w.file, written.outcomes[i] as WriteOutcome));
   for (const [file, o] of held) outcomeOf.set(file, o);
-  const outcomes = [...tokenWrites, ...planned.values()].map((w) => outcomeOf.get(w.file) as WriteOutcome);
+  const outcomes = [...tokenWrites, ...planned.values(), ...(presetWrite ? [presetWrite] : [])].map(
+    (w) => outcomeOf.get(w.file) as WriteOutcome,
+  );
+  let tailwindPreset: InitResult["tailwindPreset"] = null;
+  if (presetVersion !== null && presetRel !== null) {
+    const read = await readTailwindPreset(root, {
+      initDir: outDir,
+      tailwindVersion: presetVersion,
+      cssFiles: presetVersion === 4 ? await listCssFiles(root) : [],
+    });
+    tailwindPreset = { version: presetVersion, file: presetRel, linked: read?.linked ?? false };
+  }
 
   // 7. 커버리지
   const coverage = draftCoverage(index.styles, draftToTokens(draft), { excludeDirs: [outDir] });
@@ -535,6 +581,7 @@ export async function runInit(opts: InitOptions): Promise<InitResult> {
     dryRun,
     warnings,
     tokenHold,
+    tailwindPreset,
     catalog: null,
   };
 
@@ -590,6 +637,13 @@ export function formatInitSummary(r: InitResult): string {
   const skippedDetail =
     skipped === 0 ? "" : ` (${r.skippedScaffolds.map((s) => `${s.item} — ${s.reason}`).join("; ")})`;
   lines.push(`스캐폴드: 생성 ${created}${updated > 0 ? ` · 갱신 ${updated}` : ""} · 유지 ${kept} · 건너뜀 ${skipped}${skippedDetail}`);
+  if (r.tailwindPreset !== null) {
+    const p = r.tailwindPreset;
+    const how = p.version === 4 ? "진입 CSS에서 @import하면" : "tailwind.config의 presets에 추가하면";
+    lines.push(
+      `Tailwind 프리셋: ${p.file} — ${p.linked ? "연결됨" : `연결 안 됨: ${how} migrate가 클래스명(bg-ds-…)으로 치환`}`,
+    );
+  }
   for (const w of r.warnings) lines.push(`경고: ${w}`);
   const stale = r.decisions.stale > 0 ? `, stale ${r.decisions.stale}건` : "";
   // 힌트는 고를 것이 있을 때만(pending·stale)

@@ -1,0 +1,61 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`emitTailwindPreset 스냅샷 > v3-cjs 1`] = `
+"// dsmith init이 생성한 파일입니다. 직접 고치면 다음 init이 덮어쓰지 않습니다(--force로 덮어씀).
+// tailwind.config의 presets에 추가하세요: const dsPreset = require("./design-system/tailwind.preset"); … presets: [dsPreset]
+module.exports = {
+  theme: {
+    extend: {
+      colors: {
+        "ds-blue-400": "var(--color-blue-400)",
+      },
+      spacing: {
+        "ds-2": "var(--space-2)",
+      },
+      borderRadius: {
+        "ds-sm": "var(--radius-sm)",
+      },
+      fontSize: {
+        "ds-xs": "var(--text-xs)",
+      },
+    },
+  },
+};
+"
+`;
+
+exports[`emitTailwindPreset 스냅샷 > v3-ts 1`] = `
+"// dsmith init이 생성한 파일입니다. 직접 고치면 다음 init이 덮어쓰지 않습니다(--force로 덮어씀).
+// tailwind.config의 presets에 추가하세요: import dsPreset from "./design-system/tailwind.preset"; … presets: [dsPreset]
+export default {
+  theme: {
+    extend: {
+      colors: {
+        "ds-blue-400": "var(--color-blue-400)",
+      },
+      spacing: {
+        "ds-2": "var(--space-2)",
+      },
+      borderRadius: {
+        "ds-sm": "var(--radius-sm)",
+      },
+      fontSize: {
+        "ds-xs": "var(--text-xs)",
+      },
+    },
+  },
+};
+"
+`;
+
+exports[`emitTailwindPreset 스냅샷 > v4-css 1`] = `
+"/* dsmith init이 생성한 파일입니다. 직접 고치면 다음 init이 덮어쓰지 않습니다(--force로 덮어씀). */
+/* Tailwind 진입 CSS에서 @import "tailwindcss"; 다음 줄에 @import "./design-system/tailwind.theme.css"; 를 추가하세요 */
+@theme inline {
+  --color-ds-blue-400: var(--color-blue-400);
+  --spacing-ds-2: var(--space-2);
+  --radius-ds-sm: var(--radius-sm);
+  --text-ds-xs: var(--text-xs);
+}
+"
+`;

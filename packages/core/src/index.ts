@@ -149,3 +149,13 @@ export { eligibleFindings, evaluateFile, findingKey, summarizeFindings } from ".
 export type { GuardPreset, GuardSnapshot } from "./guard/snapshot.js";
 export { GUARD_FILE, findGuardSnapshotSync, moduleContextOf, readGuardSnapshotSync, ruleContextOf } from "./guard/snapshot.js";
 export { staleGuardTokenFiles, writeGuardSnapshot } from "./guard/write.js";
+export type { PresetFormat } from "./tokens/tailwind-preset.js";
+export {
+  emitTailwindPreset,
+  findTailwindConfig,
+  listCssFiles,
+  parsePresetKeys,
+  presetFileName,
+  presetFormatFor,
+  readTailwindPreset,
+} from "./tokens/tailwind-preset.js";
