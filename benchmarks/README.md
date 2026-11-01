@@ -11,6 +11,10 @@
 
 `benchmarks/`는 **에이전트가 보는 복사본에 들어가면 안 된다.** 채점 코드·프롬프트 정답 기준이 에이전트에 노출되면 결과가 오염된다. 실행기(Task 2)는 `examples/legacy-demo`·`fixtures/with-ds-app` 원본만 `os.tmpdir()` 아래(모노레포 밖)로 복사하며, 복사본에 `benchmarks/`가 없다는 것을 강제한다.
 
+## 채점 기준(스냅샷)
+
+`buildGuardSnapshot`은 DS 컴포넌트·DS module을 `.dsmith/catalog.json`에서 읽는다. `init --all`만 거친 베이스는 catalog가 없어 `ds.components`가 비고 `prefer-ds-component`가 늘 0이 된다. 그래서 채점용 스냅샷은 `audit → init --all → ai`를 거친 베이스에서 만든다(legacy-demo: 토큰 14, DS module 4, 컴포넌트 6). 테스트(`test/helpers.ts`의 `prepareDemoBase`)가 이 절차를 고정한다.
+
 ## 구성
 
 - `prompts/*.md` — frontmatter(`id`, `file`) + 본문. 모두 `이 레포 스타일로 `로 시작한다.
