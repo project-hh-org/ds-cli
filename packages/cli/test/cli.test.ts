@@ -438,3 +438,76 @@ describe("audit --json 리포트 경로", () => {
     expect(r.stderr).not.toContain("리포트: ");
   });
 });
+
+describe("슬래시 명령 본문 ↔ 실제 CLI 정합", () => {
+  const here = path.dirname(fileURLToPath(import.meta.url));
+  const bin = path.resolve(here, "../dist/bin.js");
+  const FIELD = /^[A-Za-z][A-Za-z0-9]*(?:\[\])?(?:\.[A-Za-z][A-Za-z0-9]*(?:\[\])?)*$/;
+
+  /** 본문의 백틱 코드 조각 */
+  const spansOf = (body: string): string[] => [...body.matchAll(/`([^`\n]+)`/g)].map((m) => m[1] as string);
+
+  /** `npx dsmith …` 또는 `{{cli}} …`로 시작하는 조각만: [서브커맨드, 플래그들] */
+  function cliCalls(body: string): { line: string; sub: string; flags: string[] }[] {
+    return spansOf(body).flatMap((line) => {
+      const m = /^(?:npx dsmith|\{\{cli\}\})\s+(\S+)(.*)$/.exec(line);
+      if (m === null) return [];
+      const flags = (m[2] ?? "").split(/\s+/).filter((t) => t.startsWith("--"));
+      return [{ line, sub: m[1] as string, flags }];
+    });
+  }
+
+  /** JSON 안의 모든 키 경로(배열은 `[]`) — 객체 키는 `a.b`, 배열 원소 안은 `a[].b` */
+  function keyPaths(value: unknown, prefix = ""): string[] {
+    if (Array.isArray(value)) {
+      const here = prefix === "" ? "" : `${prefix}[]`;
+      return value.flatMap((v) => keyPaths(v, here));
+    }
+    if (typeof value !== "object" || value === null) return [];
+    return Object.entries(value).flatMap(([k, v]) => {
+      const p = prefix === "" ? k : `${prefix}.${k}`;
+      return [p, ...keyPaths(v, p)];
+    });
+  }
+
+  it("본문이 부르는 모든 CLI 줄의 서브커맨드와 플래그가 program.ts에 있다", async () => {
+    const program = buildProgram();
+    const commands = await loadCommands();
+    const calls = commands.flatMap((c) => cliCalls(c.body).map((call) => ({ ...call, command: c.name })));
+    expect(calls.length).toBeGreaterThanOrEqual(8);
+    for (const { command, line, sub, flags } of calls) {
+      const cmd = program.commands.find((x) => x.name() === sub);
+      expect(cmd, `${command}: \`${line}\`의 서브커맨드 ${sub}`).toBeDefined();
+      const known = cmd?.options.map((o) => o.long) ?? [];
+      for (const flag of flags) expect(known, `${command}: \`${line}\`의 ${flag}`).toContain(flag);
+    }
+  });
+
+  it("ds-audit·ds-detect 본문이 가리키는 JSON 필드는 실제 audit·detect --json 출력에 있다", async () => {
+    const src = path.resolve(here, "../../../examples/legacy-demo");
+    fs.cpSync(src, tmp, { recursive: true, filter: (p) => !p.split(path.sep).includes(".dsmith") });
+    const run = (sub: string): unknown =>
+      JSON.parse(spawnSync(process.execPath, [bin, sub, "--root", tmp, "--json"], { encoding: "utf-8" }).stdout);
+    // `overrides`는 사용자가 detect.json에 적었을 때만 출력에 나온다 — 본문이 안내하는 대로 하나 적어 둔다.
+    const first = run("detect") as Record<string, unknown>;
+    fs.writeFileSync(
+      path.join(tmp, ".dsmith", "detect.json"),
+      JSON.stringify({ ...first, overrides: { exclude: ["nothing-here/**"] } }, null, 2),
+    );
+    const outputs: Record<string, string[]> = { "ds-audit": keyPaths(run("audit")), "ds-detect": keyPaths(run("detect")) };
+
+    const commands = await loadCommands();
+    for (const [name, paths] of Object.entries(outputs)) {
+      const body = commands.find((c) => c.name === name)?.body ?? "";
+      const fields = spansOf(body)
+        .map((s) => s.replace(/:\s.*$/, ""))
+        .filter((s) => FIELD.test(s));
+      expect(fields.length, name).toBeGreaterThan(5);
+      for (const field of fields) {
+        // 앞 경로를 생략한 이름(`kind`, `total`)은 어느 깊이의 경로 끝과 맞아도 된다
+        const found = paths.some((p) => p === field || p.endsWith(`.${field}`) || p.endsWith(`]${field}`));
+        expect(found, `${name}: \`${field}\`가 실제 출력에 없음`).toBe(true);
+      }
+    }
+  });
+});
