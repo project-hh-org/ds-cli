@@ -12,6 +12,7 @@
     { "path": "packages/detect" },
     { "path": "packages/agent-skill" },
     { "path": "packages/mcp-server" },
+    { "path": "packages/init" },
     { "path": "packages/catalog" },
     { "path": "packages/cli" }
   ]
