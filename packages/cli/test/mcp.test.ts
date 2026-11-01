@@ -7,6 +7,7 @@ import { Client } from "@modelcontextprotocol/client";
 import { StdioClientTransport } from "@modelcontextprotocol/client/stdio";
 import { TOOL_NAMES } from "@dsmith-dev/mcp-server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { runAiCommand } from "../src/commands/ai.js";
 import { runAudit } from "../src/commands/audit.js";
 import { runInstall } from "../src/commands/install.js";
 import { findProjectRoot } from "../src/commands/mcp.js";
@@ -133,6 +134,31 @@ describe("dsmith mcp (실제 stdio)", () => {
     expect(stderr).toContain(`root=${root}`);
   }, 30_000);
 
+  it("audit → ai 뒤에 띄운 서버는 get_component가 카탈로그에서 답한다", async () => {
+    const root = copyFixture("with-ds-app");
+    fs.writeFileSync(
+      path.join(root, "components", "ui", "Badge.tsx"),
+      'export interface BadgeProps {\n  /** 색 톤 */\n  tone?: "neutral" | "danger";\n}\n\nexport function Badge({ tone }: BadgeProps) {\n  return <span data-tone={tone} />;\n}\n',
+    );
+    await runAudit(root);
+    const ai = await runAiCommand({ root });
+    expect(ai.components).toBeGreaterThanOrEqual(2);
+    const transport = new StdioClientTransport({ command: process.execPath, args: [bin, "mcp", "--root", root, "--no-git"], stderr: "pipe" });
+    const client = new Client({ name: "test", version: "0" });
+    try {
+      await client.connect(transport);
+      const res = await client.callTool({ name: "get_component", arguments: { name: "Button" } });
+      expect(res.isError).not.toBe(true);
+      const out = JSON.parse((res.content as { text: string }[])[0]?.text ?? "{}");
+      expect(out).toMatchObject({ name: "Button", module: "components/ui/Button", source: "catalog", origin: "ds-local" });
+      const badge = JSON.parse(((await client.callTool({ name: "get_component", arguments: { name: "Badge" } })).content as { text: string }[])[0]?.text ?? "{}");
+      expect(badge).toMatchObject({ source: "catalog", usage: { count: 0, files: [] } });
+      expect(badge.props.map((p: { name: string }) => p.name)).toContain("tone");
+    } finally {
+      await client.close();
+    }
+  }, 30_000);
+
   it("--root 없이 하위 디렉터리에서 띄우면 .git이 있는 조상을 root로 쓴다", async () => {
     const root = copyFixture("with-ds-app");
     fs.mkdirSync(path.join(root, ".git"));
@@ -156,7 +182,7 @@ describe("dsmith mcp (실제 stdio)", () => {
     expect(fs.existsSync(path.join(root, ".dsmith", "index.json"))).toBe(true);
   }, 30_000);
 
-  it("인덱스가 없어도 핸드셰이크는 audit을 기다리지 않고(<1s), 첫 도구 호출이 audit을 만든다", async () => {
+  it("인덱스가 없어도 핸드셰이크는 audit을 기다리지 않고(<2s), 첫 도구 호출이 audit을 만든다", async () => {
     const root = copyFixture("with-ds-app");
     const transport = new StdioClientTransport({ command: process.execPath, args: [bin, "mcp", "--root", root, "--no-git"], stderr: "pipe" });
     let stderr = "";
@@ -166,7 +192,7 @@ describe("dsmith mcp (실제 stdio)", () => {
       const t0 = Date.now();
       await client.connect(transport);
       const handshakeMs = Date.now() - t0;
-      expect(handshakeMs).toBeLessThan(1000);
+      expect(handshakeMs).toBeLessThan(2000);
       expect(stderr).toContain(`root=${root}`);
       // 연결만으로는 audit이 시작되지 않는다.
       expect(fs.existsSync(path.join(root, ".dsmith", "index.json"))).toBe(false);

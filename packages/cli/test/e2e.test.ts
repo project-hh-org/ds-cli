@@ -3,8 +3,13 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { createHash } from "node:crypto";
+import { readCatalog, readCssVariableTokens, readW3cTokens, type Catalog } from "@dsmith-dev/core";
+import { readDetect, writeDetect } from "@dsmith-dev/detect";
+import { runAiCommand } from "../src/commands/ai.js";
 import { runAudit } from "../src/commands/audit.js";
-import { runDecideExplain } from "../src/commands/decide.js";
+import { runDecideChoose, runDecideExplain, runDecideList } from "../src/commands/decide.js";
+import { runInitCommand } from "../src/commands/init.js";
 import { runInstall } from "../src/commands/install.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -235,5 +240,145 @@ describe("examples/legacy-demo: audit → install → decide", () => {
     } finally {
       fs.rmSync(tmp, { recursive: true, force: true });
     }
+  });
+});
+
+// ── DS 초안 (init · ai) — 모두 임시 복사본에서 돌린다. 원본 fixture에는 .dsmith/를 만들지 않는다 ──
+
+const tmpRoots: string[] = [];
+afterEach(() => {
+  for (const dir of tmpRoots.splice(0)) fs.rmSync(dir, { recursive: true, force: true });
+});
+
+/** fixtures|examples/<name> → 임시 복사본(.dsmith 제외). overlay = 상대 경로 → 파일 내용 */
+function tmpCopy(name: string, base: "fixtures" | "examples", overlay: Record<string, string> = {}): string {
+  const dest = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "dsmith-e2e-draft-")));
+  tmpRoots.push(dest);
+  fs.cpSync(fixture(name, base), dest, { recursive: true, filter: (src) => !src.split(path.sep).includes(".dsmith") });
+  for (const [file, content] of Object.entries(overlay)) {
+    fs.mkdirSync(path.dirname(path.join(dest, file)), { recursive: true });
+    fs.writeFileSync(path.join(dest, file), content);
+  }
+  return dest;
+}
+
+/** 경로+내용 해시. .dsmith/reports는 날짜가 파일명에 들어가므로 뺀다 */
+function treeHash(dir: string): string {
+  const hash = createHash("sha256");
+  const walk = (current: string, prefix: string): void => {
+    for (const e of fs.readdirSync(current, { withFileTypes: true }).sort((a, b) => (a.name < b.name ? -1 : 1))) {
+      const rel = `${prefix}${e.name}`;
+      if (rel === ".dsmith/reports") continue;
+      if (e.isDirectory()) walk(path.join(current, e.name), `${rel}/`);
+      else hash.update(rel).update("\0").update(fs.readFileSync(path.join(current, e.name))).update("\0");
+    }
+  };
+  walk(dir, "");
+  return hash.digest("hex");
+}
+
+/** 상태 0 강제: audit → detect.json에 ds none·state 0 overrides → 다시 audit */
+async function auditAsStateZero(root: string): ReturnType<typeof runAudit> {
+  await runAudit(root);
+  const current = await readDetect(root);
+  if (current === null) throw new Error("audit이 detect.json을 남기지 않음");
+  await writeDetect(root, { ...current, overrides: { ds: { kind: "none", tokenFiles: [] }, state: 0 } });
+  return runAudit(root);
+}
+
+const findComponent = (catalog: Catalog | null, name: string) => catalog?.components.find((c) => c.name === name);
+
+describe("examples/legacy-demo 상태 0: audit → init --all → ai → init", () => {
+  it("토큰 3종·스캐폴드·커버리지가 리포트와 맞고, ai는 design-system/ 기준 카탈로그를 만들고, 두 번째 init은 diff가 없다", async () => {
+    const root = tmpCopy("legacy-demo", "examples");
+    const { result: audited } = await auditAsStateZero(root);
+    expect(audited.detect.state).toBe(0);
+    expect(audited.detect.ds.kind).toBe("none");
+
+    const { result: init } = await runInitCommand({ root, all: true });
+
+    // tokens.json 색 토큰 수 = audit 리포트의 색 클러스터 수
+    const json = fs.readFileSync(path.join(root, "design-system", "tokens.json"), "utf-8");
+    const fromJson = readW3cTokens(json, "design-system/tokens.json");
+    expect(fromJson.warnings).toEqual([]);
+    expect(fromJson.tokens.filter((t) => t.category === "color")).toHaveLength(audited.hardcoded.colors.length);
+    expect(init.tokens.color).toBe(audited.hardcoded.colors.length);
+
+    // tokens.css는 유효한 CSS 변수 목록이고 세 파일의 토큰 수가 같다
+    const css = fs.readFileSync(path.join(root, "design-system", "tokens.css"), "utf-8");
+    expect(readCssVariableTokens(css, "design-system/tokens.css")).toHaveLength(init.tokens.total);
+    expect(fromJson.tokens).toHaveLength(init.tokens.total);
+    expect(fs.existsSync(path.join(root, "design-system", "tokens.ts"))).toBe(true);
+
+    // 스캐폴드 N = min(10, 중복 이름 + 지역 재정의)
+    const candidates = new Set([...audited.duplicates.flatMap((d) => d.names), ...audited.localDefinitions.map((l) => l.name)]);
+    expect(init.scaffolds.filter((x) => x.status === "created")).toHaveLength(Math.min(10, candidates.size));
+    for (const sc of init.scaffolds) expect(fs.existsSync(path.join(root, sc.file)), sc.file).toBe(true);
+
+    // 리포트의 커버리지 줄 = InitResult.coverage
+    const report = fs.readFileSync(path.join(root, init.report ?? ""), "utf-8");
+    const line = /전체: (\d+)\/(\d+)/.exec(report);
+    expect(line?.slice(1, 3).map(Number)).toEqual([init.coverage.replaceable, init.coverage.total]);
+    expect(init.coverage.total).toBeGreaterThan(0);
+
+    // ai: 카탈로그가 init 산출(design-system/) 기준
+    const ai = await runAiCommand({ root });
+    expect(ai.sources[0]?.origin).toBe("init");
+    const catalog = await readCatalog(root);
+    expect(catalog?.components.map((c) => c.name).sort()).toEqual(init.scaffolds.map((x) => x.name).sort());
+    expect(catalog?.components.every((c) => c.origin === "init" && c.file?.startsWith("design-system/"))).toBe(true);
+    expect(catalog?.tokens).toHaveLength(init.tokens.total);
+
+    // 두 번째 init: 아무것도 바뀌지 않는다
+    const before = treeHash(root);
+    const { result: again } = await runInitCommand({ root, all: true });
+    expect(again.outcomes.map((o) => o.status).every((st) => st === "unchanged" || st === "skipped-exists")).toBe(true);
+    expect(treeHash(root)).toBe(before);
+  });
+});
+
+describe("examples/legacy-demo 상태 1: init → decide → init → ai", () => {
+  it("--all 없이 스캐폴드 0·pending ≥ 2, Badge를 고르면 Badge.tsx가 생기고 카탈로그에 로컬 DS Button과 init Badge가 함께 있다", async () => {
+    const root = tmpCopy("legacy-demo", "examples");
+    const { result: audited } = await runAudit(root);
+    expect(audited.detect.state).toBe(1);
+
+    const first = (await runInitCommand({ root })).result;
+    expect(first.scaffolds).toEqual([]);
+    expect(first.decisions.pending).toBeGreaterThanOrEqual(2);
+
+    const items = await runDecideList(root);
+    const badge = items.find((i) => i.item === "Badge" && i.kind === "duplicate");
+    expect(badge).toBeDefined();
+    const local = badge?.options.find((o) => !o.includes("ui/")) ?? badge?.options[0];
+    await runDecideChoose(root, "Badge", local as string, undefined, { kind: "duplicate" });
+
+    const second = (await runInitCommand({ root })).result;
+    expect(second.scaffolds.map((x) => [x.name, x.status])).toEqual([["Badge", "created"]]);
+    expect(fs.existsSync(path.join(root, "design-system", "components", "Badge.tsx"))).toBe(true);
+
+    await runAiCommand({ root });
+    const catalog = await readCatalog(root);
+    const button = findComponent(catalog, "Button");
+    expect(button).toMatchObject({ module: "src/components/ui/button", origin: "ds-local" });
+    expect(button?.props.find((p) => p.name === "variant")?.values).toHaveLength(4);
+    expect(findComponent(catalog, "Badge")?.origin).toBe("init");
+  });
+});
+
+describe("fixtures/mui-app + npm 타입(node_modules)", () => {
+  it("ai가 @mui/material의 Button props variant·size·color를 values와 함께 카탈로그에 넣는다", async () => {
+    const root = tmpCopy("mui-app", "fixtures");
+    fs.cpSync(fixture("npm-types/mui-material-6"), path.join(root, "node_modules", "@mui", "material"), { recursive: true });
+    await runAudit(root);
+
+    const ai = await runAiCommand({ root });
+    expect(ai.sources[0]).toMatchObject({ origin: "ds-npm", packageName: "@mui/material" });
+    const button = findComponent(await readCatalog(root), "Button");
+    expect(button?.origin).toBe("ds-npm");
+    const values = (name: string): string[] => button?.props.find((p) => p.name === name)?.values ?? [];
+    expect(values("variant")).toEqual(expect.arrayContaining(["text", "outlined", "contained"]));
+    expect(values("size")).toEqual(expect.arrayContaining(["small", "medium", "large"]));
+    expect(values("color")).toEqual(expect.arrayContaining(["primary", "secondary", "error"]));
   });
 });
