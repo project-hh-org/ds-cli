@@ -18,7 +18,6 @@ import {
   mcpJsonWrite,
   mcpServerEntry,
   substituteArgs,
-  cliText,
   unsupportedGlobal,
   withCli,
   type RenderContext,
@@ -43,7 +42,7 @@ export const cursorRenderer: Renderer = {
   supportsGlobal: false,
   render(commands: CommandSource[], ctx: RenderContext): RenderOutput {
     if (ctx.scope === "global") {
-      return unsupportedGlobal("cursor", cliText("레포에서 `npx dsmith install --tool cursor`를 실행하세요.", ctx.cli));
+      return unsupportedGlobal("cursor", ctx);
     }
     const writes: PlannedWrite[] = withCli(commands, ctx.cli).map((c) => ({
       file: path.join(ctx.root, ".cursor", "commands", `${c.name}.md`),

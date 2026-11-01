@@ -8,7 +8,7 @@
  */
 import path from "node:path";
 import type { CommandSource } from "../commands.js";
-import { DEFAULT_CLI, MD_MARKERS, cliText, launchLine, unsupportedGlobal, type RenderContext, type Renderer, type RenderOutput } from "./shared.js";
+import { DEFAULT_CLI, MD_MARKERS, launchLine, unsupportedGlobal, type RenderContext, type Renderer, type RenderOutput } from "./shared.js";
 
 export const MCP_TOOL_NAMES = [
   "resolve_token",
@@ -63,7 +63,7 @@ export const agentsMdRenderer: Renderer = {
   supportsGlobal: false,
   render(commands: CommandSource[], ctx: RenderContext): RenderOutput {
     if (ctx.scope === "global") {
-      return unsupportedGlobal("agents-md", cliText("레포에서 `npx dsmith install --tool agents-md`를 실행하세요.", ctx.cli));
+      return unsupportedGlobal("agents-md", ctx);
     }
     return {
       writes: [

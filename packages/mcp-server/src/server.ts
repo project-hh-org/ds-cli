@@ -154,7 +154,7 @@ export function createDsmithServer(deps: ServerDeps): Promise<McpServer> {
     "explain_decision",
     {
       description:
-        "Explain a duplicate or locally redefined component: options, differences, impact of each choice and a recommendation. Use when several components do the same job and you must pick one.",
+        "Explain a duplicate or locally redefined component: options, differences, impact of each choice and a recommendation. impact.byOption[x] = call sites and files that would have to change if x is chosen (not x's usage; usage is options[].usageCount). ruleCheck.tokenUsageRate[x] = share of the rated styles in x's definition file that already use a token; null = nothing rated. Use when several components do the same job and you must pick one.",
       inputSchema: z.object({ item: z.string().min(1).max(MAX_TEXT), kind: z.enum(["duplicate", "local-definition"]).optional() }),
       annotations: readOnly,
     },
@@ -174,7 +174,7 @@ export function createDsmithServer(deps: ServerDeps): Promise<McpServer> {
     "list_decisions",
     {
       description:
-        "List duplicate or locally redefined components that still need a decision, and the ones already decided. Use to see which choices are open before building UI.",
+        "List duplicate or locally redefined components that still need a decision, and the ones already decided (those carry chosen = the picked option id). Use to see which choices are open before building UI.",
       inputSchema: z.object({ status: z.enum(["pending", "decided"]).optional(), cursor: z.string().max(MAX_CURSOR).optional() }),
       annotations: readOnly,
     },

@@ -49,7 +49,11 @@ describe("runDecideExplain: fixtures/with-ds-app", () => {
 
   it("Butto: not-found + 후보 [Button]", async () => {
     const root = await audited("fixtures", "with-ds-app");
-    expect(await runDecideExplain(root, "Butto", { git: false })).toEqual({ error: "not-found", candidates: ["Button"] });
+    expect(await runDecideExplain(root, "Butto", { git: false })).toEqual({
+      error: "not-found",
+      message: "결정할 항목이 아님: Butto. list_decisions(또는 decide --list)로 항목을 확인하세요",
+      candidates: ["Button"],
+    });
   });
 
   it("git 레포가 아니어도(기본 git:true) 예외 없이 history만 생략한다", async () => {
@@ -103,7 +107,7 @@ describe("runDecideList / runDecideChoose: examples/legacy-demo", () => {
     expect(saved.items[0].options).toEqual(expect.arrayContaining(["src/components/Badge", "src/components/common/StatusBadge"]));
 
     const after = await runDecideList(root);
-    expect(after.filter((i) => i.status === "decided").map((i) => [i.item, i.decided])).toEqual([["Badge", "src/components/Badge"]]);
+    expect(after.filter((i) => i.status === "decided").map((i) => [i.item, i.chosen])).toEqual([["Badge", "src/components/Badge"]]);
     expect(after.filter((i) => i.status === "pending").map((i) => i.item)).toEqual(["Button"]);
     expect((await runDecideList(root, "decided")).map((i) => i.item)).toEqual(["Badge"]);
     expect((await runDecideList(root, "pending")).map((i) => i.item)).toEqual(["Button"]);
@@ -132,9 +136,9 @@ describe("runDecideList / runDecideChoose: examples/legacy-demo", () => {
   it("audit 전이면 안내 에러", async () => {
     const empty = path.join(tmp, "empty");
     fs.mkdirSync(empty);
-    await expect(runDecideList(empty)).rejects.toThrow("먼저 dsmith audit을 실행하세요");
-    await expect(runDecideExplain(empty, "Button")).rejects.toThrow("먼저 dsmith audit을 실행하세요");
-    await expect(runDecideChoose(empty, "Button", "x")).rejects.toThrow("먼저 dsmith audit을 실행하세요");
+    await expect(runDecideList(empty)).rejects.toThrow("먼저 `dsmith audit`을 실행하세요 (MCP 서버는 첫 호출 때 자동 생성)");
+    await expect(runDecideExplain(empty, "Button")).rejects.toThrow("먼저 `dsmith audit`을 실행하세요 (MCP 서버는 첫 호출 때 자동 생성)");
+    await expect(runDecideChoose(empty, "Button", "x")).rejects.toThrow("먼저 `dsmith audit`을 실행하세요 (MCP 서버는 첫 호출 때 자동 생성)");
   });
 });
 
@@ -202,7 +206,7 @@ describe("dsmith decide (bin)", { timeout: 30_000 }, () => {
       "결정 기록: Badge → src/components/Badge (.dsmith/decisions.json)\n",
     );
     expect(run(root, "--list").stdout).toMatch(/^pending 1건 \/ decided 1건\n/);
-    expect(run(root, "--list", "--status", "decided", "--json").stdout).toContain('"decided": "src/components/Badge"');
+    expect(run(root, "--list", "--status", "decided", "--json").stdout).toContain('"chosen": "src/components/Badge"');
   });
 
   it("--list --limit은 앞의 N개만 보이고 나머지를 건수로 알린다", async () => {
@@ -230,7 +234,18 @@ describe("dsmith decide (bin)", { timeout: 30_000 }, () => {
     const root = await audited("fixtures", "with-ds-app");
     const r = run(root, "--explain", "Butto", "--no-git", "--json");
     expect(r.status).toBe(1);
-    expect(JSON.parse(r.stdout)).toEqual({ error: "not-found", candidates: ["Button"] });
+    expect(JSON.parse(r.stdout)).toEqual({
+      error: "not-found",
+      message: "결정할 항목이 아님: Butto. list_decisions(또는 decide --list)로 항목을 확인하세요",
+      candidates: ["Button"],
+    });
+  });
+
+  it("종류가 어긋난 --kind는 not-found에 availableKinds를 싣는다", async () => {
+    const root = await audited("fixtures", "with-ds-app");
+    const r = run(root, "--explain", "Button", "--kind", "local-definition", "--no-git", "--json");
+    expect(r.status).toBe(1);
+    expect(JSON.parse(r.stdout)).toMatchObject({ error: "not-found", candidates: [], availableKinds: ["duplicate"] });
   });
 
   it("모호한 항목은 --kind로 지정한다 — ambiguous-kind는 JSON 에러·종료 코드 1", async () => {
@@ -268,6 +283,7 @@ describe("dsmith decide (bin)", { timeout: 30_000 }, () => {
     const root = await audited("fixtures", "with-ds-app");
     const r = run(root, "--explain", "Butto", "--no-git");
     expect(r.status).toBe(1);
+    expect(r.stdout).toContain("list_decisions(또는 decide --list)로 항목을 확인하세요");
     expect(r.stdout).toContain("비슷한 항목: Button");
   });
 });

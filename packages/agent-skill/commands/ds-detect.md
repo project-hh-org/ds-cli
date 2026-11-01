@@ -5,7 +5,7 @@ args: "[--root <dir>] [--exclude <glob>]"
 uses: ["cli:detect"]
 ---
 
-`npx dsmith detect --json {{args}}` 를 실행하고 stdout JSON을 읽는다. stderr의 힌트·경고도 그대로 전한다.
+`npx dsmith detect --json {{args}}`를 실행하고 stdout JSON을 읽는다. stderr의 힌트·경고도 그대로 전한다.
 
 이 5항목을 한 줄씩 설명한다:
 1. 스타일링 `styling.methods` — 방식 이름과 비율

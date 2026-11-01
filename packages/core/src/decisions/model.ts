@@ -80,5 +80,5 @@ export interface DecisionListItem {
   kind: DecisionKind;
   options: string[];
   status: "pending" | "decided";
-  decided?: string;
+  chosen?: string;
 }

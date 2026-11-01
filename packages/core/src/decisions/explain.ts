@@ -18,7 +18,15 @@ export interface ExplainOptions {
 
 export type ExplainResult =
   | { card: DecisionCard }
-  | { error: "not-found"; candidates: string[] }
+  | {
+      error: "not-found";
+      /** 사람·AI가 바로 읽는 다음 행동 안내 */
+      message: string;
+      /** 이름이 겹치는 항목(최대 5개). kind가 어긋난 경우 항목 자신은 빼고 센다 */
+      candidates: string[];
+      /** 항목은 있는데 지정한 kind가 아닐 때, 그 항목이 실제로 가진 종류 */
+      availableKinds?: DecisionKind[];
+    }
   | { error: "ambiguous-kind"; kinds: DecisionKind[] };
 
 export const DEFAULT_MAX_OPTIONS = 20;
@@ -38,6 +46,21 @@ async function mapLimit<T, R>(items: T[], limit: number, fn: (item: T) => Promis
   return results;
 }
 
+const CHECK_LIST = "list_decisions(또는 decide --list)로 항목을 확인하세요";
+
+function notFound(index: Index, item: string, kind: DecisionKind | undefined): Extract<ExplainResult, { error: "not-found" }> {
+  const available = kind === undefined ? [] : candidatesOf(index, item).map((c) => c.kind);
+  if (kind !== undefined && available.length > 0) {
+    return {
+      error: "not-found",
+      message: `'${item}'에 ${kind} 종류의 항목은 없음 (있는 종류: ${available.join(", ")}). ${CHECK_LIST}`,
+      candidates: similarItems(index, item).filter((name) => name !== item),
+      availableKinds: available,
+    };
+  }
+  return { error: "not-found", message: `결정할 항목이 아님: ${item}. ${CHECK_LIST}`, candidates: similarItems(index, item) };
+}
+
 /**
  * 결정 카드를 조립한다: 후보 찾기 → 정의 파일 풀기 → (카드에 실릴 옵션만) git 이력 → 순수 카드 빌더.
  * 같은 이름이 duplicate와 local-definition 둘 다이고 `kind`가 없으면 `ambiguous-kind`를 돌려준다.
@@ -49,7 +72,7 @@ export async function explainDecision(
   opts: ExplainOptions,
 ): Promise<ExplainResult> {
   const matches = candidatesOf(index, item, opts.kind);
-  if (matches.length === 0) return { error: "not-found", candidates: similarItems(index, item) };
+  if (matches.length === 0) return notFound(index, item, opts.kind);
   const [candidate] = matches;
   if (matches.length > 1 || candidate === undefined) {
     return { error: "ambiguous-kind", kinds: matches.map((c) => c.kind) };

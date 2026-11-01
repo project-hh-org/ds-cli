@@ -40,6 +40,17 @@ describe("서버: 여섯 도구", () => {
     const { tools } = await client.listTools();
     expect(tools.map((t) => t.name).sort()).toEqual([...TOOL_NAMES].sort());
   });
+
+  it("explain_decision 설명은 impact·tokenUsageRate의 뜻을 밝힌다", async () => {
+    const { client } = await open("fixtures/with-ds-app");
+    const { tools } = await client.listTools();
+    const description = tools.find((t) => t.name === "explain_decision")?.description ?? "";
+    expect(description).toContain("impact.byOption[x]");
+    expect(description).toContain("not x's usage");
+    expect(description).toContain("ruleCheck.tokenUsageRate[x]");
+    expect(description).toContain("null = nothing rated");
+    expect(tools.find((t) => t.name === "list_decisions")?.description).toContain("chosen");
+  });
 });
 
 describe("get_component", () => {
@@ -194,7 +205,19 @@ describe("explain_decision", () => {
     const { client } = await open("fixtures/with-ds-app");
     const res = await call(client, "explain_decision", { item: "Butto" });
     expect(res.isError).toBe(true);
-    expect(json(res)).toEqual({ error: "not-found", candidates: ["Button"] });
+    expect(json(res)).toEqual({
+      error: "not-found",
+      message: "결정할 항목이 아님: Butto. list_decisions(또는 decide --list)로 항목을 확인하세요",
+      candidates: ["Button"],
+    });
+  });
+
+  it("kind가 어긋나면 not-found에 availableKinds를 싣는다", async () => {
+    const { client } = await open("fixtures/with-ds-app");
+    const res = await call(client, "explain_decision", { item: "Button", kind: "local-definition" });
+    expect(res.isError).toBe(true);
+    expect(json(res)).toMatchObject({ error: "not-found", candidates: [], availableKinds: ["duplicate"] });
+    expect(json(res).message).toContain("list_decisions(또는 decide --list)로 항목을 확인하세요");
   });
 
   it("결정을 기록하면 decided가 카드에 나타난다", async () => {
@@ -259,7 +282,7 @@ describe("list_decisions", () => {
     const all = json(await call(client, "list_decisions", {}));
     expect(all.decisions.find((d: { item: string }) => d.item === "Badge")).toMatchObject({
       status: "decided",
-      decided: "src/components/Badge",
+      chosen: "src/components/Badge",
     });
     const pending = json(await call(client, "list_decisions", { status: "pending" }));
     expect(pending.decisions.map((d: { item: string }) => d.item)).not.toContain("Badge");

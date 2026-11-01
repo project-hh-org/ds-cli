@@ -631,3 +631,66 @@ describe("명령 소스 로드", () => {
     expect(r.outcomes.filter((o) => o.file.endsWith("SKILL.md"))).toHaveLength(commands.length);
   });
 });
+
+describe("install: 스킬이 전부 건너뛰어진 경우 · dry-run 건너뜀 예정 · 개발 빌드 안내", () => {
+  const skillFiles = [...SKILLS(".claude/skills")];
+
+  async function editAllSkills(): Promise<void> {
+    await install({ tools: ["claude-code"] });
+    for (const f of skillFiles) write(root, f, `${read(root, f)}\n고침\n`);
+  }
+
+  it("모든 SKILL.md가 skipped-modified면 allSkillsSkipped이고 다음 단계는 사유를 해결하라는 안내다(/ds 안내 없음)", async () => {
+    await editAllSkills();
+    const r = await install({ tools: ["claude-code"] });
+    expect(r.allSkillsSkipped).toBe(true);
+    const text = formatInstallSummary(r);
+    expect(text.split("\n").at(-1)).toBe("다음: 건너뜀 사유를 해결한 뒤 다시 실행");
+    expect(text).not.toContain("/ds 로 시작");
+  });
+
+  it("일부만 건너뛰면 평소처럼 /ds 안내이고 allSkillsSkipped가 없다", async () => {
+    await install({ tools: ["claude-code"] });
+    write(root, skillFiles[0] as string, `${read(root, skillFiles[0] as string)}\n고침\n`);
+    const r = await install({ tools: ["claude-code"] });
+    expect(r).not.toHaveProperty("allSkillsSkipped");
+    expect(formatInstallSummary(r)).toContain("/ds 로 시작");
+  });
+
+  it("MCP 설정만 건너뛰어도 스킬은 쓰였으니 allSkillsSkipped가 아니다", async () => {
+    write(root, ".mcp.json", JSON.stringify({ mcpServers: { dsmith: { command: "mine" } } }));
+    const r = await install({ tools: ["claude-code"] });
+    expect(r.outcomes.some((o) => o.status.startsWith("skipped"))).toBe(true);
+    expect(r).not.toHaveProperty("allSkillsSkipped");
+  });
+
+  it("dry-run에서는 allSkillsSkipped를 세우지 않고, 건너뛸 영역은 diff 대신 '(건너뜀 예정: 사유)'를 보인다", async () => {
+    await editAllSkills();
+    const r = await install({ tools: ["claude-code"], dryRun: true });
+    expect(r).not.toHaveProperty("allSkillsSkipped");
+    const text = formatInstallSummary(r);
+    expect(text).toContain("(건너뜀 예정: ");
+    expect(text).not.toContain("+++ .claude/skills/ds-audit/SKILL.md");
+    expect(text.match(/\(건너뜀 예정: /g)).toHaveLength(skillFiles.length);
+  });
+
+  it("CLI: 스킬이 전부 건너뛰어지면 종료 코드 1, dry-run은 0", async () => {
+    await editAllSkills();
+    const args = ["install", "--root", root, "--mcp-command", "node /x/bin.js", "--tool", "claude-code"];
+    const env = { ...process.env, HOME: home, USERPROFILE: home };
+    expect(() => execFileSync(process.execPath, [bin, ...args], { encoding: "utf-8", env, stdio: "pipe" })).toThrow(
+      expect.objectContaining({ status: 1 }),
+    );
+    expect(() => execFileSync(process.execPath, [bin, ...args, "--dry-run"], { encoding: "utf-8", env, stdio: "pipe" })).not.toThrow();
+  });
+
+  it("--global의 cursor·gemini 안내는 0.0.0 빌드일 때만 --mcp-command를 되풀이한다", async () => {
+    const dev = await install({ global: true, tools: ["cursor", "gemini"], version: "0.0.0", mcpCommand: "node /x/bin.js" });
+    for (const tool of ["cursor", "gemini"]) {
+      expect(dev.notes.join("\n")).toContain(`\`node /x/bin.js install --tool ${tool} --mcp-command "node /x/bin.js"\``);
+    }
+    const released = await install({ global: true, tools: ["cursor", "gemini"] });
+    expect(released.notes.join("\n")).toContain("`npx dsmith install --tool cursor`");
+    expect(released.notes.join("\n")).not.toContain("--mcp-command");
+  });
+});

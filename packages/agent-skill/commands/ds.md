@@ -5,7 +5,7 @@ args: "[--root <dir>] [--exclude <glob>]"
 uses: ["cli:detect"]
 ---
 
-`npx dsmith detect --json {{args}}` 를 실행하고 stdout JSON을 읽는다. stderr의 힌트·경고도 그대로 전한다.
+`npx dsmith detect --json {{args}}`를 실행하고 stdout JSON을 읽는다. stderr의 힌트·경고도 그대로 전한다.
 
 먼저 `state`, `ds`, `activeExtractors`를 한 줄씩 설명하고 사람에게 맞는지 확인한다. 틀리면 `/ds-detect`로 넘어간다.
 

@@ -25,7 +25,7 @@ export function decisionCandidates(index: Index): DecisionCandidate[] {
 
 /**
  * 후보 + 파일에만 있는 기록(예: 3b token-cluster)을 합쳐 목록을 만든다.
- * 기록이 decided면 status decided·decided=chosen. `status`를 주면 그 상태만 낸다.
+ * 기록이 decided면 status decided·chosen=기록의 chosen. `status`를 주면 그 상태만 낸다.
  */
 export function listDecisions(
   index: Index,
@@ -39,7 +39,7 @@ export function listDecisions(
   const push = (item: string, kind: DecisionKind, options: string[], record?: DecisionsFile["items"][number]): void => {
     const decided = record?.status === "decided" && record.chosen !== undefined;
     const entry: DecisionListItem = { item, kind, options, status: decided ? "decided" : "pending" };
-    if (decided && record?.chosen !== undefined) entry.decided = record.chosen;
+    if (decided && record?.chosen !== undefined) entry.chosen = record.chosen;
     items.push(entry);
   };
 

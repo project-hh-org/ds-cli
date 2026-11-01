@@ -5,7 +5,7 @@ args: "[--root <dir>] [--exclude <glob>]"
 uses: ["cli:audit"]
 ---
 
-`npx dsmith audit --json {{args}}` 를 실행하고 stdout JSON을 읽는다. stderr의 힌트·경고도 그대로 전한다.
+`npx dsmith audit --json {{args}}`를 실행하고 stdout JSON을 읽는다. stderr의 힌트·경고도 그대로 전한다.
 
 이 순서로 설명한다:
 1. 건강 점수 `health.score`, 산식 `health.formula`, 평가한 값 수 `health.rated`
@@ -14,7 +14,7 @@ uses: ["cli:audit"]
 4. 간격 `hardcoded.spacing` 중 `onScale: false` 상위 5개
 5. 중복 `duplicates[].names`, 지역 재정의 `localDefinitions` 상위 5개
 6. 하드코딩이 많은 파일 `hardcoded.byFile` 상위 5개
-7. 리포트 파일 `.dsmith/reports/audit-<날짜>.md`
+7. 리포트 파일 — stderr의 `리포트: <경로>` 줄에서 읽은 경로
 
 규칙:
 - JSON에 없는 숫자는 말하지 않는다. 백분율 변환 외의 계산을 하지 않는다.

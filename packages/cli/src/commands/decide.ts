@@ -13,7 +13,7 @@ import {
 } from "@dsmith-dev/core";
 import { isDsSpecifier, readDetect } from "@dsmith-dev/detect";
 
-const NEED_AUDIT = "먼저 dsmith audit을 실행하세요";
+const NEED_AUDIT = "먼저 `dsmith audit`을 실행하세요 (MCP 서버는 첫 호출 때 자동 생성)";
 
 interface Audited {
   root: string;
@@ -69,7 +69,7 @@ export function formatDecideList(items: DecisionListItem[], limit?: number): str
   const lines = [`pending ${pending}건 / decided ${items.length - pending}건`];
   const shown = limit === undefined ? items : items.slice(0, limit);
   for (const i of shown) {
-    const tail = i.status === "decided" ? `결정: ${i.decided ?? ""}` : `선택지 ${i.options.length}개`;
+    const tail = i.status === "decided" ? `결정: ${i.chosen ?? ""}` : `선택지 ${i.options.length}개`;
     lines.push(`- [${i.status}] ${i.item} (${i.kind}) — ${tail}`);
   }
   if (shown.length < items.length) lines.push(`… 외 ${items.length - shown.length}건 (--limit 조정)`);
@@ -85,8 +85,7 @@ export function explainJson(result: ExplainResult): unknown {
 export function formatDecideExplain(result: ExplainResult): string {
   if ("error" in result) {
     if (result.error === "ambiguous-kind") return `종류가 둘 이상입니다: ${result.kinds.join(", ")}. --kind로 지정하세요`;
-    const hint = result.candidates.length > 0 ? ` 비슷한 항목: ${result.candidates.join(", ")}` : "";
-    return `결정할 항목이 아님.${hint}`;
+    return result.candidates.length > 0 ? `${result.message}\n비슷한 항목: ${result.candidates.join(", ")}` : result.message;
   }
   const { card } = result;
   const lines = [`${card.item} (${card.kind})`];

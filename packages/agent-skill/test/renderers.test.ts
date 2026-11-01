@@ -415,3 +415,25 @@ describe("ctx.cli (로컬 빌드로 CLI 호출 치환)", () => {
     expect(out.notes.join("\n")).not.toContain("npx dsmith");
   });
 });
+
+describe("global 미지원 안내문", () => {
+  const DEV_CLI = "node /abs/cli/dist/bin.js";
+
+  it("조사를 억지로 붙이지 않는다('cursor은(는)' 없음)", () => {
+    for (const tool of ["cursor", "gemini", "agents-md"] as const) {
+      const note = renderers[tool].render(FIXTURES, globalCtx).notes[0] ?? "";
+      expect(note, tool).not.toContain("은(는)");
+      expect(note, tool).toContain(`${tool}: --global을 지원하지 않습니다.`);
+      expect(note, tool).toContain(`\`npx dsmith install --tool ${tool}\``);
+    }
+  });
+
+  it("0.0.0 개발 빌드면(devMcpCommand) 레포용 명령에 --mcp-command를 붙여 안내한다", () => {
+    for (const tool of ["cursor", "gemini", "agents-md"] as const) {
+      const note =
+        renderers[tool].render(FIXTURES, { ...globalCtx, cli: DEV_CLI, devMcpCommand: DEV_CLI }).notes[0] ?? "";
+      expect(note, tool).toContain(`\`${DEV_CLI} install --tool ${tool} --mcp-command "${DEV_CLI}"\``);
+      expect(note, tool).not.toContain("npx dsmith");
+    }
+  });
+});

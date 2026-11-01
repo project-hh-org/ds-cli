@@ -1,4 +1,4 @@
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -413,5 +413,28 @@ describe("슬래시 명령 ↔ CLI·MCP 일관성", () => {
   it("install 옵션이 AI 도구 이름을 도움말에 보인다", () => {
     const help = buildProgram().commands.find((c) => c.name() === "install")?.helpInformation() ?? "";
     for (const tool of AI_TOOLS) expect(help).toContain(tool);
+  });
+});
+
+describe("audit --json 리포트 경로", () => {
+  const bin = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../dist/bin.js");
+
+  it("--json이면 stdout은 JSON만, 리포트 경로는 stderr의 '리포트: …' 줄로 알린다", () => {
+    tailwindInlineRepo();
+    const r = spawnSync(process.execPath, [bin, "audit", "--root", tmp, "--json"], { encoding: "utf-8" });
+    expect(r.status).toBe(0);
+    expect(() => JSON.parse(r.stdout)).not.toThrow();
+    const line = r.stderr.split("\n").find((l) => l.startsWith("리포트: "));
+    expect(line).toBeDefined();
+    const reported = path.resolve(process.cwd(), line?.slice("리포트: ".length) ?? "");
+    expect(fs.realpathSync(reported)).toBe(fs.realpathSync(path.join(tmp, ".dsmith", "reports", `audit-${localDate(new Date())}.md`)));
+    expect(fs.existsSync(reported)).toBe(true);
+  });
+
+  it("--json이 아니면 stdout에만 쓰고 stderr에는 중복해서 쓰지 않는다", () => {
+    tailwindInlineRepo();
+    const r = spawnSync(process.execPath, [bin, "audit", "--root", tmp], { encoding: "utf-8" });
+    expect(r.stdout).toContain("리포트: ");
+    expect(r.stderr).not.toContain("리포트: ");
   });
 });

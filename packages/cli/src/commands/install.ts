@@ -50,6 +50,8 @@ export interface InstallResult {
   /** 명령 본문과 AGENTS.md 블록이 부르는 CLI 실행 명령(기본 `npx dsmith`) */
   cli: string;
   outcomes: WriteOutcome[];
+  /** 스킬·명령(MCP 설정이 아닌) 쓰기가 하나 이상 있었고 전부 건너뛰어졌다. 실제로 쓴 실행(dry-run 아님)에만 true로 둔다 */
+  allSkillsSkipped?: true;
   notes: string[];
   /** 표시용 매니페스트 경로 */
   manifest: string;
@@ -244,7 +246,14 @@ export async function runInstall(opts: InstallOptions): Promise<InstallResult> {
   const planned: PlannedWrite[] = [];
   const unsupported: AiTool[] = [];
   for (const tool of tools) {
-    const out = renderers[tool].render(commands, { root, home, scope, mcp, cli });
+    const out = renderers[tool].render(commands, {
+      root,
+      home,
+      scope,
+      mcp,
+      cli,
+      ...(version === "0.0.0" && opts.mcpCommand !== undefined ? { devMcpCommand: opts.mcpCommand } : {}),
+    });
     if (out.writes.length === 0) unsupported.push(tool);
     planned.push(...out.writes);
     notes.push(...out.notes);
@@ -314,6 +323,12 @@ export async function runInstall(opts: InstallOptions): Promise<InstallResult> {
     notes.push(`${intro}\n${snippet.replace(/^/gm, "  ")}`);
   });
 
+  // 스킬·명령 쓰기(MCP 설정 영역이 아닌 것)가 있었는데 전부 건너뛰어졌으면 `/ds`로 시작할 수 없다.
+  const isMcpConfig = (w: PlannedWrite): boolean =>
+    w.region.kind === "json-key" || (w.region.kind === "block" && w.region.start === TOML_MARKERS.start);
+  const skillOutcomes = outcomes.filter((_, i) => !isMcpConfig(planned[i] as PlannedWrite));
+  const allSkillsSkipped = !dryRun && skillOutcomes.length > 0 && skillOutcomes.every((o) => o.status.startsWith("skipped"));
+
   return {
     scope,
     tools,
@@ -323,6 +338,7 @@ export async function runInstall(opts: InstallOptions): Promise<InstallResult> {
     mcp,
     cli,
     outcomes,
+    ...(allSkillsSkipped ? { allSkillsSkipped: true as const } : {}),
     notes: [...new Set(notes)],
     manifest: manifestShown,
     dryRun,
@@ -359,6 +375,7 @@ function registeredLine(r: InstallResult): string {
 /** 설치한 도구마다 어떻게 시작하는지. 같은 방법끼리 묶는다. */
 function nextLines(r: InstallResult): string[] {
   if (r.dryRun) return ["다음: --dry-run 없이 다시 실행하면 위 내용을 씁니다"];
+  if (r.allSkillsSkipped === true) return ["다음: 건너뜀 사유를 해결한 뒤 다시 실행"];
   const active = r.tools.filter((t) => !r.unsupported.includes(t));
   const slash = active.filter((t) => t === "claude-code" || t === "cursor" || t === "gemini");
   const groups: { tools: AiTool[]; text: string }[] = [];
@@ -390,7 +407,11 @@ export function formatInstallSummary(r: InstallResult): string {
     lines.push("건너뛴 파일은 --force로 덮어쓰기");
   }
   if (r.dryRun) {
-    for (const o of r.outcomes) if (o.diff !== undefined && o.diff !== "") lines.push("", o.diff.trimEnd());
+    for (const o of r.outcomes) {
+      // 건너뛸 영역은 실제로 쓰이지 않으므로 diff 대신 사유만 보인다.
+      if (o.status.startsWith("skipped")) lines.push("", `${o.file} (건너뜀 예정: ${o.reason ?? o.status})`);
+      else if (o.diff !== undefined && o.diff !== "") lines.push("", o.diff.trimEnd());
+    }
   }
   const notes = [...new Set(r.notes)];
   if (notes.length > 0) lines.push("", "할 일:", ...notes.map((n) => `- ${n.replace(/\n/g, "\n  ")}`), "");

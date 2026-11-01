@@ -35,6 +35,8 @@ const index: Index = {
   ],
 };
 const isDsModule = (m: string): boolean => m.startsWith("ui/");
+const NOT_FOUND_MESSAGE = (item: string): string =>
+  `결정할 항목이 아님: ${item}. list_decisions(또는 decide --list)로 항목을 확인하세요`;
 
 describe("explainDecision", () => {
   it("정의 파일을 풀고 DS 옵션을 추천하며, git이 레포가 아니어도 history만 생략한다", async () => {
@@ -79,14 +81,11 @@ describe("explainDecision", () => {
   });
 
   it("없는 항목이면 이름이 겹치는 후보를 최대 5개 돌려준다", async () => {
-    expect(await explainDecision(tmp, index, "Butto", { isDsModule, git: false })).toEqual({
-      error: "not-found",
-      candidates: ["Button"],
-    });
-    expect(await explainDecision(tmp, index, "zzz", { isDsModule, git: false })).toEqual({
-      error: "not-found",
-      candidates: [],
-    });
+    const near = await explainDecision(tmp, index, "Butto", { isDsModule, git: false });
+    expect(near).toEqual({ error: "not-found", message: NOT_FOUND_MESSAGE("Butto"), candidates: ["Button"] });
+    const none = await explainDecision(tmp, index, "zzz", { isDsModule, git: false });
+    expect(none).toEqual({ error: "not-found", message: NOT_FOUND_MESSAGE("zzz"), candidates: [] });
+    expect(near).not.toHaveProperty("availableKinds");
   });
 });
 
@@ -115,9 +114,11 @@ describe("explainDecision 같은 이름이 duplicate이면서 local-definition",
     expect(local.card.options.map((o) => o.id)).toEqual(["src/x.tsx", "src/y.tsx"]);
   });
 
-  it("그 kind에 없으면 not-found", async () => {
+  it("그 kind에 없으면 not-found + 가능한 종류(availableKinds)", async () => {
     const r = await explainDecision(tmp, index, "Button", { isDsModule, git: false, kind: "local-definition" });
-    expect(r).toMatchObject({ error: "not-found" });
+    expect(r).toMatchObject({ error: "not-found", candidates: [], availableKinds: ["duplicate"] });
+    expect(r).toHaveProperty("message", expect.stringContaining("list_decisions(또는 decide --list)로 항목을 확인하세요"));
+    expect(r).toHaveProperty("message", expect.stringContaining("duplicate"));
   });
 });
 

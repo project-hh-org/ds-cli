@@ -82,14 +82,15 @@ export function buildProgram(): Command {
     async (opts: CommonOptions) => {
       const { result, reportPath } = await runAudit(opts.root, { exclude: opts.exclude ?? [] });
       for (const line of [...detectHints(result.detect), ...auditWarnings(result)]) process.stderr.write(`${line}\n`);
+      const shownPath = path.relative(process.cwd(), reportPath) || reportPath;
       if (opts.json) {
+        // JSON 모양은 그대로 두고, 리포트 경로는 stderr로 알린다(슬래시 명령이 여기서 읽는다).
+        process.stderr.write(`리포트: ${shownPath}\n`);
         process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
         return;
       }
       const { health } = result;
-      process.stdout.write(
-        `건강 점수: ${health.score}\n리포트: ${path.relative(process.cwd(), reportPath) || reportPath}\n`,
-      );
+      process.stdout.write(`건강 점수: ${health.score}\n리포트: ${shownPath}\n`);
     },
   );
 
@@ -187,6 +188,8 @@ export function buildProgram(): Command {
         ...(opts.mcpCommand === undefined ? {} : { mcpCommand: opts.mcpCommand }),
       });
       process.stdout.write(opts.json ? `${JSON.stringify(result, null, 2)}\n` : `${formatInstallSummary(result)}\n`);
+      // 스킬·명령을 하나도 못 썼으면 설치가 안 된 것이다.
+      if (result.allSkillsSkipped === true) process.exitCode = 1;
     });
 
   return program;

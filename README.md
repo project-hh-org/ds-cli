@@ -103,7 +103,7 @@ MCP 서버 `dsmith`(`npx -y dsmith@<설치된 0.x 마이너> mcp` — 0.x는 마
 - `resolve_token` — 하드코딩 값에 가장 가까운 디자인 토큰과 신뢰도
 - `lint_snippet` — 코드 조각의 하드코딩 스타일 값을 찾아 토큰 제안
 - `search_component` — 하려는 일(예: "날짜 선택")에 맞는 컴포넌트 검색
-- `get_component` — 컴포넌트의 props·사용 수·정의 파일
+- `get_component` — 컴포넌트의 props·사용 수·정의 파일(같은 이름이 여러 module이면 결정한 것 → DS → 사용 수 순으로 고르고 `isDs`·`decided`를 싣는다)
 - `explain_decision` — 중복·지역 재정의 항목의 결정 카드(옵션·차이·영향·추천)
 - `list_decisions` — 결정할 항목과 이미 결정한 항목
 

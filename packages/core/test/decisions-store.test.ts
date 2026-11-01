@@ -161,7 +161,7 @@ describe("decisionCandidates / listDecisions", () => {
       record({ options: ["src/a/Button", "src/b/Button"], status: "decided", chosen: "src/a/Button" }),
     );
     const all = listDecisions(index, file);
-    expect(all[0]).toMatchObject({ item: "Button", status: "decided", decided: "src/a/Button" });
+    expect(all[0]).toMatchObject({ item: "Button", status: "decided", chosen: "src/a/Button" });
     expect(listDecisions(index, file, "pending").map((i) => i.item)).toEqual(["Tag"]);
     expect(listDecisions(index, file, "decided").map((i) => i.item)).toEqual(["Button"]);
   });
@@ -173,6 +173,6 @@ describe("decisionCandidates / listDecisions", () => {
     );
     const all = listDecisions(index, file);
     expect(all.map((i) => i.item)).toEqual(["Button", "Tag", "primary"]);
-    expect(all[2]).toMatchObject({ kind: "token-cluster", status: "decided", decided: "#3b82f6" });
+    expect(all[2]).toMatchObject({ kind: "token-cluster", status: "decided", chosen: "#3b82f6" });
   });
 });

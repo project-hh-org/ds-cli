@@ -16,7 +16,6 @@ import {
   MANAGED_NOTICE,
   mcpJsonWrite,
   mcpServerEntry,
-  cliText,
   unsupportedGlobal,
   withCli,
   type RenderContext,
@@ -44,7 +43,7 @@ export const geminiRenderer: Renderer = {
   supportsGlobal: false,
   render(commands: CommandSource[], ctx: RenderContext): RenderOutput {
     if (ctx.scope === "global") {
-      return unsupportedGlobal("gemini", cliText("레포에서 `npx dsmith install --tool gemini`를 실행하세요.", ctx.cli));
+      return unsupportedGlobal("gemini", ctx);
     }
     const writes: PlannedWrite[] = withCli(commands, ctx.cli).map((c) => ({
       file: path.join(ctx.root, ".gemini", "commands", `${c.name}.toml`),

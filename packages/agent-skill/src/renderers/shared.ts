@@ -16,6 +16,11 @@ export interface RenderContext {
    * `node /abs/packages/cli/dist/bin.js`처럼 MCP 실행 명령과 같은 빌드를 가리키게 한다.
    */
   cli?: string;
+  /**
+   * 실행 중인 빌드가 0.0.0(로컬 개발)일 때 받은 `--mcp-command` 값. 레포 설치를 안내하는 문장에 그대로 되풀이한다 —
+   * 0.0.0 빌드는 이 플래그 없이는 설치되지 않는다.
+   */
+  devMcpCommand?: string;
 }
 
 export const DEFAULT_CLI = "npx dsmith";
@@ -85,7 +90,12 @@ export function mcpJsonWrite(file: string, entry: Record<string, unknown>): Plan
   return { file, region: { kind: "json-key", keyPath: ["mcpServers", "dsmith"] }, content: JSON.stringify(entry) };
 }
 
-/** 글로벌 미지원 도구가 `--global`에서 내는 결과. */
-export function unsupportedGlobal(tool: AiTool, hint: string): RenderOutput {
-  return { writes: [], notes: [`${tool}은(는) --global을 지원하지 않습니다. ${hint}`] };
+/**
+ * 글로벌 미지원 도구가 `--global`에서 내는 결과. 도구 이름에 조사를 붙이지 않는다(받침에 따라 달라서).
+ * 안내하는 명령은 레포용 설치다: 개발 빌드(0.0.0)면 `--mcp-command`까지 붙인다.
+ */
+export function unsupportedGlobal(tool: AiTool, ctx: RenderContext): RenderOutput {
+  const flag = ctx.devMcpCommand === undefined ? "" : ` --mcp-command "${ctx.devMcpCommand}"`;
+  const hint = cliText(`레포에서 \`${DEFAULT_CLI} install --tool ${tool}${flag}\`를 실행하세요.`, ctx.cli);
+  return { writes: [], notes: [`${tool}: --global을 지원하지 않습니다. ${hint}`] };
 }

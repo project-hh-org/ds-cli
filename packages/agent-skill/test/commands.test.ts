@@ -41,6 +41,10 @@ describe("loadCommands — 실제 명령 소스", () => {
     }
   });
 
+  it("백틱 뒤에 공백을 두고 조사를 붙이지 않는다(`/ds-ai` 은 같은 오타)", async () => {
+    for (const c of await loadCommands()) expect(c.body, c.name).not.toMatch(/`\s[은는이가을를]\s/);
+  });
+
   it("3a에서 아직 없는 ds-init·ds-ai·ds-migrate는 uses가 비고 '아직 제공되지 않음'을 말한다", async () => {
     const commands = await loadCommands();
     for (const name of ["ds-init", "ds-ai", "ds-migrate"]) {
