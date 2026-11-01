@@ -73,6 +73,9 @@ importers:
       '@dsmith-dev/extractor-tailwind':
         specifier: workspace:*
         version: link:../extractor-tailwind
+      '@dsmith-dev/init':
+        specifier: workspace:*
+        version: link:../init
       vitest:
         specifier: ^3.0.0
         version: 3.2.7(@types/node@22.20.5)(yaml@2.9.1)

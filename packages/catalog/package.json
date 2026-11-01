@@ -42,6 +42,7 @@
     "@dsmith-dev/extractor-mui-sx": "workspace:*",
     "@dsmith-dev/extractor-styled": "workspace:*",
     "@dsmith-dev/extractor-tailwind": "workspace:*",
+    "@dsmith-dev/init": "workspace:*",
     "vitest": "^3.0.0"
   },
   "scripts": {

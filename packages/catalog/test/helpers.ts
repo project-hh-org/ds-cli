@@ -1,9 +1,10 @@
+import { createHash } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { indexRepo, type Index } from "@dsmith-dev/core";
-import { detect, type DetectResult } from "@dsmith-dev/detect";
+import { indexRepo, writeIndex, type Index } from "@dsmith-dev/core";
+import { detect, readDetect, writeDetect, type DetectResult } from "@dsmith-dev/detect";
 import { metaOf, type Extractor } from "@dsmith-dev/extractor-api";
 import { cssExtractor } from "@dsmith-dev/extractor-css";
 import { emotionExtractor } from "@dsmith-dev/extractor-emotion";
@@ -99,3 +100,44 @@ export const overlay = {
   "components/ui/OldButton.tsx": OLD_BUTTON,
   "components/ui/Button.stories.tsx": BUTTON_STORIES,
 };
+
+/** detect·index를 .dsmith/에 쓴다(cli audit과 같은 결과) — runAi가 읽는다 */
+export async function writeAudit(root: string): Promise<void> {
+  const { index, detect } = await auditFixture(root);
+  await writeIndex(root, index);
+  await writeDetect(root, detect);
+}
+
+/** 트리 → "경로 sha256" 줄 목록(정렬). .dsmith 포함 */
+export function treeHash(base: string): string[] {
+  const out: string[] = [];
+  const walk = (dir: string): void => {
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const abs = path.join(dir, entry.name);
+      const rel = path.relative(base, abs).split(path.sep).join("/");
+      if (entry.isDirectory()) walk(abs);
+      else out.push(`${rel} ${createHash("sha256").update(fs.readFileSync(abs)).digest("hex")}`);
+    }
+  };
+  walk(base);
+  return out.sort();
+}
+
+/** examples/<name> → 임시 디렉터리 복사(.dsmith 제외) */
+export function copyExample(name: string): string {
+  const tmp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "dsmith-catalog-ex-")));
+  fs.cpSync(path.join(REPO_ROOT, "examples", name), tmp, {
+    recursive: true,
+    filter: (p) => !p.split(path.sep).includes(".dsmith"),
+  });
+  return tmp;
+}
+
+/** 상태 0 강제: overrides로 DS 없음 → 다시 audit (packages/init 테스트와 같은 방식) */
+export async function forceStateZero(root: string): Promise<void> {
+  await writeAudit(root);
+  const current = await readDetect(root);
+  if (current === null) throw new Error("audit 실패");
+  await writeDetect(root, { ...current, overrides: { ds: { kind: "none", tokenFiles: [] }, state: 0 } });
+  await writeAudit(root);
+}

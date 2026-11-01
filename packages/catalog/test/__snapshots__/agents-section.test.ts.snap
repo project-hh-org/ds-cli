@@ -1,0 +1,20 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`renderAgentsDsSection > with-ds-app 카탈로그 스냅샷 1`] = `
+"## 이 레포의 디자인 시스템 (dsmith ai가 생성 — 직접 고치면 다음 ai가 덮어쓰지 않음)
+
+- DS 위치: \`components/ui\` (로컬)
+- 토큰 파일: 없음 — \`dsmith init\`으로 초안 생성
+- 컴포넌트 3개(props 추출 2) — 많이 쓰는 순: Button, Badge, OldButton
+- 쓰지 말 것(deprecated): OldButton — Button을 쓰세요
+
+### 규칙
+1. 색·간격·모서리·글꼴 크기 값을 하드코딩하지 않는다. 토큰 파일의 변수를 쓴다.
+2. 값이 필요하면 MCP \`resolve_token\`으로 가장 가까운 토큰을 찾는다.
+3. 새 UI는 위 컴포넌트를 먼저 쓴다. 고르기 전에 \`search_component\`·\`get_component\`로 props를 확인한다.
+4. deprecated 컴포넌트·props는 쓰지 않는다.
+5. 끝나면 \`/ds-check\`(또는 MCP \`lint_snippet\`)로 검사한다.
+
+MCP 서버 \`dsmith\` 도구: resolve_token, lint_snippet, search_component, get_component, explain_decision, list_decisions — 등록은 \`npx dsmith install\`.
+"
+`;
