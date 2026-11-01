@@ -80,7 +80,7 @@ export function createDsmithServer(deps: ServerDeps): Promise<McpServer> {
     "resolve_token",
     {
       description:
-        "Map a raw style value (#3B82F6, 13px, var(--x)) to the closest design token. distance is oklch ΔE_ok for colors and px for lengths; confidence is high for ΔE < 0.005 or 0px, medium for ΔE < 0.03 or ≤ 2px, else low. Pass property (padding, border-radius, ...) to compare only that category. Use before writing any hardcoded color or spacing.",
+        "Map a raw style value (#3B82F6, 13px, var(--x)) to the closest design token (source says where the token came from: token-file, catalog or proposal). distance is oklch ΔE_ok for colors and px for lengths; confidence is high for ΔE < 0.005 or 0px, medium for ΔE < 0.03 or ≤ 2px, else low. Pass property (padding, border-radius, ...) to compare only that category. Use before writing any hardcoded color or spacing.",
       inputSchema: z.object({ raw: z.string().min(1).max(MAX_TEXT), property: z.string().max(MAX_PROPERTY).optional() }),
       annotations: readOnly,
     },
@@ -114,7 +114,7 @@ export function createDsmithServer(deps: ServerDeps): Promise<McpServer> {
     "search_component",
     {
       description:
-        "Find existing components in this repo by intent (e.g. 'date picker', '버튼'). Returns up to limit matches (matched = count before limit). Use before creating a new component to avoid duplicates.",
+        "Find existing components in this repo by intent (e.g. 'date picker', '버튼'), including design-system components in the catalog that nothing uses yet. Returns up to limit matches (matched = count before limit). Use before creating a new component to avoid duplicates.",
       inputSchema: z.object({
         intent: z.string().min(1).max(MAX_TEXT),
         limit: z.number().int().min(1).max(50).optional(),
@@ -134,7 +134,7 @@ export function createDsmithServer(deps: ServerDeps): Promise<McpServer> {
     "get_component",
     {
       description:
-        "Get a component's props (with allowed values), variants, usage count and definition file from this repo. When several modules export the same name, returns the one chosen with decide, else the design-system one, else the most used (isDs and decided say which; the rest are in otherModules). Use before using or changing a component.",
+        "Get a component's props (with allowed values), variants, usage count and definition file from this repo. When the repo has a catalog (dsmith ai), the answer comes from it (source catalog: also description, deprecated, one usage example, origin); otherwise from the usage index and the definition file (source index). When several modules export the same name, returns the one chosen with decide, else the design-system or catalog one, else the most used (isDs and decided say which; the rest are in otherModules). Use before using or changing a component.",
       inputSchema: z.object({ name: z.string().min(1).max(MAX_TEXT), module: z.string().max(MAX_TEXT).optional() }),
       annotations: readOnly,
     },
@@ -188,13 +188,13 @@ export function createDsmithServer(deps: ServerDeps): Promise<McpServer> {
   server.registerResource(
     "tokens",
     "tokens://list",
-    { mimeType: "application/json", description: "Names of the design tokens available in this repo (source token-file, proposal or mixed)." },
+    { mimeType: "application/json", description: "Names of the design tokens available in this repo (source token-file, catalog, proposal or mixed)." },
     async (uri) => ({ contents: [{ uri: uri.href, text: toText(tokensList(await workspace())) }] }),
   );
   server.registerResource(
     "components",
     "components://list",
-    { mimeType: "application/json", description: "Components imported in this repo, most used first." },
+    { mimeType: "application/json", description: "Components of this repo's catalog (source catalog), or else the components imported in this repo, most used first (source index)." },
     async (uri) => ({ contents: [{ uri: uri.href, text: toText(componentsList(await workspace())) }] }),
   );
 

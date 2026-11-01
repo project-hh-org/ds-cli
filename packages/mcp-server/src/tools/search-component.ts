@@ -1,5 +1,5 @@
 import { searchComponents, type ComponentMatch } from "@dsmith-dev/core";
-import { precedence } from "../rank.js";
+import { precedence, standing } from "../rank.js";
 import type { Workspace } from "../workspace.js";
 
 export interface SearchComponentInput {
@@ -16,14 +16,15 @@ const DEFAULT_LIMIT = 10;
  * 점수가 같으면 결정된 module → DS module → 사용 수 순이고, 그 기준으로 앞선 항목의 `why`에 밝힌다.
  */
 export function searchComponent(ws: Workspace, input: SearchComponentInput): { matches: ComponentMatch[]; matched: number } {
-  const found = searchComponents(ws.components, input.intent);
+  const found = searchComponents(ws.candidates, input.intent);
   const flags = new Map(found.map((m) => [m, precedence(ws, m.name, m.module)] as const));
+  const rankOf = (m: ComponentMatch): [number, number] => standing(flags.get(m) ?? { decided: false, isDs: false, inCatalog: false });
   const sorted = found
     .map((m, i) => ({ m, i }))
     .sort((a, b) => {
-      const fa = flags.get(a.m);
-      const fb = flags.get(b.m);
-      return b.m.score - a.m.score || Number(fb?.decided) - Number(fa?.decided) || Number(fb?.isDs) - Number(fa?.isDs) || a.i - b.i;
+      const fa = rankOf(a.m);
+      const fb = rankOf(b.m);
+      return b.m.score - a.m.score || fb[0] - fa[0] || fb[1] - fa[1] || a.i - b.i;
     })
     .map((x) => x.m);
 
@@ -31,9 +32,10 @@ export function searchComponent(ws: Workspace, input: SearchComponentInput): { m
     const f = flags.get(m);
     const rivals = sorted.filter((o) => o !== m && o.score === m.score);
     const beatsDecided = f?.decided === true && rivals.some((o) => flags.get(o)?.decided !== true);
-    const beatsDs = f?.isDs === true && rivals.some((o) => flags.get(o)?.isDs !== true && flags.get(o)?.decided !== true);
+    const strong = (x: ComponentMatch): boolean => rankOf(x)[1] === 1;
+    const beatsPlain = strong(m) && rivals.some((o) => !strong(o) && flags.get(o)?.decided !== true);
     if (beatsDecided) return { ...m, why: `${m.why}; 동점이면 결정된 선택지 우선` };
-    if (beatsDs) return { ...m, why: `${m.why}; 동점이면 DS 모듈 우선` };
+    if (beatsPlain) return { ...m, why: `${m.why}; 동점이면 ${f?.isDs === true ? "DS 모듈" : "카탈로그 항목"} 우선` };
     return m;
   });
   return { matches: all.slice(0, input.limit ?? DEFAULT_LIMIT), matched: all.length };

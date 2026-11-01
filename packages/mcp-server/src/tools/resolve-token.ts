@@ -68,7 +68,7 @@ export function resolveNormalized(
     limit: ALTERNATIVES + 1,
   });
 
-  const sourceOf = (name: string): "token-file" | "proposal" => ws.tokenSources.get(name) ?? "token-file";
+  const sourceOf = (name: string): TokenSourceKind => ws.tokenSources.get(name) ?? "token-file";
   const [best, ...rest] = ranked;
   const out: ResolveTokenOutput = {
     input: inputEcho(input.raw, input.property),

@@ -68,7 +68,7 @@ export { COMPONENT_SYNONYMS, searchComponents } from "./component/search.js";
 export { collectCssVariables, readCssVariableTokens } from "./tokens/css-variables.js";
 export { proposalTokens } from "./tokens/proposal.js";
 export type { LoadedToken, LoadedTokens, TokenSourceKind } from "./tokens/load.js";
-export { loadTokens, tokenCategoryOf } from "./tokens/load.js";
+export { loadTokens, tokenCategoryOf, tokensFromCatalog } from "./tokens/load.js";
 export type {
   Confidence,
   DecisionCard,

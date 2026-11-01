@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { normalizeColor } from "../src/normalize/color.js";
 import { normalizeLength } from "../src/normalize/length.js";
 import { rankTokens } from "../src/match/token-matcher.js";
-import { loadTokens, tokenCategoryOf } from "../src/tokens/load.js";
+import { loadTokens, tokenCategoryOf, tokensFromCatalog } from "../src/tokens/load.js";
 import { proposalTokens } from "../src/tokens/proposal.js";
 import { buildTokenDraft } from "../src/tokens/draft.js";
 import { emitTokensCss, emitTokensTs } from "../src/tokens/emit.js";
@@ -435,5 +435,34 @@ describe("loadTokens .json", () => {
     );
     const loaded = await loadTokens(dir, ["tokens.json"], []);
     expect(loaded.tokens).toEqual([expect.objectContaining({ name: "--color-brand", source: "token-file", file: "tokens.json" })]);
+  });
+});
+
+describe("tokensFromCatalog", () => {
+  const colorTokens = [
+    { name: "--color-primary", value: "#3b82f6", category: "color" as const, file: "design-system/tokens.json" },
+  ];
+
+  it("색만 있는 카탈로그 토큰 + 간격 usage → mixed, 색은 catalog·간격은 proposal", () => {
+    const loaded = tokensFromCatalog(colorTokens, [lengthUsage("12px"), lengthUsage("12px")]);
+    expect(loaded.source).toBe("mixed");
+    expect(loaded.tokens.filter((t) => t.source === "catalog").map((t) => t.name)).toEqual(["--color-primary"]);
+    expect(loaded.tokens.find((t) => t.source === "catalog")?.file).toBe("design-system/tokens.json");
+    expect(loaded.tokens.filter((t) => t.source === "proposal").every((t) => t.category === "spacing")).toBe(true);
+    expect(loaded.tokens.some((t) => t.source === "proposal")).toBe(true);
+  });
+
+  it("모든 카테고리가 카탈로그에 있으면 제안 없이 catalog", () => {
+    const loaded = tokensFromCatalog(
+      [
+        ...colorTokens,
+        { name: "--space-2", value: "8px", category: "spacing" as const, file: "t.json" },
+        { name: "--radius-md", value: "6px", category: "radius" as const, file: "t.json" },
+        { name: "--font-size-md", value: "14px", category: "font-size" as const, file: "t.json" },
+      ],
+      [lengthUsage("12px")],
+    );
+    expect(loaded.source).toBe("catalog");
+    expect(loaded.tokens.every((t) => t.source === "catalog")).toBe(true);
   });
 });

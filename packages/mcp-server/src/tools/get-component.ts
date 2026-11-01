@@ -1,7 +1,15 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import { readComponentProps, resolveDefinitionFile, type ComponentSummary, type PropInfo } from "@dsmith-dev/core";
-import { precedence } from "../rank.js";
+import {
+  readComponentDoc,
+  readComponentProps,
+  resolveDefinitionFile,
+  type CatalogComponent,
+  type CatalogOrigin,
+  type ComponentSummary,
+  type PropInfo,
+} from "@dsmith-dev/core";
+import { catalogEntry, precedence, standing } from "../rank.js";
 import type { Workspace } from "../workspace.js";
 
 export interface GetComponentInput {
@@ -41,7 +49,14 @@ export interface GetComponentOutput {
   definitionFile?: string;
   /** 같은 이름의 다른 module (module을 지정하지 않았을 때). 순서는 고른 module과 같은 기준(결정 → DS → 사용 수) */
   otherModules?: OtherModule[];
-  /** 3a는 항상 "index" — 카탈로그(3b)가 없다 */
+  description?: string;
+  /** 카탈로그(또는 정의 파일 JSDoc)의 @deprecated 뒤 텍스트 */
+  deprecated?: string;
+  /** ≤1, 카탈로그의 사용 예(코드만) */
+  examples?: string[];
+  /** source "catalog"일 때 카탈로그가 어디서 읽었는지 */
+  origin?: CatalogOrigin;
+  /** "catalog": 카탈로그(.dsmith/catalog.json)의 항목에서 답했다. "index": 사용처 인덱스와 정의 파일 */
   source: "index" | "catalog";
 }
 
@@ -74,24 +89,52 @@ export function levenshtein(a: string, b: string): number {
 function similarNames(ws: Workspace, name: string): string[] {
   const needle = name.toLowerCase();
   const found = new Set<string>();
-  for (const c of ws.components) {
+  for (const c of ws.candidates) {
     const lower = c.name.toLowerCase();
     if (lower.includes(needle) || needle.includes(lower) || levenshtein(lower, needle) <= MAX_TYPO_DISTANCE) found.add(c.name);
   }
   return [...found].slice(0, SIMILAR_LIMIT);
 }
 
-/** 결정된 module → DS module → 사용 수(입력 순서 유지) */
+/** 결정된 module → DS module 또는 카탈로그에 있는 module → 사용 수(입력 순서 유지) */
 function rank(ws: Workspace, candidates: ComponentSummary[]): ComponentSummary[] {
-  const flags = new Map(candidates.map((c) => [c, precedence(ws, c.name, c.module)] as const));
+  const flags = new Map(candidates.map((c) => [c, standing(precedence(ws, c.name, c.module))] as const));
   return candidates
     .map((c, i) => ({ c, i }))
     .sort((a, b) => {
-      const fa = flags.get(a.c);
-      const fb = flags.get(b.c);
-      return Number(fb?.decided) - Number(fa?.decided) || Number(fb?.isDs) - Number(fa?.isDs) || b.c.count - a.c.count || a.i - b.i;
+      const fa = flags.get(a.c) ?? [0, 0];
+      const fb = flags.get(b.c) ?? [0, 0];
+      return fb[0] - fa[0] || fb[1] - fa[1] || b.c.count - a.c.count || a.i - b.i;
     })
     .map((x) => x.c);
+}
+
+/** 카탈로그 항목으로 답을 만든다(props·상속·변형·폐기·예시는 카탈로그, 사용 현황은 인덱스) */
+interface CatalogView {
+  props: PropInfo[];
+  propsSource: "type" | "usage";
+  inherits?: string[];
+  description?: string;
+  deprecated?: string;
+  examples?: string[];
+  definitionFile?: string;
+  origin: CatalogOrigin;
+}
+
+function fromCatalog(entry: CatalogComponent, chosen: ComponentSummary): CatalogView {
+  const typed = entry.propsStatus === "ok" || entry.props.length > 0;
+  const props: PropInfo[] = typed ? entry.props : chosen.props.map((name) => ({ name }));
+  const example = entry.examples?.[0]?.code;
+  return {
+    props,
+    propsSource: typed ? "type" : "usage",
+    ...(entry.inherits !== undefined && entry.inherits.length > 0 ? { inherits: entry.inherits } : {}),
+    ...(entry.description === undefined ? {} : { description: entry.description }),
+    ...(entry.deprecated === undefined ? {} : { deprecated: entry.deprecated }),
+    ...(example === undefined ? {} : { examples: [example] }),
+    ...(entry.file === undefined ? {} : { definitionFile: entry.file }),
+    origin: entry.origin,
+  };
 }
 
 /**
@@ -99,7 +142,7 @@ function rank(ws: Workspace, candidates: ComponentSummary[]): ComponentSummary[]
  * import 출처가 있는 것(module ≠ "")이 지역 사용보다 먼저다.
  */
 export async function getComponent(ws: Workspace, input: GetComponentInput): Promise<GetComponentOutput | ComponentNotFound> {
-  const matches = ws.components.filter((c) => c.name === input.name && (input.module === undefined || c.module === input.module));
+  const matches = ws.candidates.filter((c) => c.name === input.name && (input.module === undefined || c.module === input.module));
   const imported = matches.filter((c) => c.module !== "");
   const ranked = rank(ws, imported.length > 0 ? imported : matches);
   const chosen: ComponentSummary | undefined = ranked[0];
@@ -108,27 +151,36 @@ export async function getComponent(ws: Workspace, input: GetComponentInput): Pro
     return { error: "not-found", message: `컴포넌트 없음: ${input.name}${similar.length > 0 ? `. 비슷한 이름: ${similar.join(", ")}` : ""}`, similar };
   }
 
-  let props: PropInfo[] = chosen.props.map((name) => ({ name }));
-  let propsSource: GetComponentOutput["propsSource"] = "usage";
-  let inherits: string[] = [];
-  const definitionFile = isPathModule(chosen.module) ? await resolveDefinitionFile(ws.root, chosen.module) : null;
-  if (definitionFile !== null) {
-    const code = await fs.readFile(path.resolve(ws.root, definitionFile), "utf8").catch(() => null);
-    const read = code === null ? null : readComponentProps(code, definitionFile, chosen.name);
-    if (read !== null) {
-      props = read.props;
-      propsSource = "type";
-      inherits = read.inherits;
+  const entry = catalogEntry(ws, chosen.name, chosen.module);
+  const fromEntry = entry === undefined ? undefined : fromCatalog(entry, chosen);
+  let props: PropInfo[] = fromEntry?.props ?? chosen.props.map((name) => ({ name }));
+  let propsSource: GetComponentOutput["propsSource"] = fromEntry?.propsSource ?? "usage";
+  let inherits: string[] = fromEntry?.inherits ?? [];
+  let definitionFile: string | null = fromEntry?.definitionFile ?? null;
+  let doc: { description?: string; deprecated?: string } = fromEntry ?? {};
+  if (fromEntry === undefined) {
+    definitionFile = isPathModule(chosen.module) ? await resolveDefinitionFile(ws.root, chosen.module) : null;
+    if (definitionFile !== null) {
+      const code = await fs.readFile(path.resolve(ws.root, definitionFile), "utf8").catch(() => null);
+      const read = code === null ? null : readComponentProps(code, definitionFile, chosen.name);
+      if (read !== null) {
+        props = read.props;
+        propsSource = "type";
+        inherits = read.inherits;
+      }
+      // 카탈로그 밖의 컴포넌트도 정의 파일 JSDoc의 @deprecated는 알린다.
+      const deprecated = (code === null ? null : readComponentDoc(code, definitionFile, chosen.name))?.deprecated;
+      if (deprecated !== undefined) doc = { deprecated };
     }
   }
 
   const variants = props.find((p) => p.name === "variant")?.values;
   const otherModules: OtherModule[] =
     input.module === undefined
-      ? [...new Set(ranked.filter((c) => c !== chosen && c.module !== "").map((c) => c.module))].map((module) => ({
-          module,
-          ...precedence(ws, chosen.name, module),
-        }))
+      ? [...new Set(ranked.filter((c) => c !== chosen && c.module !== "").map((c) => c.module))].map((module) => {
+          const { isDs, decided } = precedence(ws, chosen.name, module);
+          return { module, isDs, decided };
+        })
       : [];
   const self = precedence(ws, chosen.name, chosen.module);
   return {
@@ -140,9 +192,13 @@ export async function getComponent(ws: Workspace, input: GetComponentInput): Pro
     propsSource,
     ...(inherits.length > 0 ? { inherits } : {}),
     ...(variants === undefined ? {} : { variants }),
+    ...(doc.description === undefined ? {} : { description: doc.description }),
+    ...(doc.deprecated === undefined ? {} : { deprecated: doc.deprecated }),
+    ...(fromEntry?.examples === undefined ? {} : { examples: fromEntry.examples }),
+    ...(fromEntry?.origin === undefined ? {} : { origin: fromEntry.origin }),
     usage: { count: chosen.count, files: chosen.files.slice(0, USAGE_FILES).map((f) => f.file) },
     ...(definitionFile === null ? {} : { definitionFile }),
     ...(otherModules.length > 0 ? { otherModules } : {}),
-    source: "index",
+    source: fromEntry === undefined ? "index" : "catalog",
   };
 }

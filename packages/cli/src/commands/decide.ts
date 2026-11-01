@@ -4,8 +4,10 @@ import {
   explainDecision,
   listDecisions,
   loadTokens,
+  readCatalog,
   readDecisions,
   readIndex,
+  tokensFromCatalog,
   type DecisionKind,
   type DecisionListItem,
   type DecisionRecord,
@@ -43,11 +45,15 @@ export async function runDecideExplain(
 ): Promise<ExplainResult> {
   const { root, index, isDsModule, tokenFiles } = await loadAudited(rootArg);
   const decisions = await readDecisions(root);
-  // 토큰 파일의 토큰만 매처에 쓴다(proposal 없음). 못 읽으면 일치율 없이 진행한다.
-  const tokens = await loadTokens(root, tokenFiles, []).then(
-    (loaded) => loaded.tokens,
-    () => [],
-  );
+  // 토큰 파일·카탈로그의 토큰만 매처에 쓴다(proposal 없음). MCP 서버와 같은 우선순위: 카탈로그에 토큰이 있으면 카탈로그. 못 읽으면 일치율 없이 진행한다.
+  const catalog = await readCatalog(root).catch(() => null);
+  const tokens =
+    catalog !== null && Array.isArray(catalog.tokens) && catalog.tokens.length > 0
+      ? tokensFromCatalog(catalog.tokens, []).tokens
+      : await loadTokens(root, tokenFiles, []).then(
+          (loaded) => loaded.tokens,
+          () => [],
+        );
   return explainDecision(root, index, item, {
     isDsModule,
     decisions,

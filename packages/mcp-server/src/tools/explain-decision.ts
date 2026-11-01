@@ -13,8 +13,8 @@ export interface ExplainDecisionInput {
  * 카드는 그대로, 실패는 `{ error: "not-found" | "ambiguous-kind", … }`. 실패를 오류 응답으로 바꾸는 것은 server.ts다.
  */
 export function explainDecisionTool(ws: Workspace, input: ExplainDecisionInput, opts: { git: boolean }): Promise<ExplainResult> {
-  // CLI와 같은 토큰: 토큰 파일의 토큰만(audit 제안 토큰은 매처에 쓰지 않는다)
-  const tokens = ws.tokens.tokens.filter((t) => t.source === "token-file");
+  // CLI와 같은 토큰: 토큰 파일·카탈로그의 토큰만(audit 제안 토큰은 매처에 쓰지 않는다)
+  const tokens = ws.tokens.tokens.filter((t) => t.source !== "proposal");
   return explainDecision(ws.root, ws.index, input.item, {
     isDsModule: ws.isDsModule,
     decisions: ws.decisions,
