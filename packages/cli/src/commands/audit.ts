@@ -31,33 +31,59 @@ function byFileOf(index: Index): AuditResult["hardcoded"]["byFile"] {
     .slice(0, BY_FILE_LIMIT);
 }
 
+const LOCAL_DEFINITION_LIMIT = 20;
+
+/** name+module로 묶는다. 서브패스·별칭이 달라도 같은 모듈이면 한 그룹이고, importedFrom은 처음 본 값을 표시한다. */
 function componentsOf(usages: ComponentUsage[]): AuditResult["components"] {
-  const groups = new Map<string, { name: string; importedFrom: string | null; count: number }>();
+  const groups = new Map<string, AuditResult["components"][number]>();
   for (const c of usages) {
-    const key = JSON.stringify([c.name, c.importedFrom]);
+    const key = JSON.stringify([c.name, c.module]);
     const g = groups.get(key);
     if (g) g.count += 1;
-    else groups.set(key, { name: c.name, importedFrom: c.importedFrom, count: 1 });
+    else groups.set(key, { name: c.name, importedFrom: c.importedFrom, module: c.module, count: 1 });
   }
   return [...groups.values()].sort(
-    (a, b) => b.count - a.count || a.name.localeCompare(b.name) || (a.importedFrom ?? "").localeCompare(b.importedFrom ?? ""),
+    (a, b) =>
+      b.count - a.count ||
+      a.name.localeCompare(b.name) ||
+      (a.importedFrom ?? "").localeCompare(b.importedFrom ?? "") ||
+      a.module.localeCompare(b.module),
   );
 }
 
-/** 같은 이름이 둘 이상의 importedFrom(null 포함)에서 오는 컴포넌트 이름을 사용 수 내림차순으로 모은다. */
+/**
+ * 같은 이름이 둘 이상의 module에서 오는 컴포넌트 이름을 사용 수 내림차순으로 모은다.
+ * import 없는 지역 사용(module "")은 출처로 세지 않는다 — 그건 localDefinitions가 따로 보고한다.
+ */
 function duplicatesOf(components: AuditResult["components"]): AuditResult["duplicates"] {
-  const byName = new Map<string, { sources: Set<string | null>; total: number }>();
+  const byName = new Map<string, { modules: Set<string>; total: number }>();
   for (const c of components) {
-    const entry = byName.get(c.name) ?? { sources: new Set<string | null>(), total: 0 };
-    entry.sources.add(c.importedFrom);
+    const entry = byName.get(c.name) ?? { modules: new Set<string>(), total: 0 };
+    if (c.module !== "") entry.modules.add(c.module);
     entry.total += c.count;
     byName.set(c.name, entry);
   }
   const names = [...byName.entries()]
-    .filter(([, e]) => e.sources.size >= 2)
+    .filter(([, e]) => e.modules.size >= 2)
     .sort((a, b) => b[1].total - a[1].total || a[0].localeCompare(b[0]))
     .map(([name]) => name);
   return names.length === 0 ? [] : [{ names, reason: "same-name-different-source" }];
+}
+
+/** import 없이(importedFrom null) 둘 이상의 파일에서 쓴 이름. 파일 수 내림차순, 같으면 이름순, 상위 20개. */
+function localDefinitionsOf(usages: ComponentUsage[]): AuditResult["localDefinitions"] {
+  const filesByName = new Map<string, Set<string>>();
+  for (const c of usages) {
+    if (c.importedFrom !== null) continue;
+    const files = filesByName.get(c.name) ?? new Set<string>();
+    files.add(c.file);
+    filesByName.set(c.name, files);
+  }
+  return [...filesByName.entries()]
+    .map(([name, files]) => ({ name, files: files.size }))
+    .filter((d) => d.files >= 2)
+    .sort((a, b) => b.files - a.files || a.name.localeCompare(b.name))
+    .slice(0, LOCAL_DEFINITION_LIMIT);
 }
 
 function round4(n: number): number {
@@ -102,6 +128,7 @@ export function computeAudit(detectResult: DetectResult, index: Index): AuditRes
     dynamicCount: index.styles.filter((u) => u.source === "dynamic").length,
     components,
     duplicates,
+    localDefinitions: localDefinitionsOf(index.components),
     health: healthOf(index, detectResult.ds, duplicateCount),
   };
 }

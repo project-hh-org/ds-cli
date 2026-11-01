@@ -39,6 +39,10 @@ exports[`fixtures/inline-app > inline-style만 켜지고 동적 값 1건을 센�
 
 없음
 
+## 지역 재정의 컴포넌트
+
+없음
+
 ## 파일별 하드코딩 상위
 
 | 파일 | 하드코딩 수 |
@@ -87,6 +91,10 @@ exports[`fixtures/mixed-app > 두 extractor가 켜지고, 한 파일에서 양�
 없음
 
 ## 중복 컴포넌트
+
+없음
+
+## 지역 재정의 컴포넌트
 
 없음
 
@@ -143,6 +151,10 @@ exports[`fixtures/tailwind-app > Tailwind만 켜지고, 근접한 파랑 두 개
 
 없음
 
+## 지역 재정의 컴포넌트
+
+없음
+
 ## 파일별 하드코딩 상위
 
 | 파일 | 하드코딩 수 |
@@ -194,6 +206,10 @@ exports[`fixtures/with-ds-app > radix + 로컬 components/ui는 로컬 DS이고,
 ## 중복 컴포넌트
 
 - Button (same-name-different-source)
+
+## 지역 재정의 컴포넌트
+
+없음
 
 ## 파일별 하드코딩 상위
 

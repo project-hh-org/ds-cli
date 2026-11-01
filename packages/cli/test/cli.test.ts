@@ -106,7 +106,56 @@ describe("runAudit", () => {
     );
     write("src/Q.tsx", `import { Button } from "./b/Button";\nexport const Q = () => <Button />;\n`);
     const { result } = await runAudit(tmp);
-    expect(result.components[0]).toEqual({ name: "Button", importedFrom: "src/a/Button", count: 2 });
+    expect(result.components[0]).toEqual({ name: "Button", importedFrom: "src/a/Button", module: "src/a/Button", count: 2 });
+    expect(result.duplicates).toEqual([{ names: ["Button"], reason: "same-name-different-source" }]);
+    expect(result.health.duplicateCount).toBe(1);
+  });
+
+  function subpathAndLocalRepo(): void {
+    write("package.json", JSON.stringify({ name: "app", dependencies: { react: "^18", "@mui/material": "^6" } }));
+    write("src/A.tsx", `import Button from "@mui/material/Button";\nexport const A = () => <Button />;\n`);
+    write("src/B.tsx", `import { Button } from "@mui/material";\nexport const B = () => <><Button /><Button /></>;\n`);
+    write(
+      "src/P.tsx",
+      `import { Card } from "./Card";\nfunction Header() { return <header />; }\nfunction Footer() { return <footer />; }\nexport const P = () => <><Header /><Footer /><Card /></>;\n`,
+    );
+    write(
+      "src/Q.tsx",
+      `function Header() { return <header />; }\nfunction Card() { return <div />; }\nexport const Q = () => <><Header /><Header /><Card /></>;\n`,
+    );
+    write("src/Card.tsx", `export const Card = () => <div />;\n`);
+  }
+
+  it("패키지 서브패스와 루트 import는 같은 출처, import 없는 이름은 출처로 세지 않아 중복이 아니다", async () => {
+    subpathAndLocalRepo();
+    const { result } = await runAudit(tmp);
+    expect(result.duplicates).toEqual([]);
+    expect(result.health.duplicateCount).toBe(0);
+    // 같은 module로 합쳐진 그룹은 처음 본(정렬된 파일 순서상 A.tsx의) importedFrom을 표시한다.
+    expect(result.components.filter((c) => c.name === "Button")).toEqual([
+      { name: "Button", importedFrom: "@mui/material/Button", module: "@mui/material", count: 3 },
+    ]);
+    // Card는 P.tsx에서 import, Q.tsx에서 지역 정의: 출처(module)는 하나뿐이라 중복이 아니다.
+    expect(result.components.filter((c) => c.name === "Card").map((c) => c.module).sort()).toEqual(["", "src/Card"]);
+  });
+
+  it("두 파일 이상에서 import 없이 쓴 이름은 지역 재정의로 모은다(한 파일만이면 제외)", async () => {
+    subpathAndLocalRepo();
+    const { result, reportPath } = await runAudit(tmp);
+    expect(result.localDefinitions).toEqual([
+      { name: "Header", files: 2 },
+    ]);
+    expect(result.duplicates.flatMap((d) => d.names)).not.toContain("Header");
+    const md = fs.readFileSync(reportPath, "utf-8");
+    expect(md).toContain("## 지역 재정의 컴포넌트");
+    expect(md).toContain("| Header | 2 |");
+  });
+
+  it("같은 이름이 패키지와 로컬 파일 두 module에서 오면 중복이다", async () => {
+    subpathAndLocalRepo();
+    write("src/ui/button.tsx", `export const Button = () => <button />;\n`);
+    write("src/C.tsx", `import { Button } from "./ui/button";\nexport const C = () => <Button />;\n`);
+    const { result } = await runAudit(tmp);
     expect(result.duplicates).toEqual([{ names: ["Button"], reason: "same-name-different-source" }]);
     expect(result.health.duplicateCount).toBe(1);
   });
