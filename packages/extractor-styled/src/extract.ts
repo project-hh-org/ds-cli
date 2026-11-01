@@ -3,7 +3,7 @@ import { JS_FILES } from "@dsmith-dev/extractor-api";
 import type { ExtractContext, Extractor, StyleUsage } from "@dsmith-dev/extractor-api";
 import type { Expression, Node, ObjectExpression, Program } from "@babel/types";
 import { usagesFromObject, usagesFromTemplate } from "./template.js";
-import { write } from "./write.js";
+import { tokenRef, write } from "./write.js";
 
 export const EXTRACTOR_NAME = "styled";
 
@@ -255,4 +255,5 @@ export const styledExtractor: Extractor = {
     (ctx.code.includes("styled") || ctx.code.includes("createGlobalStyle") || ctx.code.includes("css`")),
   extract: (ctx) => extractCssInJs(ctx, EXTRACTOR_NAME, ownedByStyled),
   write,
+  tokenRef,
 };

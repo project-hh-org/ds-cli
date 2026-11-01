@@ -58,6 +58,11 @@ export interface StyleObjectPatch {
   start: number;
   end: number;
   quote: boolean;
+  /**
+   * 값 노드가 문자열 리터럴이고 치환 구간이 따옴표 안 내용 전체일 때만: 따옴표를 포함한 노드 전체 구간.
+   * 문자열을 숫자 같은 비문자열 값으로 바꾸고 싶은 Extractor(mui-sx 숫자 스케일)가 쓴다. 나머지는 무시한다.
+   */
+  literal?: { start: number; end: number };
 }
 
 export interface StyleObjectUsage {
@@ -80,7 +85,10 @@ function fromString(ctx: StyleObjectContext, key: string, value: StringLiteral, 
     { file: ctx.file, extractor: ctx.extractor, code: ctx.code, lineOf: locatorFor(ctx.code) },
   );
   if (result === null) return null;
-  return { usage: result.usage, patch: result.patch === null ? null : { ...result.patch, quote: false } };
+  if (result.patch === null) return { usage: result.usage, patch: null };
+  const patch: StyleObjectPatch = { ...result.patch, quote: false };
+  if (result.patch.start === start + 1 && result.patch.end === end - 1) patch.literal = { start, end };
+  return { usage: result.usage, patch };
 }
 
 function buildUsage(ctx: StyleObjectContext, key: string, value: Expression | PatternLike): StyleObjectUsage | null {

@@ -4,7 +4,7 @@ import { JS_FILES } from "@dsmith-dev/extractor-api";
 import type { ExtractContext, Extractor, StyleUsage } from "@dsmith-dev/extractor-api";
 import type { Expression, ObjectExpression, ObjectProperty } from "@babel/types";
 import { MUI_KEY_MAP, SHAPE_BORDER_RADIUS_PX, isPalettePath, isSpacingProp, spacingToPx } from "./theme-scale.js";
-import { registerPatchTarget, write } from "./write.js";
+import { registerPatchTarget, tokenRef, write } from "./write.js";
 
 export const EXTRACTOR_NAME = "mui-sx";
 
@@ -189,4 +189,5 @@ export const muiSxExtractor: Extractor = {
     JS_FILE.test(ctx.file) && ctx.code.includes("sx=") && (ctx.code.includes("@mui/") || ctx.code.includes("sx={")),
   extract,
   write,
+  tokenRef,
 };

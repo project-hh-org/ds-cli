@@ -1,3 +1,4 @@
+import { runConformance } from "@dsmith-dev/extractor-api";
 import type { StyleUsage, WritePatch } from "@dsmith-dev/extractor-api";
 import { describe, expect, it } from "vitest";
 import { muiSxExtractor } from "../src/index.js";
@@ -74,5 +75,62 @@ describe("muiSxExtractor.write: 점수 대상이 아닌 usage", () => {
       ["height", true],
       ["color", false],
     ]);
+  });
+});
+
+describe("muiSxExtractor.tokenRef + conformance write 왕복", () => {
+  const blue = { name: "--color-gray-900", value: "#111", category: "color" as const, normalized: { kind: "color" as const, hex: "#111111", l: 0.2, c: 0, h: 0 } };
+  const space4 = { name: "--space-4", value: "16px", category: "spacing" as const, normalized: { kind: "length" as const, px: 16 } };
+  const space3 = { name: "--space-3", value: "12px", category: "spacing" as const, normalized: { kind: "length" as const, px: 12 } };
+  const text = { name: "--text-xs", value: "12px", category: "font-size" as const, normalized: { kind: "length" as const, px: 12 } };
+  const radius = { name: "--radius-md", value: "8px", category: "radius" as const, normalized: { kind: "length" as const, px: 8 } };
+
+  it("정확히 8의 배수인 간격은 숫자 스케일, 나머지는 CSS 변수", () => {
+    const report = runConformance("mui-sx", () => muiSxExtractor, [
+      {
+        file: "s/a.tsx",
+        code: JSX(`{ p: "16px", color: "#111" }`),
+        expect: [],
+        writes: [
+          { target: { property: "padding" }, token: space4, ref: "2", output: JSX(`{ p: 2, color: "#111" }`), reextract: { source: "token", property: "padding" } },
+          { target: { property: "color" }, token: blue, ref: "var(--color-gray-900)", output: JSX(`{ p: "16px", color: "var(--color-gray-900)" }`), reextract: { source: "token", property: "color" } },
+        ],
+      },
+      {
+        file: "s/a.tsx",
+        code: JSX(`{ p: "13px", fontSize: 13, borderRadius: "8px" }`),
+        expect: [],
+        writes: [
+          { target: { property: "padding" }, token: space3, ref: "var(--space-3)", output: JSX(`{ p: "var(--space-3)", fontSize: 13, borderRadius: "8px" }`), reextract: { source: "token", property: "padding" } },
+          { target: { property: "font-size" }, token: text, ref: "var(--text-xs)", output: JSX(`{ p: "13px", fontSize: "var(--text-xs)", borderRadius: "8px" }`), reextract: { source: "token", property: "font-size" } },
+          { target: { property: "border-radius" }, token: radius, ref: "var(--radius-md)", reextract: { source: "token", property: "border-radius" } },
+        ],
+      },
+      {
+        // 값이 정확히 같지 않거나(close) 문자열 일부(다중 값)만 치환하는 경우에는 숫자 스케일을 쓰지 않는다
+        file: "s/a.tsx",
+        code: JSX(`{ margin: "var(--m) 16px", gap: "15px" }`),
+        expect: [],
+        writes: [
+          { target: { raw: "16px" }, token: space4, ref: "var(--space-4)", reextract: { source: "token", property: "margin" } },
+          { target: { raw: "15px" }, token: space4, ref: "var(--space-4)", reextract: { source: "token", property: "gap" } },
+        ],
+      },
+      {
+        file: "s/a.tsx",
+        code: JSX(`{ p: "0px", m: "-16px" }`),
+        expect: [],
+        writes: [
+          { target: { property: "padding" }, token: { ...space4, normalized: { kind: "length" as const, px: 0 } }, ref: "var(--space-4)", reextract: { source: "token", property: "padding" } },
+        ],
+      },
+    ]);
+    expect(report.failed).toEqual([]);
+    expect(report.passed).toBe(4);
+  });
+
+  it("숫자 스케일 write는 리터럴 구간이 없으면 null", () => {
+    const code = JSX(`{ margin: "var(--m) 16px" }`);
+    expect(muiSxExtractor.write(find(code, "16px"), "2")).toBeNull();
   });
 });

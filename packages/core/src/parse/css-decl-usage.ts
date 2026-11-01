@@ -3,6 +3,7 @@ import {
   cssPropertyToStyleProperty,
   isColorProperty,
   isLengthProperty,
+  shorthandColorProperty,
   splitShorthandColor,
 } from "../model/css-property.js";
 import { normalizeColor } from "../normalize/color.js";
@@ -94,6 +95,18 @@ function classify(prop: string, value: string): Classified {
       to: shorthand.end,
       normalized: normalizeColor(shorthand.colorText) ?? UNKNOWN,
       source: "hardcoded",
+    };
+  }
+  // 색 자리가 이미 토큰인 축약(`border: 1px solid var(--c)`): 그 var()가 색 토큰이다. 치환(migrate) 뒤 재추출이 token으로 읽도록 한다.
+  const shorthandProperty = shorthandColorProperty(prop);
+  const tokenOperand = shorthandProperty === null ? undefined : operands.find((t) => TOKEN_REF.test(t.text));
+  if (shorthandProperty !== null && tokenOperand !== undefined) {
+    return {
+      property: shorthandProperty,
+      from: tokenOperand.from,
+      to: tokenOperand.to,
+      normalized: UNKNOWN,
+      source: "token",
     };
   }
   if (isColorProperty(property)) {

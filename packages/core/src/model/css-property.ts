@@ -75,7 +75,12 @@ const SHORTHAND_COLOR_PROPERTY: Readonly<Record<string, StyleProperty>> = {
   "border-left": "border-color",
 };
 
-const HEX_COLOR = /^#[0-9a-fA-F]{3,8}(?![\w-])/;
+/** 색을 품는 축약 속성(`border`·`background`·`outline` …)이 가리키는 색 속성. 축약이 아니면 null. */
+export function shorthandColorProperty(prop: string): StyleProperty | null {
+  return SHORTHAND_COLOR_PROPERTY[camelToKebab(prop)] ?? null;
+}
+
+const HEX_COLOR =/^#[0-9a-fA-F]{3,8}(?![\w-])/;
 const COLOR_FUNCTION = /^(?:rgba?|hsla?)\(/i;
 const WORD = /^[A-Za-z][A-Za-z-]*/;
 

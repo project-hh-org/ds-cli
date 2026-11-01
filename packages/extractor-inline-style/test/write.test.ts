@@ -1,3 +1,4 @@
+import { runConformance } from "@dsmith-dev/extractor-api";
 import { describe, expect, it } from "vitest";
 import { inlineStyleExtractor } from "../src/index.js";
 
@@ -71,5 +72,36 @@ describe("inlineStyleExtractor.write: 점수 대상이 아닌 usage", () => {
       ["width", true],
       ["padding", false],
     ]);
+  });
+});
+
+describe("inlineStyleExtractor.tokenRef + conformance write 왕복", () => {
+  const blue = { name: "--color-blue-500", value: "#3b82f6", category: "color" as const, normalized: { kind: "color" as const, hex: "#3b82f6", l: 0.62, c: 0.2, h: 260 } };
+  const space = { name: "--space-2", value: "8px", category: "spacing" as const, normalized: { kind: "length" as const, px: 8 } };
+  const radius = { name: "--radius-sm", value: "4px", category: "radius" as const, normalized: { kind: "length" as const, px: 4 } };
+  const text = { name: "--text-xs", value: "12px", category: "font-size" as const, normalized: { kind: "length" as const, px: 12 } };
+
+  it("숫자 노드는 문자열로 감싸 치환되고 token으로 재추출된다", () => {
+    const report = runConformance("inline-style", () => inlineStyleExtractor, [
+      {
+        file: "w.tsx",
+        code: 'const x = <div style={{ padding: 8, color: "#3b82f6", borderRadius: 4, fontSize: 12 }} />;',
+        expect: [],
+        writes: [
+          { target: { property: "padding" }, token: space, ref: "var(--space-2)", output: 'const x = <div style={{ padding: "var(--space-2)", color: "#3b82f6", borderRadius: 4, fontSize: 12 }} />;', reextract: { source: "token", property: "padding" } },
+          { target: { property: "color" }, token: blue, ref: "var(--color-blue-500)", output: 'const x = <div style={{ padding: 8, color: "var(--color-blue-500)", borderRadius: 4, fontSize: 12 }} />;', reextract: { source: "token", property: "color" } },
+          { target: { property: "border-radius" }, token: radius, ref: "var(--radius-sm)", reextract: { source: "token", property: "border-radius" } },
+          { target: { property: "font-size" }, token: text, ref: "var(--text-xs)", reextract: { source: "token", property: "font-size" } },
+        ],
+      },
+      {
+        file: "w.tsx",
+        code: 'const x = <div style={{ color: "#3b82f6" }} />;',
+        expect: [],
+        writes: [{ target: { property: "color" }, token: { ...blue, name: "color.brand" }, ref: null, reextract: {} }],
+      },
+    ]);
+    expect(report.failed).toEqual([]);
+    expect(report.passed).toBe(2);
   });
 });

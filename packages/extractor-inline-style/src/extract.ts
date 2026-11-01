@@ -1,7 +1,7 @@
 import { parseTsx, traverse, usagesFromStyleObject } from "@dsmith-dev/core";
 import { JS_FILES } from "@dsmith-dev/extractor-api";
 import type { ExtractContext, Extractor, StyleUsage } from "@dsmith-dev/extractor-api";
-import { registerPatchTarget, write } from "./write.js";
+import { registerPatchTarget, tokenRef, write } from "./write.js";
 
 export const EXTRACTOR_NAME = "inline-style";
 
@@ -65,4 +65,5 @@ export const inlineStyleExtractor: Extractor = {
   appliesTo: (ctx) => /\.[cm]?[jt]sx?$/.test(ctx.file) && ctx.code.includes("style="),
   extract,
   write,
+  tokenRef,
 };

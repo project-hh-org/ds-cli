@@ -1,5 +1,5 @@
 import { normalizeColor, normalizeLength, parseTsx, traverse } from "@dsmith-dev/core";
-import { JS_FILES } from "@dsmith-dev/extractor-api";
+import { JS_FILES, TAILWIND_PRESET_PREFIX } from "@dsmith-dev/extractor-api";
 import type {
   ExtractContext,
   Extractor,
@@ -10,7 +10,7 @@ import type {
 import type { Node } from "@babel/types";
 import { parseClassToken, type ParsedClass } from "./class-parser.js";
 import { defaultTheme } from "./default-theme.js";
-import { registerPatchTarget, write } from "./write.js";
+import { registerPatchTarget, tokenRef, write } from "./write.js";
 
 export const EXTRACTOR_NAME = "tailwind";
 
@@ -86,6 +86,9 @@ const NON_STYLE_ARBITRARY = /^(?:url\(|[a-z-]*gradient\(|(?:image|percentage|pos
 const TYPE_HINT = /^(color|length):(.*)$/s;
 /** `var(--…)` 값은 CSS 변수(토큰) 참조다. */
 const CSS_VAR_REF = /^\s*var\(\s*--/;
+
+/** 프리셋 글꼴 크기 키(`ds-xs`, `ds-2xl`, 충돌 접미 `ds-sm-2`). 프리셋이 `fontSize`에 평탄 키로 넣는 이름이다. */
+const PRESET_FONT_SIZE_KEY = new RegExp(`^${TAILWIND_PRESET_PREFIX}-(xs|sm|base|lg|xl|[2-9]xl)(-\\d+)?$`);
 
 interface Resolved {
   property: StyleProperty;
@@ -176,6 +179,10 @@ function resolveNamed(c: ParsedClass, rule: Rule): Resolved | null {
   }
 
   if (value === null) return null;
+  // `text-ds-xs`: init 프리셋의 글꼴 크기 키(색이 아니다). 다른 접두의 `text-<이름>`은 종전대로 색으로 본다.
+  if (rule.kind === "text" && PRESET_FONT_SIZE_KEY.test(value)) {
+    return { property: "font-size", normalized: UNKNOWN, source: "token" };
+  }
   const hex = lookup(defaultTheme.colors, value);
   const colorProperty: StyleProperty = rule.kind === "text" ? "color" : rule.property;
   if (hex !== undefined) {
@@ -251,6 +258,8 @@ class Collector {
         end: offset + token.length,
         variants: parsed.variants,
         important: parsed.important,
+        utility: parsed.utility,
+        negative: parsed.negative,
       });
       this.usages.push(usage);
     }
@@ -348,4 +357,5 @@ export const tailwindExtractor: Extractor = {
   appliesTo: (ctx) => /\.[cm]?[jt]sx?$/.test(ctx.file) && ctx.code.includes("className"),
   extract,
   write,
+  tokenRef,
 };

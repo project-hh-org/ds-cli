@@ -1,4 +1,5 @@
 import type { StyleUsage, WritePatch } from "@dsmith-dev/extractor-api";
+import { runConformance } from "@dsmith-dev/extractor-api";
 import { describe, expect, it } from "vitest";
 import { cssExtractor } from "../src/index.js";
 
@@ -71,5 +72,47 @@ describe("cssExtractor.write: 점수 대상이 아닌 usage", () => {
       ["width", true],
       ["color", false],
     ]);
+  });
+});
+
+describe("cssExtractor.tokenRef + conformance write 왕복", () => {
+  const blue = { name: "--color-blue-500", value: "#3b82f6", category: "color" as const, normalized: { kind: "color" as const, hex: "#3b82f6", l: 0.62, c: 0.2, h: 260 } };
+  const bg = { name: "--color-bg", value: "#fff", category: "color" as const, normalized: { kind: "color" as const, hex: "#ffffff", l: 1, c: 0, h: 0 } };
+  const space = { name: "--space-2", value: "8px", category: "spacing" as const, normalized: { kind: "length" as const, px: 8 } };
+  const radius = { name: "--radius-sm", value: "4px", category: "radius" as const, normalized: { kind: "length" as const, px: 4 } };
+
+  it("tokenRef는 var(--x)이고 CSS 변수가 아닌 이름은 null", () => {
+    const usage = find(".a{color:#fff}", "#fff");
+    expect(cssExtractor.tokenRef!(bg, usage, {})).toBe("var(--color-bg)");
+    expect(cssExtractor.tokenRef!({ ...bg, name: "color.bg" }, usage, {})).toBeNull();
+  });
+
+  it("write 왕복: 색·간격·모서리 치환 뒤 token으로 읽히고 나머지는 그대로", () => {
+    const report = runConformance("css", () => cssExtractor, [
+      {
+        file: "a.css",
+        code: ".a { color: #3b82f6; padding: 8px; border-radius: 4px; }",
+        expect: [],
+        writes: [
+          { target: { property: "color" }, token: blue, ref: "var(--color-blue-500)", output: ".a { color: var(--color-blue-500); padding: 8px; border-radius: 4px; }", reextract: { source: "token", property: "color" } },
+          { target: { property: "padding" }, token: space, ref: "var(--space-2)", output: ".a { color: #3b82f6; padding: var(--space-2); border-radius: 4px; }", reextract: { source: "token", property: "padding" } },
+          { target: { property: "border-radius" }, token: radius, ref: "var(--radius-sm)", reextract: { source: "token", property: "border-radius" } },
+        ],
+      },
+      {
+        file: "a.css",
+        code: ".a { border: 1px solid #3b82f6; }",
+        expect: [],
+        writes: [{ target: { raw: "#3b82f6" }, token: blue, ref: "var(--color-blue-500)", output: ".a { border: 1px solid var(--color-blue-500); }", reextract: { source: "token", property: "border-color" } }],
+      },
+      {
+        file: "a.css",
+        code: ".a { color: #fff; }",
+        expect: [],
+        writes: [{ target: { property: "color" }, token: { ...bg, name: "color.bg" }, ref: null, reextract: {} }],
+      },
+    ]);
+    expect(report.failed).toEqual([]);
+    expect(report.passed).toBe(3);
   });
 });

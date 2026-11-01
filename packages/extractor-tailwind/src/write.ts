@@ -1,4 +1,5 @@
-import type { StyleUsage, WritePatch } from "@dsmith-dev/extractor-api";
+import { cssVarRef } from "@dsmith-dev/extractor-api";
+import type { StyleProperty, StyleUsage, TokenLike, TokenRefContext, WritePatch } from "@dsmith-dev/extractor-api";
 import { isRatedUsage } from "@dsmith-dev/core";
 
 /** 치환할 클래스 토큰의 소스 구간(variant 접두 포함)과 보존할 variant 목록. */
@@ -8,6 +9,10 @@ interface PatchTarget {
   file: string;
   variants: readonly string[];
   important: "prefix" | "suffix" | null;
+  /** 유틸리티 이름(`bg`, `p`, `rounded-t` …) — 토큰 참조 클래스를 만들 때 쓴다 */
+  utility: string;
+  /** `-mt-2`처럼 음수 접두가 있었는가 */
+  negative: boolean;
 }
 
 const patchTargets = new WeakMap<StyleUsage, PatchTarget>();
@@ -31,4 +36,36 @@ export function write(usage: StyleUsage, tokenRef: string): WritePatch | null {
   const important = target.important === "suffix" ? "!" : "";
   const replacement = [...target.variants, `${body}${important}`].join(":");
   return { file: target.file, start: target.start, end: target.end, replacement };
+}
+
+const COLOR_PROPERTIES: ReadonlySet<StyleProperty> = new Set(["color", "background-color", "border-color", "fill", "stroke"]);
+const SPACING_PROPERTIES: ReadonlySet<StyleProperty> = new Set(["padding", "margin", "gap"]);
+
+/**
+ * 토큰을 참조하는 유틸리티 클래스(variant·`!`는 write가 붙인다). 프리셋 키가 있으면 클래스명(`bg-ds-blue-400`),
+ * 없으면 타입 힌트가 붙은 임의값(`bg-[color:var(--color-blue-400)]`, `text-[length:var(--text-xs)]`).
+ * CSS 변수가 아닌 토큰, 토큰 대상이 아닌 속성(width·height), 토큰 분류와 속성이 안 맞는 경우는 null.
+ */
+export function tokenRef(token: TokenLike, usage: StyleUsage, ctx: TokenRefContext): string | null {
+  const target = patchTargets.get(usage);
+  if (target === undefined) return null;
+  const variable = cssVarRef(token);
+  if (variable === null) return null;
+  const key = ctx.preset?.keys[token.name];
+  const neg = target.negative ? "-" : "";
+  const { utility } = target;
+  switch (token.category) {
+    case "color":
+      if (!COLOR_PROPERTIES.has(usage.property)) return null;
+      return key !== undefined ? `${utility}-${key}` : `${utility}-[color:${variable}]`;
+    case "spacing":
+      if (!SPACING_PROPERTIES.has(usage.property)) return null;
+      return key !== undefined ? `${neg}${utility}-${key}` : `${neg}${utility}-[${variable}]`;
+    case "radius":
+      if (usage.property !== "border-radius") return null;
+      return key !== undefined ? `${utility}-${key}` : `${utility}-[${variable}]`;
+    case "font-size":
+      if (usage.property !== "font-size") return null;
+      return key !== undefined ? `text-${key}` : `text-[length:${variable}]`;
+  }
 }

@@ -1,3 +1,4 @@
+import { runConformance } from "@dsmith-dev/extractor-api";
 import type { StyleUsage, WritePatch } from "@dsmith-dev/extractor-api";
 import { describe, expect, it } from "vitest";
 import { tailwindExtractor } from "../src/index.js";
@@ -108,6 +109,91 @@ describe("tailwindExtractor.write: 점수 대상이 아닌 usage", () => {
       ["text-[foo]", true],
       ["w-[calc(100%-8px)]", true],
       ["p-[13px]", false],
+    ]);
+  });
+});
+
+describe("tailwindExtractor.tokenRef + conformance write 왕복", () => {
+  const blue = { name: "--color-blue-500", value: "#3b82f6", category: "color" as const, normalized: { kind: "color" as const, hex: "#3b82f6", l: 0.62, c: 0.2, h: 260 } };
+  const space = { name: "--space-2", value: "8px", category: "spacing" as const, normalized: { kind: "length" as const, px: 8 } };
+  const radius = { name: "--radius-sm", value: "4px", category: "radius" as const, normalized: { kind: "length" as const, px: 4 } };
+  const text = { name: "--text-xs", value: "12px", category: "font-size" as const, normalized: { kind: "length" as const, px: 12 } };
+  const preset = {
+    version: 3 as const,
+    file: "design-system/tailwind.preset.ts",
+    linked: true,
+    keys: { "--color-blue-500": "ds-blue-500", "--space-2": "ds-2", "--radius-sm": "ds-sm", "--text-xs": "ds-xs" },
+  };
+  const JSXC = (cls: string) => `const x = <div className="${cls}" />;`;
+  const CLS = "bg-[#3b82f6] md:p-[8px] -mt-[8px] text-[13px] rounded-[4px] !border-[#fff]";
+
+  it("프리셋 없음: 타입 힌트가 붙은 임의값, variant·부호·!는 보존", () => {
+    const report = runConformance("tailwind", () => tailwindExtractor, [
+      {
+        file: "w.tsx",
+        code: JSXC(CLS),
+        expect: [],
+        writes: [
+          { target: { raw: "bg-[#3b82f6]" }, token: blue, ref: "bg-[color:var(--color-blue-500)]", output: JSXC(CLS.replace("bg-[#3b82f6]", "bg-[color:var(--color-blue-500)]")), reextract: { source: "token", property: "background-color" } },
+          { target: { raw: "md:p-[8px]" }, token: space, ref: "p-[var(--space-2)]", output: JSXC(CLS.replace("md:p-[8px]", "md:p-[var(--space-2)]")), reextract: { source: "token", property: "padding" } },
+          { target: { raw: "-mt-[8px]" }, token: space, ref: "-mt-[var(--space-2)]", output: JSXC(CLS.replace("-mt-[8px]", "-mt-[var(--space-2)]")), reextract: { source: "token", property: "margin" } },
+          { target: { raw: "text-[13px]" }, token: text, ref: "text-[length:var(--text-xs)]", output: JSXC(CLS.replace("text-[13px]", "text-[length:var(--text-xs)]")), reextract: { source: "token", property: "font-size" } },
+          { target: { raw: "rounded-[4px]" }, token: radius, ref: "rounded-[var(--radius-sm)]", reextract: { source: "token", property: "border-radius" } },
+          { target: { raw: "!border-[#fff]" }, token: blue, ref: "border-[color:var(--color-blue-500)]", output: JSXC(CLS.replace("!border-[#fff]", "!border-[color:var(--color-blue-500)]")), reextract: { source: "token", property: "border-color" } },
+        ],
+      },
+    ]);
+    expect(report.failed).toEqual([]);
+  });
+
+  it("프리셋 연결: ds- 접두 클래스명, 재추출하면 token(글꼴 크기는 font-size)", () => {
+    const ctx = { preset };
+    const report = runConformance("tailwind", () => tailwindExtractor, [
+      {
+        file: "w.tsx",
+        code: JSXC(CLS),
+        expect: [],
+        writes: [
+          { target: { raw: "bg-[#3b82f6]" }, token: blue, ctx, ref: "bg-ds-blue-500", output: JSXC(CLS.replace("bg-[#3b82f6]", "bg-ds-blue-500")), reextract: { source: "token", property: "background-color" } },
+          { target: { raw: "md:p-[8px]" }, token: space, ctx, ref: "p-ds-2", output: JSXC(CLS.replace("md:p-[8px]", "md:p-ds-2")), reextract: { source: "token", property: "padding" } },
+          { target: { raw: "-mt-[8px]" }, token: space, ctx, ref: "-mt-ds-2", reextract: { source: "token", property: "margin" } },
+          { target: { raw: "text-[13px]" }, token: text, ctx, ref: "text-ds-xs", output: JSXC(CLS.replace("text-[13px]", "text-ds-xs")), reextract: { source: "token", property: "font-size" } },
+          { target: { raw: "rounded-[4px]" }, token: radius, ctx, ref: "rounded-ds-sm", reextract: { source: "token", property: "border-radius" } },
+          { target: { raw: "!border-[#fff]" }, token: blue, ctx, ref: "border-ds-blue-500", output: JSXC(CLS.replace("!border-[#fff]", "!border-ds-blue-500")), reextract: { source: "token", property: "border-color" } },
+        ],
+      },
+    ]);
+    expect(report.failed).toEqual([]);
+  });
+
+  it("tailwind-default 색(bg-blue-500)도 프리셋 클래스로 바뀐다", () => {
+    const report = runConformance("tailwind", () => tailwindExtractor, [
+      {
+        file: "w.tsx",
+        code: JSXC("bg-blue-500 p-2"),
+        expect: [],
+        writes: [{ target: { raw: "bg-blue-500" }, token: blue, ctx: { preset }, ref: "bg-ds-blue-500", output: JSXC("bg-ds-blue-500 p-2"), reextract: { source: "token", property: "background-color" } }],
+      },
+    ]);
+    expect(report.failed).toEqual([]);
+  });
+
+  it("CSS 변수가 아닌 토큰·토큰 대상이 아닌 속성은 null", () => {
+    const code = JSXC("bg-[#3b82f6] w-[8px]");
+    const bg = extractOne(code, "bg-[#3b82f6]");
+    const w = extractOne(code, "w-[8px]");
+    expect(tailwindExtractor.tokenRef!({ ...blue, name: "color.brand" }, bg, {})).toBeNull();
+    expect(tailwindExtractor.tokenRef!(space, w, {})).toBeNull();
+    expect(tailwindExtractor.tokenRef!(space, bg, {})).toBeNull();
+  });
+
+  it("text-ds-* 프리셋 글꼴 크기 키만 font-size로 읽고 나머지 text-ds-*는 색 token", () => {
+    const usages = extractAll(JSXC("text-ds-xs text-ds-2xl text-ds-blue-500 text-xs"));
+    expect(usages.map((u) => [u.raw, u.property, u.source])).toEqual([
+      ["text-ds-xs", "font-size", "token"],
+      ["text-ds-2xl", "font-size", "token"],
+      ["text-ds-blue-500", "color", "token"],
+      ["text-xs", "font-size", "tailwind-default"],
     ]);
   });
 });
