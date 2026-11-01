@@ -353,24 +353,43 @@ export interface Coverage {
   zeroOrNegative: number;
 }
 
+export interface Replacement {
+  token: Token;
+  confidence: "exact" | "close";
+  distance: number;
+}
+
 /**
- * 이 하드코딩 값을 `tokens` 중 하나로 바꿀 수 있는가. 매처(`rankTokens`)가 같은 카테고리에서 exact 또는 close로 판정하면 true.
- * 999px 이상 모서리(`radius-full` 값)는 `radius-full` 급 토큰(px ≥ `FULL_RADIUS_MIN_PX`)이 있으면 true.
- * 토큰 대상 속성(`COVERAGE_PROPERTIES`: 색·간격·모서리·글꼴 크기. width·height 제외)이 아니면 false. 커버리지의 분모 제외(0 이하 간격, 평가 제외 사용)는 호출자의 몫이다.
- * `draftCoverage`가 이 기준으로 "바꿀 수 있음"을 세고, 마이그레이션도 같은 기준을 쓴다.
+ * 이 하드코딩 값을 바꿀 `tokens` 중 하나. 매처(`rankTokens`) 1위가 같은 카테고리에서 exact 또는 close면 그 토큰.
+ * 아니면 999px 이상 모서리(`radius-full` 값)는 px ≥ `FULL_RADIUS_MIN_PX`인 첫 radius 토큰(px가 같으면 "exact", 아니면 "close", distance = |차|).
+ * 토큰 대상 속성(`COVERAGE_PROPERTIES`: 색·간격·모서리·글꼴 크기. width·height 제외)이 아니거나 바꿀 토큰이 없으면 null.
+ * 커버리지의 분모 제외(0 이하 간격, 평가 제외 사용)는 호출자의 몫이다.
+ * `draftCoverage`의 "바꿀 수 있음"(`replaceableToken`)과 마이그레이션이 이 함수 하나를 쓴다.
  */
-export function replaceableToken(usage: StyleUsage, tokens: Token[]): boolean {
-  if (!COVERAGE_PROPERTIES.includes(usage.property)) return false;
+export function bestReplacement(usage: StyleUsage, tokens: Token[]): Replacement | null {
+  if (!COVERAGE_PROPERTIES.includes(usage.property)) return null;
   const category = tokenCategoryOf(usage.property);
-  if (category === null) return false;
+  if (category === null) return null;
   const top = rankTokens(usage.normalized, tokens, { category, limit: 1 })[0];
-  if (top !== undefined && (top.confidence === "exact" || top.confidence === "close")) return true;
-  return (
-    category === "radius" &&
-    usage.normalized.kind === "length" &&
-    usage.normalized.px >= FULL_RADIUS_MIN_PX &&
-    tokens.some((t) => t.category === "radius" && t.normalized.kind === "length" && t.normalized.px >= FULL_RADIUS_MIN_PX)
-  );
+  if (top !== undefined && (top.confidence === "exact" || top.confidence === "close")) {
+    return { token: top.token, confidence: top.confidence, distance: top.distance };
+  }
+  if (category === "radius" && usage.normalized.kind === "length" && usage.normalized.px >= FULL_RADIUS_MIN_PX) {
+    const px = usage.normalized.px;
+    const full = tokens.find(
+      (t) => t.category === "radius" && t.normalized.kind === "length" && t.normalized.px >= FULL_RADIUS_MIN_PX,
+    );
+    if (full !== undefined && full.normalized.kind === "length") {
+      const distance = Math.abs(full.normalized.px - px);
+      return { token: full, confidence: distance === 0 ? "exact" : "close", distance };
+    }
+  }
+  return null;
+}
+
+/** `bestReplacement`가 토큰을 고르는가 — 판정은 그 함수 하나. */
+export function replaceableToken(usage: StyleUsage, tokens: Token[]): boolean {
+  return bestReplacement(usage, tokens) !== null;
 }
 
 /**

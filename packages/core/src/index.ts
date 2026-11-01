@@ -84,6 +84,9 @@ export { readDecisions, recordDecision, writeDecisions } from "./decisions/store
 export type { DecisionCandidate } from "./decisions/candidates.js";
 export { candidatesOf, decisionCandidates, listDecisions, similarItems } from "./decisions/candidates.js";
 export { readGitHistory } from "./decisions/git-history.js";
+export type { GitResult } from "./git/run.js";
+export { runGit } from "./git/run.js";
+export { findInitDir, readInitHashes } from "./fs/init-dir.js";
 export type { CardInput } from "./decisions/card.js";
 export { buildDecisionCard } from "./decisions/card.js";
 export type { ExplainOptions, ExplainResult } from "./decisions/explain.js";
@@ -103,7 +106,8 @@ export type {
   ScaleMapping,
   TokenDraft,
 } from "./tokens/draft.js";
-export { COVERAGE_PROPERTIES, buildTokenDraft, draftCoverage, draftToTokens, replaceableToken } from "./tokens/draft.js";
+export type { Replacement } from "./tokens/draft.js";
+export { COVERAGE_PROPERTIES, bestReplacement, buildTokenDraft, draftCoverage, draftToTokens, replaceableToken } from "./tokens/draft.js";
 export type { ComponentDoc } from "./component/props.js";
 export { readComponentDoc, readTypeProps } from "./component/props.js";
 export { moduleOfFile } from "./component/definition.js";

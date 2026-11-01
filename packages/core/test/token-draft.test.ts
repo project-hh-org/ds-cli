@@ -4,7 +4,7 @@ import { normalizeColor } from "../src/normalize/color.js";
 import { clusterColors } from "../src/cluster/color-cluster.js";
 import { colorTokenNames } from "../src/cluster/names.js";
 import type { Token } from "../src/model/token.js";
-import { buildTokenDraft, draftCoverage, draftToTokens, replaceableToken } from "../src/tokens/draft.js";
+import { bestReplacement, buildTokenDraft, draftCoverage, draftToTokens, replaceableToken } from "../src/tokens/draft.js";
 
 function color(hex: string, property: StyleProperty = "color", file = "src/a.tsx"): StyleUsage {
   const normalized = normalizeColor(hex);
@@ -259,5 +259,42 @@ describe("replaceableToken", () => {
     const usages = [color("#3b82f6"), color("#ef4444"), len(8, "padding"), len(13, "padding"), len(999, "border-radius")];
     const cov = draftCoverage(usages, tokens);
     expect(cov.replaceable).toBe(usages.filter((u) => replaceableToken(u, tokens)).length);
+  });
+});
+
+describe("bestReplacement", () => {
+  const tokens: Token[] = [
+    { name: "--color-blue-400", value: "#3b82f6", normalized: normalizeColor("#3b82f6")!, category: "color" },
+    { name: "--space-2", value: "8px", normalized: { kind: "length", px: 8 }, category: "spacing" },
+    { name: "--radius-full", value: "9999px", normalized: { kind: "length", px: 9999 }, category: "radius" },
+  ];
+
+  it("고른 토큰과 확신도를 돌려준다", () => {
+    expect(bestReplacement(color("#3b82f6"), tokens)).toMatchObject({ token: { name: "--color-blue-400" }, confidence: "exact" });
+    expect(bestReplacement(color("#3c83f7"), tokens)).toMatchObject({ token: { name: "--color-blue-400" }, confidence: "exact" });
+    expect(bestReplacement(color("#4a8af0"), tokens)).toMatchObject({ token: { name: "--color-blue-400" }, confidence: "close" });
+    expect(bestReplacement(color("#ef4444"), tokens)).toBeNull();
+    expect(bestReplacement(len(8, "padding"), tokens)).toMatchObject({ token: { name: "--space-2" }, confidence: "exact", distance: 0 });
+    expect(bestReplacement(len(13, "padding"), tokens)).toBeNull();
+    expect(bestReplacement(len(8, "width"), tokens)).toBeNull();
+  });
+
+  it("999px 이상 모서리는 radius-full 급 토큰으로 — px가 같으면 exact, 다르면 close", () => {
+    expect(bestReplacement(len(999, "border-radius"), tokens)).toMatchObject({
+      token: { name: "--radius-full" },
+      confidence: "close",
+      distance: 9000,
+    });
+    expect(bestReplacement(len(9999, "border-radius"), tokens)).toMatchObject({
+      token: { name: "--radius-full" },
+      confidence: "exact",
+      distance: 0,
+    });
+    expect(bestReplacement(len(999, "border-radius"), tokens.filter((t) => t.category !== "radius"))).toBeNull();
+  });
+
+  it("replaceableToken은 bestReplacement !== null과 항상 같다", () => {
+    const usages = [color("#3b82f6"), color("#ef4444"), len(8, "padding"), len(13, "padding"), len(999, "border-radius"), len(8, "width")];
+    for (const u of usages) expect(replaceableToken(u, tokens)).toBe(bestReplacement(u, tokens) !== null);
   });
 });
