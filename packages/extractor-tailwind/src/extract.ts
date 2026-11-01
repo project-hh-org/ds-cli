@@ -10,7 +10,7 @@ import type {
 import type { Node } from "@babel/types";
 import { parseClassToken, type ParsedClass } from "./class-parser.js";
 import { defaultTheme } from "./default-theme.js";
-import { registerPatchTarget, write } from "./write.js";
+import { PRESET_FONT_SIZE_KEY, registerPatchTarget, tokenRef, write } from "./write.js";
 
 export const EXTRACTOR_NAME = "tailwind";
 
@@ -176,6 +176,10 @@ function resolveNamed(c: ParsedClass, rule: Rule): Resolved | null {
   }
 
   if (value === null) return null;
+  // `text-ds-xs`: init 프리셋의 글꼴 크기 키(색이 아니다). 다른 접두의 `text-<이름>`은 종전대로 색으로 본다.
+  if (rule.kind === "text" && PRESET_FONT_SIZE_KEY.test(value)) {
+    return { property: "font-size", normalized: UNKNOWN, source: "token" };
+  }
   const hex = lookup(defaultTheme.colors, value);
   const colorProperty: StyleProperty = rule.kind === "text" ? "color" : rule.property;
   if (hex !== undefined) {
@@ -251,6 +255,8 @@ class Collector {
         end: offset + token.length,
         variants: parsed.variants,
         important: parsed.important,
+        utility: parsed.utility,
+        negative: parsed.negative,
       });
       this.usages.push(usage);
     }
@@ -348,4 +354,5 @@ export const tailwindExtractor: Extractor = {
   appliesTo: (ctx) => /\.[cm]?[jt]sx?$/.test(ctx.file) && ctx.code.includes("className"),
   extract,
   write,
+  tokenRef,
 };

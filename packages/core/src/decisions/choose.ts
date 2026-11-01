@@ -9,7 +9,36 @@ export interface ChooseOptions {
   now?: Date;
   /** 같은 이름이 duplicate와 local-definition 둘 다이고 optionId로도 가려지지 않을 때 고르는 종류 */
   kind?: DecisionKind;
+  /** 컴포넌트 치환 때 props 대응(`DecisionRecord.mapping`). 키·값 모두 "prop" 또는 "prop=value", 양쪽 형태가 같아야 한다. 생략하면 기존 mapping을 유지하고, 주면 통째로 바꾸며, 빈 객체면 지운다 */
+  mapping?: Record<string, string>;
 }
+
+/** JSX 속성 이름으로 쓸 수 있는 prop 이름(`data-*`·`aria-*` 포함) */
+const ATTR_NAME = /^[A-Za-z_$][\w$-]*$/;
+
+/** mapping 형식 검사: 빈 키·값 없음, "="는 한 개까지, 한쪽만 "prop=value"면 안 된다. 어기면 Error */
+function checkMapping(mapping: Record<string, string>): void {
+  for (const [from, to] of Object.entries(mapping)) {
+    if (from === "" || to === "") throw new Error(`mapping에 빈 키나 값이 있음: "${from}" → "${to}"`);
+    for (const side of [from, to]) {
+      if (side.split("=").length > 2) throw new Error(`mapping은 "="를 한 개까지만 쓸 수 있음: "${side}"`);
+      const [name, value] = side.split("=");
+      if (name === "" || (side.includes("=") && (value === undefined || value === ""))) {
+        throw new Error(`mapping 형식은 prop 또는 prop=value: "${side}"`);
+      }
+      if (!ATTR_NAME.test(name ?? "")) throw new Error(`mapping의 prop 이름은 JSX 속성 이름이어야 함(영문자·_·$로 시작, 영숫자·_·$·- 허용): "${name}"`);
+    }
+    if (from.includes("=") !== to.includes("=")) {
+      throw new Error(`mapping은 양쪽 모두 prop이거나 양쪽 모두 prop=value여야 함: "${from}" → "${to}"`);
+    }
+  }
+}
+
+const sameMapping = (a: Record<string, string> | undefined, b: Record<string, string> | undefined): boolean => {
+  const ea = Object.entries(a ?? {}).sort(([x], [y]) => (x < y ? -1 : x > y ? 1 : 0));
+  const eb = Object.entries(b ?? {}).sort(([x], [y]) => (x < y ? -1 : x > y ? 1 : 0));
+  return ea.length === eb.length && ea.every(([k, v], i) => k === eb[i]?.[0] && v === eb[i]?.[1]);
+};
 
 /**
  * 결정을 기록한다(.dsmith/decisions.json). optionId를 선택지로 가진 후보를 골라 (item, kind)로 upsert한다.
@@ -23,6 +52,7 @@ export async function chooseDecision(
   optionIdArg: string,
   opts: ChooseOptions = {},
 ): Promise<DecisionRecord> {
+  if (opts.mapping !== undefined) checkMapping(opts.mapping);
   const file = await readDecisions(root);
   const matches = candidatesOf(index, item, opts.kind, file);
   if (matches.length === 0) {
@@ -47,10 +77,14 @@ export async function chooseDecision(
   }
 
   const existing = file.items.find((r) => r.item === candidate.item && r.kind === candidate.kind);
+  // mapping: 주면 통째로 바꾼다(빈 객체면 지운다). 안 주면 기존 mapping을 유지한다(메모만 고칠 때 대응이 사라지지 않게)
+  const mapping =
+    opts.mapping === undefined ? (existing?.status === "decided" ? existing.mapping : undefined) : Object.keys(opts.mapping).length > 0 ? opts.mapping : undefined;
   if (
     existing?.status === "decided" &&
     existing.chosen === optionId &&
     existing.note === opts.note &&
+    sameMapping(existing.mapping, mapping) &&
     existing.options.length === candidate.optionIds.length &&
     existing.options.every((id, i) => id === candidate.optionIds[i])
   ) {
@@ -66,6 +100,7 @@ export async function chooseDecision(
     decidedAt: (opts.now ?? new Date()).toISOString(),
   };
   if (opts.note !== undefined) record.note = opts.note;
+  if (mapping !== undefined) record.mapping = mapping;
   await writeDecisions(root, recordDecision(file, record));
   return record;
 }

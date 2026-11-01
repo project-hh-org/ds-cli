@@ -1,4 +1,4 @@
-import { parse, type ParserPlugin } from "@babel/parser";
+import { parse, type ParseResult, type ParserPlugin } from "@babel/parser";
 import traverseModule from "@babel/traverse";
 import type { File } from "@babel/types";
 
@@ -19,7 +19,7 @@ function pluginsFor(file: string): ParserPlugin[] {
   return /\.[cm]?ts$/.test(file) ? ["typescript"] : ["jsx", "typescript"];
 }
 
-export function parseTsx(code: string, file: string): File {
+export function parseTsx(code: string, file: string): ParseResult<File> {
   return parse(code, {
     sourceType: "module",
     plugins: pluginsFor(file),

@@ -37,12 +37,16 @@
     "@dsmith-dev/extractor-mui-sx": "workspace:*",
     "@dsmith-dev/extractor-styled": "workspace:*",
     "@dsmith-dev/extractor-tailwind": "workspace:*",
+    "@dsmith-dev/guard": "workspace:*",
     "@dsmith-dev/init": "workspace:*",
     "@dsmith-dev/mcp-server": "workspace:*",
+    "@dsmith-dev/migrate": "workspace:*",
     "commander": "^12.1.0"
   },
   "devDependencies": {
+    "@dsmith-dev/eslint-plugin": "workspace:*",
     "@modelcontextprotocol/client": "^2.4.0",
+    "eslint": "^10.14.0",
     "vitest": "^3.0.0"
   },
   "scripts": {

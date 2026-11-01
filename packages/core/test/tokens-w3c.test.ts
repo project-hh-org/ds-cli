@@ -116,3 +116,22 @@ describe("readW3cTokens", () => {
     expect(r.tokens[0]?.normalized).toMatchObject({ hex: "#ff0000" });
   });
 });
+
+describe("DTCG 경로(Token.path)", () => {
+  it("readW3cTokens는 키 경로를 '.'로 이어 path에 싣는다", () => {
+    const text = JSON.stringify({
+      color: { "gray-50": { $type: "color", $value: "#f9fafb" } },
+      space: { "2": { $type: "dimension", $value: { value: 8, unit: "px" } } },
+    });
+    const { tokens } = readW3cTokens(text, "t.json");
+    const by = Object.fromEntries(tokens.map((t) => [t.name, t]));
+    expect(by["--color-gray-50"]?.path).toBe("color.gray-50");
+    expect(by["--space-2"]?.path).toBe("space.2");
+  });
+
+  it("직렬화 → 읽기 왕복의 모든 토큰이 path를 갖고 name과 대응한다", () => {
+    const { tokens } = readW3cTokens(serializeW3c(buildTokenDraft(usages)), "tokens.json");
+    expect(tokens.length).toBeGreaterThan(0);
+    for (const t of tokens) expect(`--${t.path!.replaceAll(".", "-")}`).toBe(t.name);
+  });
+});

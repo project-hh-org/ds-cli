@@ -1,4 +1,5 @@
-import type { StyleUsage, WritePatch } from "@dsmith-dev/extractor-api";
+import { cssVarRef } from "@dsmith-dev/extractor-api";
+import type { StyleUsage, TokenLike, WritePatch } from "@dsmith-dev/extractor-api";
 import { isRatedUsage } from "@dsmith-dev/core";
 
 /** 치환 패치에 필요한 소스 구간. `quote`면 숫자 리터럴 노드 자리라 `tokenRef`를 문자열 리터럴로 감싼다. */
@@ -31,4 +32,9 @@ export function write(usage: StyleUsage, tokenRef: string): WritePatch | null {
     end: target.end,
     replacement: target.quote ? JSON.stringify(tokenRef) : tokenRef,
   };
+}
+
+/** 값 자리에는 CSS 변수 참조(`var(--x)`)를 쓴다(숫자 노드는 write가 문자열로 감싼다). 변수가 아닌 이름의 토큰은 참조 형식이 없다. */
+export function tokenRef(token: TokenLike): string | null {
+  return cssVarRef(token);
 }

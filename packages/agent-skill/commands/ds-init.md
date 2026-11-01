@@ -10,7 +10,8 @@ uses: ["cli:init --dry-run", "mcp:list_decisions"]
 1. `npx dsmith init --dry-run --json {{args}}`를 실행하고 stdout JSON을 읽는다. 아직 아무 파일도 쓰지 않는다. stderr의 힌트·경고도 그대로 전한다.
 2. 이 순서로 설명한다:
    - 토큰 `tokens`: 색·간격·모서리·글꼴 크기 개수, `total`, 병합된 원값 수 `mergedValues`
-   - 커버리지 `coverage.rate`(백분율), `coverage.replaceable`, `coverage.total`. "migrate가 바꿀 수 있는 예상치"라고만 말한다
+   - 커버리지 `coverage.rate`(백분율), `coverage.replaceable`, `coverage.total`. `coverage.replaceable`은 치환 가능(migrate 후보) 수다. `coverage.byConfidence`로 나눠 말한다: `exact`(같은 값·정확)는 migrate 기본 대상, `close`(근사)는 `--close`를 줄 때만. 둘을 더한 값이 `coverage.replaceable`이다
+   - `tokensLoaded.css`가 `false`면 `design-system/tokens.css`를 아무도 import하지 않는 것이다. 전역 엔트리(예: `app/layout.tsx`, `src/main.tsx`, `globals.css`)에서 import해야 migrate가 쓰는 `var(--…)`가 값을 갖는다고 알린다. `null`이면 말하지 않는다
    - 컴포넌트 골격 `scaffolds`, 건너뛴 것과 이유 `skippedScaffolds`
    - 알파가 빠지는 색 `alphaDropped`가 있으면 개수
    - 결정 대기 `decisions.pending`

@@ -6,7 +6,7 @@ import type { Catalog, CatalogSource, CatalogToken, CatalogTokenFile } from "./m
 
 const compareCodeUnits = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
 
-async function hashOf(root: string, file: string): Promise<string | null> {
+export async function hashOf(root: string, file: string): Promise<string | null> {
   try {
     return createHash("sha256").update(await fs.readFile(path.resolve(root, file))).digest("hex");
   } catch {
@@ -32,7 +32,14 @@ export async function readCatalogTokens(root: string, tokenFiles: string[]): Pro
   const tokens: CatalogToken[] = [];
   for (const t of loaded.tokens) {
     if (t.source !== "token-file" || t.file === undefined) continue;
-    tokens.push({ name: t.name, value: t.value, normalized: t.normalized, category: t.category, file: t.file });
+    tokens.push({
+      name: t.name,
+      value: t.value,
+      normalized: t.normalized,
+      category: t.category,
+      ...(t.path === undefined ? {} : { path: t.path }),
+      file: t.file,
+    });
   }
   tokens.sort((a, b) => compareCodeUnits(a.file, b.file) || compareCodeUnits(a.name, b.name));
   const files: CatalogTokenFile[] = [];

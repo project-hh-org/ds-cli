@@ -10,15 +10,15 @@ export type { NormalizedColor } from "./model/style-usage.js";
 export { isRatedUsage } from "./model/style-usage.js";
 export type { ComponentUsage } from "./model/component-usage.js";
 export type { Token, TokenSet } from "./model/token.js";
-export { normalizeColor } from "./normalize/color.js";
+export { isTranslucentColor, normalizeColor } from "./normalize/color.js";
 export { normalizeLength } from "./normalize/length.js";
 export { parseTsx, traverse } from "./parse/tsx.js";
 export type { Index, IndexOptions } from "./index/indexer.js";
 export type { ExtractorMatcher, FileStyles } from "./index/extract-file.js";
 export { extractFileStyles, extractorMatchers } from "./index/extract-file.js";
-export { DEFAULT_EXCLUDE, indexRepo } from "./index/indexer.js";
+export { DEFAULT_EXCLUDE, collectModuleContext, indexRepo, listIndexableFiles } from "./index/indexer.js";
 export type { ModuleContext } from "./index/component-usage.js";
-export { extractComponentUsage } from "./index/component-usage.js";
+export { extractComponentUsage, moduleKeyOf } from "./index/component-usage.js";
 export type { TsPaths } from "./index/specifier.js";
 export {
   normalizePackageSpecifier,
@@ -40,6 +40,7 @@ export {
   cssPropertyToStyleProperty,
   isColorProperty,
   isLengthProperty,
+  shorthandColorProperty,
   splitShorthandColor,
 } from "./model/css-property.js";
 export type { CssDecl } from "./parse/css-text.js";
@@ -69,6 +70,8 @@ export { collectCssVariables, readCssVariableTokens } from "./tokens/css-variabl
 export { proposalTokens } from "./tokens/proposal.js";
 export type { LoadedToken, LoadedTokens, TokenSourceKind } from "./tokens/load.js";
 export { loadTokens, tokenCategoryOf, tokensFromCatalog } from "./tokens/load.js";
+export type { ReplacementTokens } from "./tokens/replacement-tokens.js";
+export { loadReplacementTokens } from "./tokens/replacement-tokens.js";
 export type {
   Confidence,
   DecisionCard,
@@ -84,6 +87,16 @@ export { readDecisions, recordDecision, writeDecisions } from "./decisions/store
 export type { DecisionCandidate } from "./decisions/candidates.js";
 export { candidatesOf, decisionCandidates, listDecisions, similarItems } from "./decisions/candidates.js";
 export { readGitHistory } from "./decisions/git-history.js";
+export type { GitError, GitResult } from "./git/run.js";
+export { runGit } from "./git/run.js";
+export { findInitDir, readInitHashes } from "./fs/init-dir.js";
+export type { PatchConflict, TextPatch } from "./patch/apply.js";
+export { applyPatches, invertPatches, invertRecordedPatches, partitionPatches } from "./patch/apply.js";
+export type { EditCheck } from "./patch/validate.js";
+export { validateEdit } from "./patch/validate.js";
+export { sha256Text, writePatchedFile } from "./patch/write.js";
+export type { MigrationFile, MigrationPatch, MigrationRecord } from "./migrations/model.js";
+export { MIGRATIONS_DIR, listMigrations, newMigrationId, readMigration, writeMigration } from "./migrations/store.js";
 export type { CardInput } from "./decisions/card.js";
 export { buildDecisionCard } from "./decisions/card.js";
 export type { ExplainOptions, ExplainResult } from "./decisions/explain.js";
@@ -103,7 +116,8 @@ export type {
   ScaleMapping,
   TokenDraft,
 } from "./tokens/draft.js";
-export { COVERAGE_PROPERTIES, buildTokenDraft, draftCoverage, draftToTokens, replaceableToken } from "./tokens/draft.js";
+export type { Replacement } from "./tokens/draft.js";
+export { COVERAGE_PROPERTIES, bestReplacement, buildTokenDraft, draftCoverage, draftToTokens, replaceableToken } from "./tokens/draft.js";
 export type { ComponentDoc } from "./component/props.js";
 export { readComponentDoc, readTypeProps } from "./component/props.js";
 export { moduleOfFile } from "./component/definition.js";
@@ -130,3 +144,22 @@ export type { TokenCardInput } from "./decisions/token-card.js";
 export { buildTokenClusterCard } from "./decisions/token-card.js";
 export type { SeedLimits, TokenClusterSeed } from "./decisions/seed.js";
 export { seedDecisions } from "./decisions/seed.js";
+export type { DsComponentRef, Finding, GuardPolicy, RuleContext, RuleId } from "./rules/model.js";
+export { DEFAULT_GUARD_POLICY } from "./rules/model.js";
+export { eligibleFindings, evaluateFile, findingKey, summarizeFindings } from "./rules/evaluate.js";
+export type { GuardPreset, GuardSnapshot } from "./guard/snapshot.js";
+export { GUARD_FILE, findGuardSnapshotSync, moduleContextOf, readGuardSnapshotSync, ruleContextOf } from "./guard/snapshot.js";
+export { staleGuardTokenFiles, writeGuardSnapshot } from "./guard/write.js";
+export type { TokensStylesheetLoaded } from "./tokens/tokens-loaded.js";
+export { TOKENS_NOT_LOADED_NOTE, findTokensStylesheetImport } from "./tokens/tokens-loaded.js";
+export type { PresetFormat } from "./tokens/tailwind-preset.js";
+export {
+  emitTailwindPreset,
+  findTailwindConfig,
+  isPresetLinked,
+  listCssFiles,
+  parsePresetKeys,
+  presetFileName,
+  presetFormatFor,
+  readTailwindPreset,
+} from "./tokens/tailwind-preset.js";

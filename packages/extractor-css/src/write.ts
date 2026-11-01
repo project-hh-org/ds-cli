@@ -1,4 +1,5 @@
-import type { StyleUsage, WritePatch } from "@dsmith-dev/extractor-api";
+import { cssVarRef } from "@dsmith-dev/extractor-api";
+import type { StyleUsage, TokenLike, WritePatch } from "@dsmith-dev/extractor-api";
 import { isRatedUsage } from "@dsmith-dev/core";
 
 /** 치환 패치에 필요한 값(또는 축약 안의 색 토큰) 구간. */
@@ -24,4 +25,9 @@ export function write(usage: StyleUsage, tokenRef: string): WritePatch | null {
   const target = patchTargets.get(usage);
   if (target === undefined) return null;
   return { file: target.file, start: target.start, end: target.end, replacement: tokenRef };
+}
+
+/** CSS 값 자리에는 CSS 변수 참조(`var(--x)`)를 그대로 쓴다. 변수가 아닌 이름의 토큰은 참조 형식이 없다. */
+export function tokenRef(token: TokenLike): string | null {
+  return cssVarRef(token);
 }

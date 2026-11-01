@@ -88,3 +88,63 @@ describe("chooseDecision", () => {
     expect(items[0]?.chosen).toBe("b/Solo");
   });
 });
+
+describe("chooseDecision: mapping", () => {
+  const MAP = { kind: "variant", "variant=primary": "variant=default" };
+
+  it("mapping을 기록에 싣는다", async () => {
+    const rec = await chooseDecision(tmp, index, "Solo", "a/Solo", { mapping: MAP });
+    expect(rec.mapping).toEqual(MAP);
+    expect((await readDecisions(tmp)).items[0]?.mapping).toEqual(MAP);
+  });
+
+  it("mapping을 안 주면 필드가 없다", async () => {
+    const rec = await chooseDecision(tmp, index, "Solo", "a/Solo");
+    expect(rec).not.toHaveProperty("mapping");
+  });
+
+  it("같은 선택·같은 메모·같은 mapping이면 파일이 바이트 동일하다(키 순서가 달라도)", async () => {
+    await chooseDecision(tmp, index, "Solo", "a/Solo", { mapping: MAP, now: new Date("2026-11-01T00:00:00Z") });
+    const before = decisionsText();
+    const reordered = { "variant=primary": "variant=default", kind: "variant" };
+    await chooseDecision(tmp, index, "Solo", "a/Solo", { mapping: reordered, now: new Date("2030-01-01T00:00:00Z") });
+    expect(decisionsText()).toBe(before);
+  });
+
+  it("mapping이 달라지면 갱신하고, 없애면 필드가 사라진다", async () => {
+    await chooseDecision(tmp, index, "Solo", "a/Solo", { mapping: MAP });
+    await chooseDecision(tmp, index, "Solo", "a/Solo", { mapping: { kind: "tone" } });
+    expect((await readDecisions(tmp)).items[0]?.mapping).toEqual({ kind: "tone" });
+    await chooseDecision(tmp, index, "Solo", "a/Solo", { mapping: {} });
+    expect((await readDecisions(tmp)).items[0]).not.toHaveProperty("mapping");
+  });
+
+  it("mapping 없이 다시 고르면(메모만 고칠 때) 기존 mapping을 유지한다", async () => {
+    await chooseDecision(tmp, index, "Solo", "a/Solo", { mapping: MAP });
+    const rec = await chooseDecision(tmp, index, "Solo", "a/Solo", { note: "메모" });
+    expect(rec.mapping).toEqual(MAP);
+    expect(rec.note).toBe("메모");
+    expect((await readDecisions(tmp)).items[0]?.mapping).toEqual(MAP);
+  });
+
+  it.each(["on click", "1abc", "a.b", "a=b c"])("prop 이름 %j 는 JSX 속성 이름이 아니라 Error", async (bad) => {
+    await expect(chooseDecision(tmp, index, "Solo", "a/Solo", { mapping: { [bad]: "x" } })).rejects.toThrow(/JSX 속성 이름|prop=value/);
+    await expect(chooseDecision(tmp, index, "Solo", "a/Solo", { mapping: { kind: bad } })).rejects.toThrow(/JSX 속성 이름|prop=value/);
+  });
+
+  it("data-*·aria-*·$·_ 이름은 허용한다", async () => {
+    const rec = await chooseDecision(tmp, index, "Solo", "a/Solo", { mapping: { "data-kind": "aria-label", _x: "$y" } });
+    expect(rec.mapping).toEqual({ "data-kind": "aria-label", _x: "$y" });
+  });
+
+  it.each([
+    [{ "": "a" }, /빈/],
+    [{ a: "" }, /빈/],
+    [{ "a=b=c": "d" }, /"="/],
+    [{ "a=b": "c" }, /prop=value/],
+    [{ a: "b=c" }, /prop=value/],
+  ])("형식 위반 %j 는 Error이고 파일을 만들지 않는다", async (mapping, message) => {
+    await expect(chooseDecision(tmp, index, "Solo", "a/Solo", { mapping })).rejects.toThrow(message);
+    expect(fs.existsSync(path.join(tmp, ".dsmith", "decisions.json"))).toBe(false);
+  });
+});

@@ -1,7 +1,7 @@
 import { JS_FILES } from "@dsmith-dev/extractor-api";
 import type { Extractor } from "@dsmith-dev/extractor-api";
 import { extractCssInJs, type Owned, type StyleImports } from "@dsmith-dev/extractor-styled";
-import { write } from "./write.js";
+import { tokenRef, write } from "./write.js";
 
 export const EXTRACTOR_NAME = "emotion";
 
@@ -29,4 +29,5 @@ export const emotionExtractor: Extractor = {
   appliesTo: (ctx) => JS_FILE.test(ctx.file) && (ctx.code.includes("@emotion/") || ctx.code.includes("css={")),
   extract: (ctx) => extractCssInJs(ctx, EXTRACTOR_NAME, ownedByEmotion),
   write,
+  tokenRef,
 };

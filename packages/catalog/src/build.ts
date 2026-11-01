@@ -1,8 +1,10 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import {
+  findInitDir,
   managedFileHash,
   readCatalogTokens,
+  readInitHashes,
   withTokenFiles,
   type Catalog,
   type CatalogComponent,
@@ -11,7 +13,6 @@ import {
   type Index,
 } from "@dsmith-dev/core";
 import type { DetectResult } from "@dsmith-dev/detect";
-import { findInitDir, readInitHashes } from "./init-dir.js";
 import { catalogFromDir } from "./local.js";
 import { compareCodeUnits } from "./names.js";
 import { catalogFromPackage } from "./npm.js";

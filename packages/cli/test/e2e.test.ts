@@ -209,7 +209,7 @@ describe("examples/legacy-demo: audit → install → decide", () => {
       });
       await runAudit(repo);
       const result = await runInstall({ root: repo, home, tools: ["claude-code"], version: "0.2.0" });
-      expect(result.outcomes.map((o) => o.status)).toEqual(Array(9).fill("created"));
+      expect(result.outcomes.map((o) => o.status)).toEqual(Array(10).fill("created"));
 
       const list = (dir: string, prefix = ""): string[] =>
         fs.readdirSync(dir, { withFileTypes: true }).flatMap((e) =>
@@ -222,6 +222,7 @@ describe("examples/legacy-demo: audit → install → decide", () => {
         ".claude/skills/ds-check/SKILL.md",
         ".claude/skills/ds-decide/SKILL.md",
         ".claude/skills/ds-detect/SKILL.md",
+        ".claude/skills/ds-guard/SKILL.md",
         ".claude/skills/ds-init/SKILL.md",
         ".claude/skills/ds-migrate/SKILL.md",
         ".claude/skills/ds/SKILL.md",

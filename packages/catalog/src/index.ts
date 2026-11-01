@@ -6,7 +6,7 @@ export { catalogFromPackage, resolvePackageTypes } from "./npm.js";
 export type { DtsComponent } from "./dts.js";
 export { componentsFromDts } from "./dts.js";
 export { findStories, storyExample } from "./stories.js";
-export { findInitDir } from "./init-dir.js";
+export { findInitDir } from "@dsmith-dev/core";
 export { DS_MARKERS, MCP_TOOL_NAMES_IN_SECTION, SECTION_MAX_LINES, renderAgentsDsSection } from "./agents-section.js";
 export type { AiOptions, AiResult } from "./run.js";
 export { formatAiSummary, runAi } from "./run.js";

@@ -21,3 +21,13 @@ describe("registry", () => {
     }
   });
 });
+
+describe("registry ↔ eslint-plugin", () => {
+  it("ESLint 플러그인의 내장 Extractor 표와 키 목록이 같다", async () => {
+    // 플러그인은 cli를 모르므로 의존 없이 소스를 직접 불러 비교한다(cli가 플러그인에 의존하지 않는다)
+    const { BUILTIN_EXTRACTORS } = await import("../../eslint-plugin/src/registry.js");
+    expect(Object.keys(registry).sort()).toEqual(["css", "emotion", "inline-style", "mui-sx", "styled", "tailwind"]);
+    expect(Object.keys(BUILTIN_EXTRACTORS).sort()).toEqual(Object.keys(registry).sort());
+    for (const [key, factory] of Object.entries(registry)) expect(BUILTIN_EXTRACTORS[key], key).toBe(factory());
+  });
+});

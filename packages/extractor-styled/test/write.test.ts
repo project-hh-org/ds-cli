@@ -1,3 +1,4 @@
+import { runConformance } from "@dsmith-dev/extractor-api";
 import type { StyleUsage, WritePatch } from "@dsmith-dev/extractor-api";
 import { describe, expect, it } from "vitest";
 import { styledExtractor } from "../src/index.js";
@@ -77,5 +78,37 @@ describe("styledExtractor.write: 점수 대상이 아닌 usage", () => {
       ["width", true],
       ["color", false],
     ]);
+  });
+});
+
+describe("styledExtractor.tokenRef + conformance write 왕복", () => {
+  const blue = { name: "--color-blue-500", value: "#3b82f6", category: "color" as const, normalized: { kind: "color" as const, hex: "#3b82f6", l: 0.62, c: 0.2, h: 260 } };
+  const space = { name: "--space-2", value: "8px", category: "spacing" as const, normalized: { kind: "length" as const, px: 8 } };
+  const radius = { name: "--radius-sm", value: "4px", category: "radius" as const, normalized: { kind: "length" as const, px: 4 } };
+  const text = { name: "--text-xs", value: "12px", category: "font-size" as const, normalized: { kind: "length" as const, px: 12 } };
+
+  it("템플릿과 객체 문법 모두 왕복한다", () => {
+    const report = runConformance("styled", () => styledExtractor, [
+      {
+        file: "s/a.tsx",
+        code: `${SC}const B = styled.button\`color: #3b82f6;\n  padding: 8px;\`;`,
+        expect: [],
+        writes: [
+          { target: { property: "color" }, token: blue, ref: "var(--color-blue-500)", output: `${SC}const B = styled.button\`color: var(--color-blue-500);\n  padding: 8px;\`;`, reextract: { source: "token", property: "color" } },
+          { target: { property: "padding" }, token: space, ref: "var(--space-2)", reextract: { source: "token", property: "padding" } },
+        ],
+      },
+      {
+        file: "s/a.tsx",
+        code: `${SC}const B = styled.div({\n  fontSize: 12,\n  color: "#3b82f6",\n});`,
+        expect: [],
+        writes: [
+          { target: { property: "font-size" }, token: text, ref: "var(--text-xs)", output: `${SC}const B = styled.div({\n  fontSize: "var(--text-xs)",\n  color: "#3b82f6",\n});`, reextract: { source: "token", property: "font-size" } },
+          { target: { property: "color" }, token: { ...blue, name: "color.brand" }, ref: null, reextract: {} },
+        ],
+      },
+    ]);
+    expect(report.failed).toEqual([]);
+    expect(report.passed).toBe(2);
   });
 });

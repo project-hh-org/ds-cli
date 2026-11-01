@@ -1,4 +1,4 @@
-import type { DraftCategory, TokenDraft } from "@dsmith-dev/core";
+import { TOKENS_NOT_LOADED_NOTE, type DraftCategory, type TokenDraft } from "@dsmith-dev/core";
 import type { InitResult } from "./run.js";
 
 const CATEGORY_LABEL: Record<DraftCategory, string> = {
@@ -96,7 +96,7 @@ export function renderInitReport(r: InitResult, draft: TokenDraft): string {
   }
   lines.push("");
   lines.push(
-    `migrate가 바꿀 수 있는 예상치: 하드코딩 ${c.total}건 중 ${c.replaceable}건.`,
+    `치환 가능(migrate 후보): 하드코딩 ${c.total}건 중 ${c.replaceable}건 — 같은 값/정확 ${c.byConfidence.exact}건은 migrate 기본 대상, 근사 ${c.byConfidence.close}건은 \`--close\`로만.`,
     "",
     "숫자의 구성: 색·글꼴 크기 토큰은 이 초안이 하드코딩 값에서 직접 만든 것이라 해당 카테고리 커버리지는 구성상 높게 나옵니다. " +
       "따라서 이 비율은 사실상 간격(4px 스케일에 걸리지 않는 값)과 모서리 커버리지를 반영합니다.",
@@ -141,6 +141,28 @@ export function renderInitReport(r: InitResult, draft: TokenDraft): string {
     for (const s of r.skippedScaffolds) lines.push(`- 건너뜀: ${s.item} — ${s.reason}`);
     for (const w of r.warnings) lines.push(`- 경고: ${w}`);
     lines.push("");
+  }
+
+  if (r.tokensLoaded !== null && !r.tokensLoaded.css) {
+    lines.push("## 토큰 스타일시트", "", `- ${TOKENS_NOT_LOADED_NOTE(r.outDir)}`, "");
+  }
+
+  if (r.tailwindPreset !== null) {
+    const p = r.tailwindPreset;
+    lines.push("## Tailwind 프리셋", "");
+    lines.push(`- 파일: \`${p.file}\` (Tailwind v${p.version})`);
+    lines.push(`- 연결: ${p.linked ? "연결됨" : "연결 안 됨"}`);
+    if (!p.linked) {
+      lines.push(
+        p.version === 4
+          ? `- 진입 CSS에서 \`@import "tailwindcss";\` 다음 줄에 \`@import "./${p.file}";\`를 추가하면 migrate가 클래스명(\`bg-ds-…\`)으로 치환합니다(경로는 CSS 파일 위치 기준으로 맞추세요).`
+          : "- tailwind.config의 `presets`에 프리셋을 추가하면 migrate가 클래스명(`bg-ds-…`)으로 치환합니다.",
+      );
+    }
+    lines.push(
+      "- 클래스 키는 `ds-` 접두(`bg-ds-blue-400`, `p-ds-2`, `rounded-ds-sm`, `text-ds-xs`)로 Tailwind 기본 테마와 겹치지 않으며, 값은 `tokens.css` 변수 참조라 `tokens.css`가 전역에 로드돼 있어야 합니다.",
+      "",
+    );
   }
 
   lines.push("## 결정", "");

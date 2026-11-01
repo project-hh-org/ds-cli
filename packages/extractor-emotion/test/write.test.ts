@@ -1,3 +1,4 @@
+import { runConformance } from "@dsmith-dev/extractor-api";
 import type { StyleUsage, WritePatch } from "@dsmith-dev/extractor-api";
 import { describe, expect, it } from "vitest";
 import { emotionExtractor } from "../src/index.js";
@@ -44,5 +45,38 @@ describe("emotionExtractor.write: 점수 대상이 아닌 usage", () => {
       ["height", true],
       ["color", false],
     ]);
+  });
+});
+
+describe("emotionExtractor.tokenRef + conformance write 왕복", () => {
+  const blue = { name: "--color-blue-500", value: "#3b82f6", category: "color" as const, normalized: { kind: "color" as const, hex: "#3b82f6", l: 0.62, c: 0.2, h: 260 } };
+  const space = { name: "--space-2", value: "8px", category: "spacing" as const, normalized: { kind: "length" as const, px: 8 } };
+  const radius = { name: "--radius-sm", value: "4px", category: "radius" as const, normalized: { kind: "length" as const, px: 4 } };
+  const text = { name: "--text-xs", value: "12px", category: "font-size" as const, normalized: { kind: "length" as const, px: 12 } };
+
+  it("css prop 객체·styled 템플릿 모두 왕복한다", () => {
+    const report = runConformance("emotion", () => emotionExtractor, [
+      {
+        file: "e.tsx",
+        code: 'const A = () => <div css={{ fontSize: 12, color: "#3b82f6", padding: "8px" }} />;',
+        expect: [],
+        writes: [
+          { target: { property: "font-size" }, token: text, ref: "var(--text-xs)", output: 'const A = () => <div css={{ fontSize: "var(--text-xs)", color: "#3b82f6", padding: "8px" }} />;', reextract: { source: "token", property: "font-size" } },
+          { target: { property: "color" }, token: blue, ref: "var(--color-blue-500)", reextract: { source: "token", property: "color" } },
+          { target: { property: "padding" }, token: space, ref: "var(--space-2)", output: 'const A = () => <div css={{ fontSize: 12, color: "#3b82f6", padding: "var(--space-2)" }} />;', reextract: { source: "token", property: "padding" } },
+        ],
+      },
+      {
+        file: "e.tsx",
+        code: 'import styled from "@emotion/styled";\nconst B = styled.div`border-radius: 4px; color: #3b82f6;`;',
+        expect: [],
+        writes: [
+          { target: { property: "border-radius" }, token: radius, ref: "var(--radius-sm)", reextract: { source: "token", property: "border-radius" } },
+          { target: { property: "color" }, token: { ...blue, name: "color.brand" }, ref: null, reextract: {} },
+        ],
+      },
+    ]);
+    expect(report.failed).toEqual([]);
+    expect(report.passed).toBe(2);
   });
 });

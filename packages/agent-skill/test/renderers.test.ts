@@ -274,7 +274,7 @@ describe("agents-md", () => {
   });
 });
 
-describe("실제 명령 8개 렌더 불변식", () => {
+describe("실제 명령 9개 렌더 불변식", () => {
   it("모든 SKILL.md name이 agentskills 규칙을 통과하고 디렉터리 이름과 같다", async () => {
     const commands = await loadCommands();
     for (const tool of ["claude-code", "codex"] as const) {
@@ -288,19 +288,19 @@ describe("실제 명령 8개 렌더 불변식", () => {
     }
   });
 
-  it("8개 명령 모두 5개 렌더러를 에러 없이 통과한다", async () => {
+  it("9개 명령 모두 5개 렌더러를 에러 없이 통과한다", async () => {
     const commands = await loadCommands();
     for (const tool of AI_TOOLS) expect(() => renderers[tool].render(commands, repoCtx), tool).not.toThrow();
-    expect(renderers["claude-code"].render(commands, repoCtx).writes).toHaveLength(9);
-    expect(renderers.gemini.render(commands, repoCtx).writes).toHaveLength(9);
+    expect(renderers["claude-code"].render(commands, repoCtx).writes).toHaveLength(10);
+    expect(renderers.gemini.render(commands, repoCtx).writes).toHaveLength(10);
   });
 
-  it("agents-md 블록은 40줄 이하이고 명령 8행을 담는다", async () => {
+  it("agents-md 블록은 40줄 이하이고 명령 9행을 담는다", async () => {
     const commands = await loadCommands();
     const content = renderers["agents-md"].render(commands, repoCtx).writes[0]?.content ?? "";
     expect(content.trimEnd().split("\n").length).toBeLessThanOrEqual(40);
     const rows = content.split("\n").filter((l) => /^\| `?\/ds/.test(l));
-    expect(rows).toHaveLength(8);
+    expect(rows).toHaveLength(9);
     expect(content).toContain("resolve_token, lint_snippet, search_component, get_component, explain_decision, list_decisions");
     expect(content).toContain("npx -y dsmith@0.2 mcp");
     expect(content).toContain('npx dsmith decide --item "<이름>" --choose "<id>"');

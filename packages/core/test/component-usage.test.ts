@@ -58,6 +58,27 @@ describe("extractComponentUsage", () => {
     ]);
   });
 
+  it("별칭·namespace 사용은 imported(DS 쪽 이름)를 함께 기록하고, 이름이 같으면 필드를 두지 않는다", () => {
+    const result = usages(
+      [
+        `import Card from "./Card";`,
+        `import { Dialog, Button as Btn, "x-y" as Odd } from "./ui";`,
+        `import * as UI from "./ui";`,
+        `const a = (<><Card /><Dialog.Trigger /><Btn /><Btn.Group /><UI.Tabs /><UI.Tabs.List /><Odd /></>);`,
+      ].join("\n"),
+    );
+    expect(result.map((u) => [u.name, u.imported])).toEqual([
+      ["Card", undefined],
+      ["Dialog.Trigger", undefined],
+      ["Btn", "Button"],
+      ["Btn.Group", "Button.Group"],
+      ["UI.Tabs", "Tabs"],
+      ["UI.Tabs.List", "Tabs.List"],
+      ["Odd", "x-y"],
+    ]);
+    expect(Object.hasOwn(result[0] ?? {}, "imported")).toBe(false);
+  });
+
   it("멤버 표현식 컴포넌트는 객체 식별자의 import로 해석한다", () => {
     const result = usages(
       `import { Dialog } from "@radix-ui/react-dialog"; const a = <Dialog.Trigger asChild />;`,

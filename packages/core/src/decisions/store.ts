@@ -28,6 +28,11 @@ function recordProblem(value: unknown): string | null {
   for (const key of ["chosen", "note", "decidedAt"] as const) {
     if (value[key] !== undefined && typeof value[key] !== "string") return `${key}는 문자열이어야 함`;
   }
+  if (value.mapping !== undefined) {
+    if (!isPlainObject(value.mapping) || !Object.values(value.mapping).every((v) => typeof v === "string")) {
+      return "mapping은 문자열 값의 객체여야 함";
+    }
+  }
   return null;
 }
 

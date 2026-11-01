@@ -341,3 +341,43 @@ describe("dsmith decide --kind token-cluster", { timeout: 30_000 }, () => {
     expect(run(root, "--list").stdout).toContain("— 결정: #000001 (stale — 선택지가 바뀜, 다시 결정)");
   });
 });
+
+describe("dsmith decide --map", { timeout: 30_000 }, () => {
+  const run = (root: string, ...args: string[]) =>
+    spawnSync(process.execPath, [bin, "decide", ...args, "--root", root], { encoding: "utf-8" });
+  const DS = "src/components/ui/button";
+
+  it("--map을 반복해 기록의 mapping에 싣는다", async () => {
+    const root = await audited("examples", "legacy-demo");
+    const r = run(root, "--item", "Button", "--choose", DS, "--map", "kind:variant", "--map", "variant=primary:variant=default", "--json");
+    expect(r.status).toBe(0);
+    expect(JSON.parse(r.stdout).mapping).toEqual({ kind: "variant", "variant=primary": "variant=default" });
+    const saved = JSON.parse(fs.readFileSync(path.join(root, ".dsmith", "decisions.json"), "utf-8"));
+    expect(saved.items[0].mapping).toEqual({ kind: "variant", "variant=primary": "variant=default" });
+  });
+
+  it("형식 위반은 종료 코드 1이고 decisions.json을 만들지 않는다", async () => {
+    const root = await audited("examples", "legacy-demo");
+    for (const bad of ["nocolon", ":b", "a:", "a=1:b", "a=b=c:d"]) {
+      const r = run(root, "--item", "Button", "--choose", DS, "--map", bad);
+      expect(r.status, bad).toBe(1);
+      expect(r.stderr).toContain("오류:");
+    }
+    expect(fs.existsSync(path.join(root, ".dsmith", "decisions.json"))).toBe(false);
+  });
+
+  it("--map은 --choose와 함께만 쓴다", async () => {
+    const root = await audited("examples", "legacy-demo");
+    expect(run(root, "--list", "--map", "a:b").status).toBe(1);
+  });
+
+  it("같은 선택·같은 mapping을 다시 기록해도 파일이 바이트 동일하다", async () => {
+    const root = await audited("examples", "legacy-demo");
+    const args = ["--item", "Button", "--choose", DS, "--map", "kind:variant"];
+    run(root, ...args);
+    const file = path.join(root, ".dsmith", "decisions.json");
+    const before = fs.readFileSync(file, "utf-8");
+    run(root, ...args);
+    expect(fs.readFileSync(file, "utf-8")).toBe(before);
+  });
+});

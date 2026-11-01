@@ -13,7 +13,16 @@ import { createTwoFilesPatch } from "diff";
 
 export type ManagedRegion =
   | { kind: "file" } // 파일 전체가 dsmith 소유(전용 경로)
-  | { kind: "block"; start: string; end: string } // 마커 줄 사이(마커 줄 제외)
+  | {
+      kind: "block";
+      start: string;
+      end: string;
+      /**
+       * 마커가 없을 때만: 이 줄 번호(0-based) 앞에 블록을 넣는다. 줄 수보다 크면 끝에 붙인다(기존 동작).
+       * 원본 기준이라 한 파일에 여럿이면 큰 줄 번호부터 넘긴다. regionKey에는 들어가지 않는다.
+       */
+      insertAt?: number;
+    } // 마커 줄 사이(마커 줄 제외)
   | { kind: "json-key"; keyPath: string[] }; // JSON 파일의 한 키 값
 
 export interface PlannedWrite {
@@ -193,7 +202,7 @@ function locateBlock(text: string, start: string, end: string): { span: BlockSpa
   return { span: { lines, startIdx, endIdx } };
 }
 
-function blockAdapter(content: string, start: string, end: string): Adapter {
+function blockAdapter(content: string, start: string, end: string, insertAt?: number): Adapter {
   // 호출자 버그는 던진다.
   if (start.trim() === "" || end.trim() === "" || /[\r\n]/.test(start + end)) {
     throw new Error("블록 마커는 한 줄짜리 비어 있지 않은 문자열이어야 함");
@@ -234,6 +243,15 @@ function blockAdapter(content: string, start: string, end: string): Adapter {
       }
       const block = [start, ...bodyLines, end].join(eol) + eol;
       if (text === null || text === "") return block;
+      if (insertAt !== undefined && Number.isInteger(insertAt) && insertAt >= 0) {
+        const lines = text.split("\n");
+        const lineCount = text.endsWith("\n") ? lines.length - 1 : lines.length;
+        if (insertAt < lineCount) {
+          const cr = crlf ? "\r" : "";
+          const inserted = [start, ...bodyLines, end].map((l) => `${l}${cr}`);
+          return [...lines.slice(0, insertAt), ...inserted, ...lines.slice(insertAt)].join("\n");
+        }
+      }
       const withEol = text.endsWith("\n") ? text : text + eol;
       return `${withEol}${eol}${block}`;
     },
@@ -360,7 +378,7 @@ function adapterFor(w: PlannedWrite): Adapter {
     case "file":
       return fileAdapter(w.content);
     case "block":
-      return blockAdapter(w.content, w.region.start, w.region.end);
+      return blockAdapter(w.content, w.region.start, w.region.end, w.region.insertAt);
     case "json-key":
       return jsonKeyAdapter(w.content, w.region.keyPath);
   }

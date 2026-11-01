@@ -3,6 +3,7 @@ import {
   cssPropertyToStyleProperty,
   isColorProperty,
   isLengthProperty,
+  shorthandColorProperty,
   splitShorthandColor,
 } from "../model/css-property.js";
 import { normalizeColor } from "../normalize/color.js";
@@ -75,6 +76,30 @@ interface Classified {
   source: StyleUsage["source"];
 }
 
+const BORDER_NON_COLOR_KEYWORDS: ReadonlySet<string> = new Set([
+  "none", "hidden", "dotted", "dashed", "solid", "double", "groove", "ridge", "inset", "outset", "thin", "medium", "thick",
+]);
+
+/**
+ * 축약 속성의 피연산자 중 색 자리인 토큰 참조. 색이라고 단정할 수 있을 때만 돌려준다.
+ * - border·outline: 마지막 토큰 참조(앞쪽은 굵기). 나머지 피연산자는 길이·선 스타일·굵기 키워드·다른 토큰 참조여야 한다.
+ *   (`currentColor`·`transparent`·`inherit`·`url(`이 섞이면 색 자리를 알 수 없다.)
+ * - background: 토큰 참조가 하나뿐이고 나머지가 `none`일 때만(이미지·반복·위치 값이 섞이면 색인지 알 수 없다).
+ */
+function shorthandColorToken(property: StyleProperty, operands: Token[]): Token | undefined {
+  const refs = operands.filter((t) => TOKEN_REF.test(t.text));
+  const candidate = property === "background-color" ? (refs.length === 1 ? refs[0] : undefined) : refs[refs.length - 1];
+  if (candidate === undefined) return undefined;
+  const allowed = property === "background-color" ? new Set(["none"]) : BORDER_NON_COLOR_KEYWORDS;
+  const othersOk = operands.every(
+    (t) =>
+      t === candidate ||
+      allowed.has(t.text.toLowerCase()) ||
+      (property !== "background-color" && (TOKEN_REF.test(t.text) || normalizeLength(t.text) !== null)),
+  );
+  return othersOk ? candidate : undefined;
+}
+
 function classify(prop: string, value: string): Classified {
   const whole = { from: 0, to: value.length };
   const property = cssPropertyToStyleProperty(prop);
@@ -83,7 +108,7 @@ function classify(prop: string, value: string): Classified {
   const tokens = tokenize(value);
   const operands = tokens.filter((t) => !OPERATOR.test(t.text));
   if (operands.length > 0 && operands.every((t) => TOKEN_REF.test(t.text))) {
-    return { property, ...whole, normalized: UNKNOWN, source: "token" };
+    return { property: shorthandColorProperty(prop) ?? property, ...whole, normalized: UNKNOWN, source: "token" };
   }
 
   const shorthand = splitShorthandColor(prop, value);
@@ -94,6 +119,18 @@ function classify(prop: string, value: string): Classified {
       to: shorthand.end,
       normalized: normalizeColor(shorthand.colorText) ?? UNKNOWN,
       source: "hardcoded",
+    };
+  }
+  // 색 자리가 이미 토큰인 축약(`border: 1px solid var(--c)`): 그 var()가 색 토큰이다. 치환(migrate) 뒤 재추출이 token으로 읽도록 한다.
+  const shorthandProperty = shorthandColorProperty(prop);
+  const tokenOperand = shorthandProperty === null ? undefined : shorthandColorToken(shorthandProperty, operands);
+  if (shorthandProperty !== null && tokenOperand !== undefined) {
+    return {
+      property: shorthandProperty,
+      from: tokenOperand.from,
+      to: tokenOperand.to,
+      normalized: UNKNOWN,
+      source: "token",
     };
   }
   if (isColorProperty(property)) {

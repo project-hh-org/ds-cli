@@ -7,5 +7,5 @@ export {
   usagesFromTemplate,
 } from "./template.js";
 export type { TemplateDecl } from "./template.js";
-export { registerPatchTarget, write } from "./write.js";
+export { registerPatchTarget, tokenRef, write } from "./write.js";
 export type { PatchTarget } from "./write.js";

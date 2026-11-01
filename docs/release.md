@@ -1,6 +1,6 @@
 # 릴리스 절차
 
-`dsmith`와 `@dsmith-dev/*` 10개 패키지는 changesets의 fixed 그룹이라 항상 같은 버전으로 올라간다. 아직 npm에 게시된 버전은 없고, 첫 게시가 0.1.0이다(`.changeset/initial-release.md`).
+`dsmith`와 `@dsmith-dev/*` 패키지는 changesets의 fixed 그룹이라 항상 같은 버전으로 올라간다. 첫 게시(0.1.0)는 이미 끝났다. 대기 중인 changeset(`ai-surface`·`ds-draft`·`migrate-guard`)은 다음 릴리스를 0.2.0으로 올리고, 3b(ai-surface·ds-draft)와 4a(migrate-guard)가 한 번에 나간다. 계획마다 따로 minor를 내려면 3b를 먼저 릴리스해야 한다.
 
 ## 절차
 
@@ -23,7 +23,7 @@ GitHub `project-hh-org/dsmith` → Settings → Secrets and variables → Action
 npmjs.com → Access Tokens → Generate New Token → Granular Access Token.
 
 - Packages and scopes: `Read and write`
-- 범위: `dsmith-dev` org 전체와 `dsmith` 패키지. `dsmith`는 첫 게시 전에는 존재하지 않아 선택할 수 없으므로, 첫 배포에는 "All packages"로 만든다.
+- 범위: `dsmith-dev` org 전체와 `dsmith` 패키지. `dsmith`와 `@dsmith-dev/*`는 이미 게시돼 있어 각 패키지를 골라 권한을 줄 수 있다(새 패키지를 처음 올릴 때만 "All packages"가 필요하다).
 - Bypass 2FA 체크(Actions에서 OTP를 입력할 수 없다)
 - 만료 90일 이상. 만료되면 게시가 인증 오류로 실패하므로 갱신 시점을 기록해 둔다.
 
@@ -36,6 +36,6 @@ provenance는 `NPM_CONFIG_PROVENANCE=true`와 워크플로의 `id-token: write`�
 - 이미 게시된 버전은 덮어쓸 수 없다. 코드를 고쳐야 하면 새 changeset(`patch`)으로 다음 버전을 낸다.
 - 직접 `npm publish`를 하지 않는다. `workspace:*` 의존성이 실제 버전으로 치환되지 않는다.
 
-## 첫 배포 뒤 할 일
+## trusted publishing으로 옮기기
 
-npm trusted publishing(OIDC)은 패키지가 npm에 이미 있어야 설정할 수 있어 첫 배포에는 `NPM_TOKEN`을 쓴다. 0.1.0 게시 후 패키지 10개 각각의 Settings → Trusted Publisher에 이 저장소와 `release.yml`을 등록하면 장기 토큰 없이 게시할 수 있다. 전환하면 `NPM_TOKEN` secret과 `NODE_AUTH_TOKEN` 설정을 제거한다. 전환 전에 한 번 시험 게시(patch)로 동작을 확인한다.
+npm trusted publishing(OIDC)은 패키지가 npm에 이미 있어야 설정할 수 있어 첫 배포에는 `NPM_TOKEN`을 썼다. 이제 패키지가 모두 올라가 있으니 패키지 각각의 Settings → Trusted Publisher에 이 저장소와 `release.yml`을 등록하면 장기 토큰 없이 게시할 수 있다. 전환하면 `NPM_TOKEN` secret과 `NODE_AUTH_TOKEN` 설정을 제거한다. 전환 전에 한 번 시험 게시(patch)로 동작을 확인한다.

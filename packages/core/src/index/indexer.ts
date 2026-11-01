@@ -7,7 +7,7 @@ import type { ComponentUsage } from "../model/component-usage.js";
 import { parseTsx } from "../parse/tsx.js";
 import { extractComponentUsage, type ModuleContext } from "./component-usage.js";
 import { extractFileStyles, extractorMatchers } from "./extract-file.js";
-import { readTsconfigPaths } from "./specifier.js";
+import { readTsconfigPaths, type TsPaths } from "./specifier.js";
 
 export interface Index {
   root: string;
@@ -94,13 +94,19 @@ async function dependencyNamesOf(root: string): Promise<Set<string>> {
   }
 }
 
-export async function indexRepo(
-  root: string,
-  extractors: Extractor[],
-  opts: IndexOptions = {},
-): Promise<Index> {
+/** 인덱서와 guard 스냅샷이 같은 방식으로 모으는 module 해석 정보(baseUrl 항목은 baseUrl을 명시했을 때만). */
+export async function collectModuleContext(root: string, tsPaths: TsPaths | null): Promise<ModuleContext> {
+  return {
+    baseUrlEntries:
+      tsPaths?.baseUrlExplicit === true ? await baseUrlEntriesOf(path.join(root, tsPaths.baseUrl)) : new Set(),
+    dependencies: await dependencyNamesOf(root),
+  };
+}
+
+/** `indexRepo`가 훑는 파일(root 상대 POSIX, 정렬)을 파일을 읽지 않고 나열한다. migrate가 audit 뒤에 생긴 파일을 찾는 데 쓴다. */
+export async function listIndexableFiles(root: string, extractors: Extractor[], opts: IndexOptions = {}): Promise<string[]> {
   const include = opts.include ?? [...new Set([...extractors.flatMap((e) => e.files), ...JS_FILES])];
-  const files = (
+  return (
     await fg(include, {
       cwd: root,
       ignore: [...DEFAULT_EXCLUDE, ...(opts.exclude ?? [])],
@@ -110,6 +116,14 @@ export async function indexRepo(
   )
     .map((f) => f.split(path.sep).join("/"))
     .sort();
+}
+
+export async function indexRepo(
+  root: string,
+  extractors: Extractor[],
+  opts: IndexOptions = {},
+): Promise<Index> {
+  const files = await listIndexableFiles(root, extractors, opts);
 
   // 준비 단계(설정 파일 로드 등)는 파일을 읽기 전에 Extractor마다 한 번만 실행한다.
   for (const extractor of extractors) {
@@ -123,11 +137,7 @@ export async function indexRepo(
   // 컴포넌트 import 해석에 쓸 tsconfig paths·baseUrl 항목·의존성은 레포마다 한 번만 읽는다.
   // baseUrl 항목은 baseUrl을 명시했을 때만 모은다: paths 전용 tsconfig에서는 bare import가 baseUrl 기준으로 풀리지 않는다.
   const tsPaths = await readTsconfigPaths(root);
-  const moduleContext: ModuleContext = {
-    baseUrlEntries:
-      tsPaths?.baseUrlExplicit === true ? await baseUrlEntriesOf(path.join(root, tsPaths.baseUrl)) : new Set(),
-    dependencies: await dependencyNamesOf(root),
-  };
+  const moduleContext = await collectModuleContext(root, tsPaths);
 
   const matchers = extractorMatchers(extractors);
 

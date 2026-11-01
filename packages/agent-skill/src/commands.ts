@@ -24,7 +24,8 @@ export const COMMANDS_DIR: URL = new URL("../commands/", import.meta.url);
 export const MAX_BODY_LINES = 40;
 const FRONTMATTER_KEYS = ["name", "description", "args", "uses"];
 const NAME_RE = /^[a-z0-9]+(-[a-z0-9]+)*$/;
-const USES_RE = /^(cli|mcp):[a-z_-]+( --[a-z-]+)*$/;
+// cli는 하위 명령 한 단계(`cli:guard init`)를 허용한다
+const USES_RE = /^(cli:[a-z_-]+( [a-z-]+)?|mcp:[a-z_-]+)( --[a-z-]+)*$/;
 const FRONTMATTER_RE = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/;
 
 function fail(file: string, message: string): never {

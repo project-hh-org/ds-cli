@@ -7,14 +7,17 @@ import {
   explainJson,
   formatDecideExplain,
   formatDecideList,
+  parseMapFlags,
   runDecideChoose,
   runDecideExplain,
   runDecideList,
 } from "./commands/decide.js";
 import { detectHints, formatDetectSummary, runDetect } from "./commands/detect.js";
+import { runGuardCiCommand, runGuardInitCommand } from "./commands/guard.js";
 import { runInitCommand } from "./commands/init.js";
 import { formatInstallSummary, runInstall } from "./commands/install.js";
 import { runMcp } from "./commands/mcp.js";
+import { runMigrateCommand } from "./commands/migrate.js";
 import { auditWarnings } from "./report/audit-report.js";
 
 interface CommonOptions {
@@ -44,6 +47,7 @@ interface DecideOptions {
   item?: string;
   choose?: string;
   note?: string;
+  map?: string[];
   git: boolean;
 }
 
@@ -85,10 +89,41 @@ interface InitCliOptions {
   force?: boolean;
 }
 
+interface GuardCliOptions {
+  root?: string;
+  json?: boolean;
+  ci?: boolean;
+  base?: string;
+  comment?: boolean;
+}
+
+interface GuardInitCliOptions {
+  root?: string;
+  ci?: string;
+  dryRun?: boolean;
+  force?: boolean;
+  json?: boolean;
+}
+
+interface MigrateCliOptions {
+  root: string;
+  json?: boolean;
+  files?: string[];
+  category?: string;
+  only?: string;
+  close?: boolean;
+  maxFiles?: string;
+  withTokens?: boolean;
+  apply?: boolean;
+  branch?: string;
+  revert?: string;
+  list?: boolean;
+}
+
 /** `dsmith` 커맨드 트리. 실행(parse)은 bin.ts가 하고, 테스트는 이 트리를 직접 들여다본다. */
 export function buildProgram(): Command {
   const program = new Command();
-  program.name("dsmith").description("디자인시스템 라이프사이클 CLI").exitOverride();
+  program.name("dsmith").description("디자인시스템 라이프사이클 CLI").exitOverride().enablePositionalOptions();
 
   common(program.command("detect").description("레포 환경을 감지하고 .dsmith/detect.json에 저장")).action(
     async (opts: CommonOptions) => {
@@ -128,6 +163,11 @@ export function buildProgram(): Command {
     .option("--item <name>", "--choose로 결정할 항목")
     .option("--choose <id>", "--item의 선택지 id를 결정으로 기록")
     .option("--note <text>", "--choose에 남길 메모")
+    .option(
+      "--map <from:to>",
+      '--choose의 컴포넌트 치환 props 대응(반복 가능). prop 이름 또는 prop=value 문자열 값. 예: --map kind:variant --map "variant=primary:variant=default"',
+      (value: string, previous: string[] = []) => [...previous, value],
+    )
     .action(async (opts: DecideOptions) => {
       const modes = [opts.list === true, opts.explain !== undefined, opts.choose !== undefined].filter(Boolean).length;
       if (modes !== 1) throw new Error("--list, --explain <item>, --item <name> --choose <id> 중 정확히 하나를 지정하세요");
@@ -145,6 +185,8 @@ export function buildProgram(): Command {
         throw new Error(`--kind는 ${DECIDE_KINDS.join(" | ")} 중 하나여야 합니다: ${opts.kind}`);
       }
       if (kind !== undefined && opts.list === true) throw new Error("--kind는 --explain·--choose와 함께 씁니다");
+      if (opts.map !== undefined && opts.choose === undefined) throw new Error("--map은 --item과 --choose와 함께 씁니다");
+      const mapping = opts.map === undefined ? undefined : parseMapFlags(opts.map);
       // 사람용 문자열은 --json이 아닐 때만 만든다.
       const out = (json: unknown, human: () => string): void => {
         process.stdout.write(opts.json ? `${JSON.stringify(json, null, 2)}\n` : `${human()}\n`);
@@ -159,7 +201,10 @@ export function buildProgram(): Command {
         if ("error" in result) process.exitCode = 1;
       } else if (opts.choose !== undefined) {
         if (opts.item === undefined) throw new Error("--choose에는 --item <name>이 필요합니다");
-        const record = await runDecideChoose(opts.root, opts.item, opts.choose, opts.note, kind ? { kind } : {});
+        const record = await runDecideChoose(opts.root, opts.item, opts.choose, opts.note, {
+          ...(kind ? { kind } : {}),
+          ...(mapping === undefined ? {} : { mapping }),
+        });
         out(record, () => `결정 기록: ${record.item} → ${opts.choose} (.dsmith/decisions.json)`);
       }
     });
@@ -250,6 +295,72 @@ export function buildProgram(): Command {
     .action(async (opts: InitCliOptions) => {
       const { result, text } = await runInitCommand(opts);
       process.stdout.write(opts.json ? `${JSON.stringify(result, null, 2)}\n` : `${text}\n`);
+    });
+
+  program
+    .command("migrate")
+    .description(
+      "하드코딩된 스타일 값을 토큰 참조로 바꾼다. 기본은 계획만 출력(아무것도 쓰지 않음), --apply가 파일 단위로 검증하며 적용하고 .dsmith/migrations에 기록, --revert로 되돌림",
+    )
+    .option("--root <dir>", "대상 레포 경로", process.cwd())
+    .option("--json", "결과를 JSON으로만 stdout에 출력")
+    .option("--files <glob...>", "치환할 파일 glob(root 상대). 여러 개 줄 수 있다")
+    .option("--category <name>", "카테고리만: color | spacing | radius | font-size")
+    .option("--only <kind>", "tokens | components")
+    .option("--close", "근사(close: ±2px·색 ΔE 임계 안) 매칭도 포함. 기본은 같은 값·exact만 계획하고 close 후보는 건수만 알린다(렌더링되는 값이 바뀔 수 있음)")
+    .option("--max-files <n>", "파일 순으로 앞에서 n개 파일만")
+    .option("--apply", "계획을 적용(파일을 쓴다)")
+    .option("--branch <name>", "적용을 새 git 브랜치에 커밋(--apply와 함께). 토큰·프리셋 파일이 커밋되지 않았거나 수정됐으면 쓰기 전에 오류")
+    .option("--with-tokens", "--branch 커밋에 untracked·수정된 토큰·프리셋 파일도 함께 넣는다(.dsmith/는 늘 제외)")
+    .option("--revert <id>", "기록된 마이그레이션을 되돌린다(적용 뒤 고친 파일은 건너뜀)")
+    .option("--list", "마이그레이션 기록 목록")
+    .action(async (opts: MigrateCliOptions) => {
+      const { json, text, exitCode } = await runMigrateCommand(opts);
+      process.stdout.write(opts.json ? `${JSON.stringify(json, null, 2)}\n` : `${text}\n`);
+      if (exitCode !== undefined && exitCode !== 0) process.exitCode = exitCode;
+    });
+
+  const guard = program
+    .command("guard")
+    .description(
+      "디자인시스템 드리프트 방어. `guard init`은 .dsmith/guard.json·ESLint 설정·(--ci github) 워크플로를 만들고, `guard --ci --base <ref>`는 PR이 base 대비 새로 들인 하드코딩·DS 밖·deprecated 컴포넌트를 센다",
+    )
+    .enablePositionalOptions()
+    .option("--root <dir>", "대상 레포 경로")
+    .option("--json", "결과를 JSON으로만 stdout에 출력")
+    .option("--ci", "PR diff 검사 실행(--base 필요). 신규 하드코딩이 임계값을 넘으면 종료 코드 1")
+    .option("--base <ref>", "비교 기준 ref(예: origin/main). merge-base 이후 변경만 본다")
+    .option("--comment", "GitHub PR에 결과 코멘트를 upsert(GITHUB_TOKEN 필요, 실패해도 종료 코드는 그대로)")
+    .action(async (opts: GuardCliOptions, cmd: Command) => {
+      if (opts.ci !== true) {
+        // 플래그 없이 `dsmith guard`만 쓰면 오류 대신 도움말(종료 0)
+        cmd.outputHelp();
+        return;
+      }
+      const result = await runGuardCiCommand({ root: opts.root ?? process.cwd(), base: opts.base, comment: opts.comment });
+      process.stdout.write(opts.json ? `${JSON.stringify(result, null, 2)}\n` : result.body);
+      process.exitCode = result.exitCode;
+    });
+
+  guard
+    .command("init")
+    .description(
+      ".dsmith/guard.json 스냅샷을 만들고 eslint.config에 @dsmith-dev/eslint-plugin 블록을 끼워 넣는다. 사용자가 고친 블록은 --force 없이 덮어쓰지 않음. 스냅샷은 마지막에 쓰며 커밋해야 한다",
+    )
+    .option("--root <dir>", "대상 레포 경로")
+    .option("--ci <provider>", "CI 워크플로도 생성(github)")
+    .option("--dry-run", "아무것도 쓰지 않고 쓸 내용과 diff만 출력")
+    .option("--force", "사용자가 고친 영역도 덮어쓴다")
+    .option("--json", "결과를 JSON으로만 stdout에 출력")
+    .action(async (opts: GuardInitCliOptions, cmd: Command) => {
+      const parent = cmd.parent?.opts<GuardCliOptions>() ?? {};
+      const { result, text } = await runGuardInitCommand({
+        root: opts.root ?? parent.root ?? process.cwd(),
+        ci: opts.ci,
+        dryRun: opts.dryRun,
+        force: opts.force,
+      });
+      process.stdout.write(opts.json === true || parent.json === true ? `${JSON.stringify(result, null, 2)}\n` : `${text}\n`);
     });
 
   return program;

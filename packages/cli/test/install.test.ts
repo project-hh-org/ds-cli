@@ -64,7 +64,7 @@ const files = (base: string): string[] =>
 const statuses = (r: InstallResult): string[] => [...new Set(r.outcomes.map((o) => o.status))];
 
 const SKILLS = (prefix: string): string[] =>
-  ["ds", "ds-ai", "ds-audit", "ds-check", "ds-decide", "ds-detect", "ds-init", "ds-migrate"].map(
+  ["ds", "ds-ai", "ds-audit", "ds-check", "ds-decide", "ds-detect", "ds-guard", "ds-init", "ds-migrate"].map(
     (n) => `${prefix}/${n}/SKILL.md`,
   );
 
@@ -94,7 +94,7 @@ describe("runInstall: 빈 레포 기본값", () => {
     const before = tree(root);
     const second = await install();
     expect(statuses(second)).toEqual(["unchanged"]);
-    expect(second.outcomes).toHaveLength(10);
+    expect(second.outcomes).toHaveLength(11);
     expect(second.tools).toEqual(["claude-code", "agents-md"]);
     expect(tree(root)).toEqual(before);
     // 감지 결과도 같다: 1회차가 만든 파일(.claude/, CLAUDE.md 없음, AGENTS.md)이 도구 집합을 바꾸지 않는다
@@ -131,7 +131,7 @@ describe("runInstall: 사용자 수정 보존", () => {
     const second = await install();
     const skipped = second.outcomes.filter((o) => o.status === "skipped-modified");
     expect(skipped.map((o) => o.file)).toEqual([skill]);
-    expect(second.outcomes.filter((o) => o.status === "unchanged")).toHaveLength(9);
+    expect(second.outcomes.filter((o) => o.status === "unchanged")).toHaveLength(10);
     expect(read(root, skill)).toBe(edited);
     const text = formatInstallSummary(second);
     expect(text).toContain(`건너뜀: ${skill}`);
@@ -341,7 +341,7 @@ describe("runInstall: --global", () => {
     vi.stubEnv("HOME", home);
     vi.stubEnv("USERPROFILE", home);
     const r = await runInstall({ root, global: true, tools: ["claude-code"], version: VERSION });
-    expect(r.outcomes).toHaveLength(8);
+    expect(r.outcomes).toHaveLength(9);
     expect(fs.existsSync(path.join(home, ".claude", "skills", "ds", "SKILL.md"))).toBe(true);
     expect(tree(root)).toEqual([]);
   });
@@ -422,8 +422,8 @@ describe("runInstall: Codex 중복 테이블 사전 점검", () => {
         expect(out?.status).toBe("skipped-invalid");
         expect(out?.reason).toContain(REASON);
         expect(read(base(), ".codex/config.toml")).toBe(toml);
-        // 나머지는 정상 설치: 스킬 8개 + (repo만) AGENTS.md 블록 — codex는 agents-md를 함께 설치한다
-        expect(r.outcomes.filter((o) => o.status === "created")).toHaveLength(scope === "repo" ? 9 : 8);
+        // 나머지는 정상 설치: 스킬 9개 + (repo만) AGENTS.md 블록 — codex는 agents-md를 함께 설치한다
+        expect(r.outcomes.filter((o) => o.status === "created")).toHaveLength(scope === "repo" ? 10 : 9);
         const forced = await install({ ...opts, force: true });
         expect(forced.outcomes.find((o) => o.file.endsWith(".codex/config.toml"))?.status).toBe("skipped-invalid");
         expect(read(base(), ".codex/config.toml")).toBe(toml);
@@ -519,7 +519,7 @@ describe("formatInstallSummary", () => {
     const r = await install();
     const lines = formatInstallSummary(r).split("\n");
     expect(lines[0]).toBe("등록: claude-code (레포: .claude/, CLAUDE.md), cursor (홈: ~/.cursor/)");
-    expect(lines[1]).toBe("파일: 생성 18 · 변경 0 · 유지 0 · 건너뜀 0");
+    expect(lines[1]).toBe("파일: 생성 20 · 변경 0 · 유지 0 · 건너뜀 0");
     expect(lines.at(-1)).toBe("다음: AI 도구를 다시 열고 /ds 로 시작");
   });
 
@@ -588,9 +588,9 @@ describe("dsmith install (CLI)", () => {
   it("사람용 요약을 stdout에 쓰고, 두 번째 실행은 유지만 센다", () => {
     const first = run([]);
     expect(first).toContain("등록: claude-code, agents-md (감지: 흔적 없음 → 기본값)");
-    expect(first).toContain("파일: 생성 10 · 변경 0 · 유지 0 · 건너뜀 0");
+    expect(first).toContain("파일: 생성 11 · 변경 0 · 유지 0 · 건너뜀 0");
     const second = run([]);
-    expect(second).toContain("파일: 생성 0 · 변경 0 · 유지 10 · 건너뜀 0");
+    expect(second).toContain("파일: 생성 0 · 변경 0 · 유지 11 · 건너뜀 0");
   });
 
   it("--global은 HOME 환경변수의 홈에 쓴다", () => {

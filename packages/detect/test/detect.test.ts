@@ -923,3 +923,83 @@ describe("isDsSpecifier (패키지 루트 export)", () => {
     expect(isDsSpecifier("anything", { kind: "none", tokenFiles: [] })).toBe(false);
   });
 });
+
+describe("Tailwind 주 버전 감지 (tailwindVersion)", () => {
+  const versionOf = async (): Promise<unknown> => (await detect(tmp)).styling.tailwindVersion;
+
+  it("package.json 범위의 첫 정수: ^3.4.0 → 3, ~4.1 → 4", async () => {
+    repo({ "package.json": pkg({}, { tailwindcss: "^3.4.0" }) });
+    expect(await versionOf()).toBe(3);
+    fs.writeFileSync(path.join(tmp, "package.json"), pkg({}, { tailwindcss: "^4.1.0" }));
+    expect(await versionOf()).toBe(4);
+    fs.writeFileSync(path.join(tmp, "package.json"), pkg({ tailwindcss: "~4.1" }));
+    expect(await versionOf()).toBe(4);
+  });
+
+  it("@tailwindcss/postcss·@tailwindcss/vite가 있으면 4", async () => {
+    repo({ "package.json": pkg({}, { tailwindcss: "latest", "@tailwindcss/postcss": "latest" }) });
+    expect(await versionOf()).toBe(4);
+    fs.writeFileSync(path.join(tmp, "package.json"), pkg({}, { tailwindcss: "*", "@tailwindcss/vite": "^4.0.0" }));
+    expect(await versionOf()).toBe(4);
+  });
+
+  it("의존성 없이 @import \"tailwindcss\" CSS만 있으면 4", async () => {
+    repo({ "package.json": pkg(), "src/app.css": '@import "tailwindcss";\n' });
+    expect(await versionOf()).toBe(4);
+  });
+
+  it("\"latest\" + tailwind.config.js(숫자 없음)는 3, @tailwind 지시어만 있어도 3", async () => {
+    repo({ "package.json": pkg({}, { tailwindcss: "latest" }), "tailwind.config.js": "module.exports = {}" });
+    expect(await versionOf()).toBe(3);
+    fs.rmSync(path.join(tmp, "tailwind.config.js"));
+    repo({ "src/index.css": "@tailwind base;\n" });
+    expect(await versionOf()).toBe(3);
+  });
+
+  it("v3 서브패스 @import \"tailwindcss/base\"는 4 근거가 아니다(숫자 없는 범위 → 3)", async () => {
+    repo({
+      "package.json": pkg({}, { tailwindcss: "latest" }),
+      "src/app.css": '@import "tailwindcss/base";\n@import "tailwindcss/components";\n@import "tailwindcss/utilities";\n',
+    });
+    expect(await versionOf()).toBe(3);
+    fs.writeFileSync(path.join(tmp, "package.json"), pkg({}, { tailwindcss: "catalog:" }));
+    expect(await versionOf()).toBe(3);
+    fs.writeFileSync(path.join(tmp, "package.json"), pkg({}, { tailwindcss: "workspace:*" }));
+    expect(await versionOf()).toBe(3);
+  });
+
+  it("v4 전용 서브패스(tailwindcss/theme.css·preflight.css·utilities.css)와 bare는 4", async () => {
+    for (const spec of ["tailwindcss", "tailwindcss/theme.css", "tailwindcss/preflight.css", "tailwindcss/utilities.css"]) {
+      repo({ "package.json": pkg({}, { tailwindcss: "next" }), "src/app.css": `@import "${spec}";\n` });
+      expect(await versionOf(), spec).toBe(4);
+    }
+  });
+
+  it("의존성 없이 v3 서브패스 @import만 있어도 tailwind 근거가 되고 3", async () => {
+    repo({ "package.json": pkg(), "src/app.css": '@import "tailwindcss/base";\n' });
+    const r = await detect(tmp);
+    expect(r.styling.methods.find((m) => m.name === "tailwind")?.evidence).toEqual(['@import "tailwindcss/base" in src/app.css']);
+    expect(r.styling.tailwindVersion).toBe(3);
+  });
+
+  it("범위 밖 숫자(5, 2)는 건너뛰고 다음 근거를 본다", async () => {
+    repo({ "package.json": pkg({}, { tailwindcss: "^5.0.0" }), "tailwind.config.js": "module.exports = {}" });
+    expect(await versionOf()).toBe(3);
+    fs.writeFileSync(path.join(tmp, "package.json"), pkg({}, { tailwindcss: "^2.2.0" }));
+    expect(await versionOf()).toBe(3);
+  });
+
+  it("Tailwind가 아니면 필드가 없다", async () => {
+    repo({ "package.json": pkg({ react: "^18.0.0" }) });
+    const r = await detect(tmp);
+    expect("tailwindVersion" in r.styling).toBe(false);
+  });
+});
+
+describe("Tailwind 주 버전: 저장소 fixture", () => {
+  const repoRoot = path.resolve(path.dirname(new URL(import.meta.url).pathname), "../../..");
+  it.each(["fixtures/tailwind-app", "examples/legacy-demo"])("%s (^3.x) → 3", async (rel) => {
+    const r = await detect(path.join(repoRoot, rel));
+    expect(r.styling.tailwindVersion).toBe(3);
+  });
+});

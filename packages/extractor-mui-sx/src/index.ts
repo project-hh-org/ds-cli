@@ -8,5 +8,5 @@ export {
   isSpacingProp,
   spacingToPx,
 } from "./theme-scale.js";
-export { registerPatchTarget, write } from "./write.js";
+export { registerPatchTarget, tokenRef, write } from "./write.js";
 export type { PatchTarget } from "./write.js";

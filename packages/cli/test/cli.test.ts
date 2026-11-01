@@ -389,6 +389,15 @@ describe("제외 (--exclude, overrides.exclude)", () => {
   });
 });
 
+/** `guard init --dry-run`처럼 서브커맨드 아래 하위 명령이 있으면 그쪽 옵션으로 내려간다(한 단계) */
+function resolveCliCommand(program: ReturnType<typeof buildProgram>, name: string, rest: string[]): { cmd: ReturnType<typeof buildProgram> | undefined; flags: string[] } {
+  let cmd = program.commands.find((c) => c.name() === name);
+  const flags = rest.filter((t) => t.startsWith("--"));
+  const nested = rest[0];
+  if (nested !== undefined && !nested.startsWith("--") && cmd !== undefined && cmd.commands.length > 0) cmd = cmd.commands.find((c) => c.name() === nested);
+  return { cmd, flags };
+}
+
 describe("슬래시 명령 ↔ CLI·MCP 일관성", () => {
   it("명령 소스가 부르는 MCP 도구는 서버가 내는 도구 이름 안에 있다", async () => {
     const used = (await loadCommands()).flatMap((c) => c.uses.filter((u) => u.startsWith("mcp:")).map((u) => u.slice(4)));
@@ -402,13 +411,13 @@ describe("슬래시 명령 ↔ CLI·MCP 일관성", () => {
 
   it("명령 소스가 부르는 CLI 서브커맨드와 플래그는 실제로 등록돼 있다", async () => {
     const program = buildProgram();
-    expect(program.commands.map((c) => c.name()).sort()).toEqual(["ai", "audit", "decide", "detect", "init", "install", "mcp"]);
+    expect(program.commands.map((c) => c.name()).sort()).toEqual(["ai", "audit", "decide", "detect", "guard", "init", "install", "mcp", "migrate"]);
     const used = (await loadCommands()).flatMap((c) => c.uses.filter((u) => u.startsWith("cli:")).map((u) => u.slice(4)));
     expect(used.length).toBeGreaterThan(0);
     for (const use of used) {
-      const [name, ...flags] = use.split(" ");
-      const cmd = program.commands.find((c) => c.name() === name);
-      expect(cmd, `서브커맨드 ${name}`).toBeDefined();
+      const [name, ...rest] = use.split(" ");
+      const { cmd, flags } = resolveCliCommand(program, name as string, rest);
+      expect(cmd, `서브커맨드 ${use}`).toBeDefined();
       for (const flag of flags) {
         expect(cmd?.options.map((o) => o.long), `${name}의 ${flag}`).toContain(flag);
       }
@@ -453,12 +462,12 @@ describe("슬래시 명령 본문 ↔ 실제 CLI 정합", () => {
   const spansOf = (body: string): string[] => [...body.matchAll(/`([^`\n]+)`/g)].map((m) => m[1] as string);
 
   /** `npx dsmith …` 또는 `{{cli}} …`로 시작하는 조각만: [서브커맨드, 플래그들] */
-  function cliCalls(body: string): { line: string; sub: string; flags: string[] }[] {
+  function cliCalls(body: string): { line: string; sub: string; rest: string[] }[] {
     return spansOf(body).flatMap((line) => {
       const m = /^(?:npx dsmith|\{\{cli\}\})\s+(\S+)(.*)$/.exec(line);
       if (m === null) return [];
-      const flags = (m[2] ?? "").split(/\s+/).filter((t) => t.startsWith("--"));
-      return [{ line, sub: m[1] as string, flags }];
+      const rest = (m[2] ?? "").split(/\s+/).filter((t) => t !== "" && t !== "{{args}}");
+      return [{ line, sub: m[1] as string, rest }];
     });
   }
 
@@ -480,8 +489,8 @@ describe("슬래시 명령 본문 ↔ 실제 CLI 정합", () => {
     const commands = await loadCommands();
     const calls = commands.flatMap((c) => cliCalls(c.body).map((call) => ({ ...call, command: c.name })));
     expect(calls.length).toBeGreaterThanOrEqual(8);
-    for (const { command, line, sub, flags } of calls) {
-      const cmd = program.commands.find((x) => x.name() === sub);
+    for (const { command, line, sub, rest } of calls) {
+      const { cmd, flags } = resolveCliCommand(program, sub, rest);
       expect(cmd, `${command}: \`${line}\`의 서브커맨드 ${sub}`).toBeDefined();
       const known = cmd?.options.map((o) => o.long) ?? [];
       for (const flag of flags) expect(known, `${command}: \`${line}\`의 ${flag}`).toContain(flag);
@@ -514,5 +523,39 @@ describe("슬래시 명령 본문 ↔ 실제 CLI 정합", () => {
         expect(found, `${name}: \`${field}\`가 실제 출력에 없음`).toBe(true);
       }
     }
+  });
+
+  it("ds-migrate·ds-guard 본문이 가리키는 JSON 필드는 실제 migrate·guard init --json 출력에 있다", async () => {
+    const src = path.resolve(here, "../../../examples/legacy-demo");
+    fs.cpSync(src, tmp, { recursive: true, filter: (p) => !p.split(path.sep).includes(".dsmith") });
+    const sh = (...args: string[]): string => {
+      const r = spawnSync(process.execPath, [bin, ...args, "--root", tmp], { encoding: "utf-8" });
+      expect(r.status, `${args.join(" ")}\n${r.stderr}`).toBe(0);
+      return r.stdout;
+    };
+    sh("audit");
+    sh("init", "--all");
+    sh("audit");
+    const migrate = keyPaths(JSON.parse(sh("migrate", "--json")));
+    const guardInit = keyPaths(JSON.parse(sh("guard", "init", "--dry-run", "--json")));
+
+    const commands = await loadCommands();
+    const body = (name: string): string => commands.find((c) => c.name === name)?.body ?? "";
+    const migrateFields = ["plan.planned", "plan.files", "plan.byCategory", "plan.skipped", "plan.skippedItems", "plan.close", "plan.stale", "plan.components", "plan.componentHeld", "plan.notes", "plan.tokens.loaded", "projected.before", "projected.after", "applied", "actual"];
+    const migrateSpans = spansOf(body("ds-migrate"));
+    for (const field of migrateFields) {
+      expect(migrate, `migrate --json에 ${field}가 없음`).toContain(field);
+      // 본문은 JSON 경로 전체로 가리킨다(`plan.planned`). 하위 필드(`plan.files.length`·`plan.stale.changed > 0 …`)로 가리켜도 된다
+      expect(
+        migrateSpans.some((s) => s === field || s.startsWith(`${field}.`)),
+        `ds-migrate 본문이 \`${field}\`를 가리키지 않음`,
+      ).toBe(true);
+    }
+    for (const field of ["snapshot", "counts", "eslint", "outcomes", "workflow", "notes"]) {
+      expect(guardInit, `guard init --json에 ${field}가 없음`).toContain(field);
+      expect(spansOf(body("ds-guard")), `ds-guard 본문이 \`${field}\`를 가리키지 않음`).toContain(field);
+    }
+    // 설정을 못 고칠 때만 나오는 필드
+    expect(spansOf(body("ds-guard"))).toContain("snippet");
   });
 });

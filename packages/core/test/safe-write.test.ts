@@ -660,3 +660,73 @@ describe("safeWrite — 안전성 보강", () => {
     });
   });
 });
+
+describe("safeWrite — block insertAt", () => {
+  const S = "<!-- dsmith:start -->";
+  const E = "<!-- dsmith:end -->";
+  const at = (rel: string, content: string, insertAt?: number): PlannedWrite => ({
+    file: p(rel),
+    region: { kind: "block", start: S, end: E, ...(insertAt === undefined ? {} : { insertAt }) },
+    content,
+  });
+
+  it("마커가 없는 파일은 insertAt 줄 앞에 블록을 넣는다", async () => {
+    fs.writeFileSync(p("cfg.txt"), "a\nb\nc\nd\n");
+    const res = await safeWrite([at("cfg.txt", "x", 2)], opts());
+    expect(res.outcomes[0]?.status).toBe("created");
+    expect(read("cfg.txt")).toBe(`a\nb\n${S}\nx\n${E}\nc\nd\n`);
+  });
+
+  it("마커가 있으면 insertAt을 무시하고 블록만 갱신한다", async () => {
+    fs.writeFileSync(p("cfg.txt"), "a\nb\nc\n");
+    await safeWrite([at("cfg.txt", "v1", 1)], opts());
+    const res = await safeWrite([at("cfg.txt", "v2", 0)], opts());
+    expect(res.outcomes[0]?.status).toBe("updated");
+    expect(read("cfg.txt")).toBe(`a\n${S}\nv2\n${E}\nb\nc\n`);
+  });
+
+  it("줄 수보다 큰 insertAt은 끝에 붙인다(기존 동작)", async () => {
+    fs.writeFileSync(p("cfg.txt"), "a\nb\n");
+    const plain = await safeWrite([at("cfg.txt", "x")], opts());
+    const withBig = read("cfg.txt");
+    fs.writeFileSync(p("cfg2.txt"), "a\nb\n");
+    await safeWrite([at("cfg2.txt", "x", 99)], opts());
+    expect(plain.outcomes[0]?.status).toBe("created");
+    expect(read("cfg2.txt")).toBe(withBig);
+  });
+
+  it("같은 파일의 블록 둘은 큰 줄 번호부터 넘기면 원본 기준 위치에 들어간다", async () => {
+    const S2 = "<!-- dsmith:import:start -->";
+    const E2 = "<!-- dsmith:import:end -->";
+    fs.writeFileSync(p("cfg.txt"), "i1\ni2\nbody\n[\n  a,\n]\n");
+    const res = await safeWrite(
+      [
+        { file: p("cfg.txt"), region: { kind: "block", start: S, end: E, insertAt: 4 }, content: "cfg" },
+        { file: p("cfg.txt"), region: { kind: "block", start: S2, end: E2, insertAt: 2 }, content: "imp" },
+      ],
+      opts(),
+    );
+    expect(res.outcomes.map((o) => o.status)).toEqual(["created", "created"]);
+    expect(read("cfg.txt")).toBe(`i1\ni2\n${S2}\nimp\n${E2}\nbody\n[\n${S}\ncfg\n${E}\n  a,\n]\n`);
+  });
+
+  it("CRLF 파일은 삽입 블록도 CRLF이고 두 번째 실행은 unchanged", async () => {
+    fs.writeFileSync(p("cfg.txt"), "a\r\nb\r\nc\r\n");
+    await safeWrite([at("cfg.txt", "x", 1)], opts());
+    expect(read("cfg.txt")).toBe(`a\r\n${S}\r\nx\r\n${E}\r\nb\r\nc\r\n`);
+    const again = await safeWrite([at("cfg.txt", "x", 1)], opts());
+    expect(again.outcomes[0]?.status).toBe("unchanged");
+  });
+
+  it("insertAt은 regionKey에 들어가지 않는다", () => {
+    const mf = p(".dsmith", "install.json");
+    expect(regionKey(at("a.txt", "x", 3), mf)).toBe(regionKey(at("a.txt", "x"), mf));
+  });
+
+  it("dryRun은 삽입 diff만 보여 주고 파일은 그대로", async () => {
+    fs.writeFileSync(p("cfg.txt"), "a\nb\n");
+    const res = await safeWrite([at("cfg.txt", "x", 1)], opts({ dryRun: true }));
+    expect(res.outcomes[0]?.diff).toContain(`+${S}`);
+    expect(read("cfg.txt")).toBe("a\nb\n");
+  });
+});

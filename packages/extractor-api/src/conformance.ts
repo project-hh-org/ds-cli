@@ -1,9 +1,24 @@
-import type { Extractor, StyleUsage } from "./extractor.js";
+import type { Extractor, StyleUsage, TokenLike, TokenRefContext } from "./extractor.js";
+
+/** write+tokenRef 왕복 케이스: 치환 뒤 재추출하면 그 사용만 바뀌어야 한다. */
+export interface WriteCase {
+  /** 원 usage를 고르는 부분 매칭(첫 일치) */
+  target: Partial<StyleUsage>;
+  token: TokenLike;
+  ctx?: TokenRefContext;
+  /** tokenRef 기대값. null이면 null이어야 하고 이후 검사는 생략한다 */
+  ref: string | null;
+  /** 패치 적용 뒤 전체 코드 기대값(선택) */
+  output?: string;
+  /** 재추출 시 target.line과 같은 줄에 있어야 하는 usage(보통 { source: "token", property }) */
+  reextract: Partial<StyleUsage>;
+}
 
 export interface ConformanceCase {
   code: string;
   file: string;
   expect: Partial<StyleUsage>[];
+  writes?: WriteCase[];
 }
 
 export interface ConformanceReport {
@@ -81,6 +96,86 @@ function signalsProblems(signals: unknown): string[] {
   return problems;
 }
 
+function usageKey(u: StyleUsage): string {
+  return `${u.property}|${u.raw}|${u.source}`;
+}
+
+/** `after`에서 늘어난 키(added)와 `before`보다 줄어든 키(removed). */
+function multisetDiff(before: Map<string, number>, after: Map<string, number>): { added: string[]; removed: string[] } {
+  const added: string[] = [];
+  const removed: string[] = [];
+  for (const key of new Set([...before.keys(), ...after.keys()])) {
+    const delta = (after.get(key) ?? 0) - (before.get(key) ?? 0);
+    if (delta > 0) added.push(key);
+    else if (delta < 0) removed.push(key);
+  }
+  return { added, removed };
+}
+
+/** 다중집합 비교용 키. */
+function multiset(usages: StyleUsage[]): Map<string, number> {
+  const counts = new Map<string, number>();
+  for (const u of usages) {
+    const key = usageKey(u);
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
+  return counts;
+}
+
+function sameMultiset(a: Map<string, number>, b: Map<string, number>): boolean {
+  if (a.size !== b.size) return false;
+  for (const [key, n] of a) if (b.get(key) !== n) return false;
+  return true;
+}
+
+function checkWrite(extractor: Extractor, testCase: ConformanceCase, wc: WriteCase, label: string): string | null {
+  const extractAll = (code: string): StyleUsage[] => extractor.extract({ root: "/", file: testCase.file, code });
+  let before: StyleUsage[];
+  try {
+    before = extractAll(testCase.code);
+  } catch (error) {
+    return `${label}: extract가 예외를 던짐: ${error instanceof Error ? error.message : String(error)}`;
+  }
+  const target = before.find((u) => matchesPartial(u, wc.target));
+  if (target === undefined) return `${label}: target과 일치하는 usage가 없음: ${JSON.stringify(wc.target)}`;
+
+  const ref = extractor.tokenRef!(wc.token, target, wc.ctx ?? {});
+  if (ref !== wc.ref) return `${label}: tokenRef가 ${JSON.stringify(wc.ref)}이어야 하는데 ${JSON.stringify(ref)}`;
+  if (wc.ref === null || ref === null) return null;
+
+  const patch = extractor.write(target, ref);
+  if (patch === null) return `${label}: write가 null을 돌려줌`;
+  const after = testCase.code.slice(0, patch.start) + patch.replacement + testCase.code.slice(patch.end);
+  if (wc.output !== undefined && after !== wc.output) {
+    return `${label}: 패치 적용 결과가 output과 다름: ${JSON.stringify(after)}`;
+  }
+
+  let reextracted: StyleUsage[];
+  try {
+    reextracted = extractAll(after);
+  } catch (error) {
+    return `${label}: 치환 뒤 재추출이 예외를 던짐: ${error instanceof Error ? error.message : String(error)}`;
+  }
+  const beforeCounts = multiset(before);
+  const candidates = reextracted.filter((u) => u.line === target.line && matchesPartial(u, wc.reextract));
+  // 같은 줄에 기대와 일치하는 usage가 여럿이면, 치환 전에 없던 키(= 치환으로 생긴 usage)를 우선한다.
+  const replaced = candidates.find((u) => !beforeCounts.has(usageKey(u))) ?? candidates[0];
+  if (replaced === undefined) {
+    return `${label}: 재추출에서 ${target.line}번 줄에 reextract와 일치하는 usage가 없음: ${JSON.stringify(wc.reextract)}`;
+  }
+
+  const rest = multiset(before);
+  const key = usageKey(target);
+  rest.set(key, (rest.get(key) ?? 1) - 1);
+  if (rest.get(key) === 0) rest.delete(key);
+  const restAfter = multiset(reextracted.filter((u) => u !== replaced));
+  if (!sameMultiset(rest, restAfter)) {
+    const { added, removed } = multisetDiff(rest, restAfter);
+    return `${label}: 치환 대상 외의 usage가 바뀜 (추가: ${JSON.stringify(added)}, 제거: ${JSON.stringify(removed)})`;
+  }
+  return null;
+}
+
 function checkCase(extractor: Extractor, testCase: ConformanceCase): string | null {
   let usages: StyleUsage[];
   try {
@@ -97,6 +192,14 @@ function checkCase(extractor: Extractor, testCase: ConformanceCase): string | nu
   for (const [index, partial] of testCase.expect.entries()) {
     if (!usages.some((usage) => matchesPartial(usage, partial))) {
       return `expect[${index}]와 일치하는 usage가 없음: ${JSON.stringify(partial)}`;
+    }
+  }
+
+  if (testCase.writes !== undefined && testCase.writes.length > 0) {
+    if (extractor.tokenRef === undefined) return "tokenRef 없음";
+    for (const [index, wc] of testCase.writes.entries()) {
+      const reason = checkWrite(extractor, testCase, wc, `writes[${index}]`);
+      if (reason !== null) return reason;
     }
   }
   return null;

@@ -12,9 +12,11 @@ mcp       # MCP 서버(stdio). AI 도구가 띄운다 — 직접 실행할 일�
 decide    # 중복·지역 재정의 컴포넌트의 결정 카드 보기(--list/--explain), 고른 결과 기록(--item/--choose) → .dsmith/decisions.json
 init      # audit 결과로 DS 초안 생성: W3C 토큰 파일·CSS 변수·TS 상수, 컴포넌트 골격, 커버리지 → design-system/
 ai        # DS에서 컴포넌트 카탈로그를 만들고 AGENTS.md의 DS 섹션을 갱신 → .dsmith/catalog.json
+migrate   # 하드코딩 값을 토큰 참조로, 결정된 중복 컴포넌트를 DS 컴포넌트로 치환(기본은 계획만) → .dsmith/migrations/
+guard     # 하드코딩이 다시 늘지 않게 ESLint 규칙·PR diff 검사 설정 → .dsmith/guard.json
 ```
 
-> **MVP 상태:** 구현: `detect`·`audit`·`install`·`mcp`·`decide`·`init`·`ai`. 계획: `migrate`(토큰 치환 codemod), `guard`(ESLint 규칙·CI 드리프트 검사), `usage`(사용량 대시보드) — [설계 스펙](docs/superpowers/specs/2026-10-31-ds-cli-design.md) 참고.
+> **MVP 상태:** 구현: `detect`·`audit`·`install`·`mcp`·`decide`·`init`·`ai`·`migrate`·`guard`. 계획: `usage`(사용량 대시보드) — [설계 스펙](docs/superpowers/specs/2026-10-31-ds-cli-design.md) 참고.
 
 0.1.0 배포 전까지는 빌드한 뒤 직접 실행한다. 배포는 릴리스 PR(`chore: 버전 올림`)을 머지하면 GitHub Actions가 자동으로 하며, 절차는 [docs/release.md](docs/release.md)에 있다.
 
@@ -47,7 +49,7 @@ npx dsmith init --all        # 결정 없이 추천안으로 스캐폴드(상위
 npx dsmith ai                # 카탈로그와 AGENTS.md DS 섹션
 ```
 
-- 커버리지는 하드코딩 값 중 토큰으로 바꿀 수 있는 비율로, `migrate`가 바꿀 수 있는 예상치다. 색·글꼴 크기 토큰은 이 초안이 하드코딩 값에서 직접 만들기 때문에 사실상 간격·모서리 커버리지를 반영한다.
+- 커버리지는 하드코딩 값 중 토큰으로 치환 가능한 비율로 `migrate` 후보 수와 같다. 요약은 이를 같은 값/정확(`migrate` 기본 대상)과 근사(`--close`로만)로 나눠 보인다. 쓴 `tokens.css`를 아무도 import하지 않으면 같은 안내를 낸다. 색·글꼴 크기 토큰은 이 초안이 하드코딩 값에서 직접 만들기 때문에 사실상 간격·모서리 커버리지를 반영한다.
 - 쓰기 규칙: 토큰 파일은 사람이 고친 것을 `--force` 없이 덮어쓰지 않는다. 스캐폴드는 `--force`로도 덮어쓰지 않는다. `--dry-run`은 `.dsmith/`를 포함해 아무것도 쓰지 않는다. 두 번째 실행은 아무것도 바꾸지 않는다.
 - npm 패키지 DS(예: `@mui/material`)는 `node_modules`가 설치돼 있어야 `.d.ts`를 읽는다. 설치가 없으면 `ai`가 그렇게 알린다.
 - MCP 서버는 `.dsmith/catalog.json`이 있으면 그것을 먼저 읽는다: `get_component`가 `source: "catalog"`로 props·허용 값·폐기·사용 예를 답하고, `search_component`는 아직 쓰이지 않는 DS 컴포넌트도 찾고, `resolve_token`은 카탈로그 토큰을 `source: "catalog"`로 돌려준다. 카탈로그가 없으면 이전과 같이 사용처 인덱스에서 답한다.
@@ -70,6 +72,47 @@ npx dsmith ai                # 카탈로그와 AGENTS.md DS 섹션
 ```
 node packages/cli/dist/bin.js audit --root <repo> --exclude "public/**" "legacy/**"
 ```
+
+## 적용·방어 (migrate · guard)
+
+`init`·`ai` 뒤에 `migrate`로 기존 코드의 하드코딩을 토큰으로 옮기고, `guard`로 다시 늘지 않게 막는다. 순서는 `… → ai → migrate → guard`.
+
+### migrate
+
+```
+npx dsmith migrate                                   # 계획만 보기 — 어떤 파일도 쓰지 않는다(.dsmith 포함)
+npx dsmith migrate --apply --branch ds/migrate-tokens # 새 브랜치에 적용하고 커밋 1개
+npx dsmith migrate --revert <id>                     # 기록으로 되돌리기
+npx dsmith migrate --list                            # 마이그레이션 기록 목록
+```
+
+- 후보는 `init`의 커버리지와 같은 규칙으로 고른다. 후보 수 = 계획 + 건너뜀(사유별) + 범위 제한 + close 제외이고, 출력이 이 등식을 보여준다. 가까운 토큰이 없는 값(먼 값)과 동적 값은 후보가 아니라 "범위 밖"으로 따로 센다. 숫자는 사람용 출력, `--json`, `.dsmith/reports/migrate-<날짜>.md`가 같다.
+- 기본은 값이 같은(identical) 매칭과 exact 매칭만 바꾼다. 근사(close, ±2px·색 ΔE 임계 안)는 건수만 알리고, `--close`를 줘야 포함한다. 렌더링되는 값이 바뀔 수 있어서다.
+- 건너뛰는 것: 반투명 색, 값이 여러 개인 단축 속성, 음수·0, SCSS 변수, 토큰 참조를 만들 수 없는 값, UTF-8이 아닌 파일. 사유는 계획 출력과 `--json`의 `plan.skipped`에 나온다. 범위를 좁히려면 `--files <glob>`, `--category <color|spacing|radius|font-size>`, `--only <tokens|components>`.
+- 결정(`decide`)한 중복 컴포넌트는 import를 DS 쪽으로 바꾼다. props 이름·값이 다르면 `decide --map <from>:<to>`(값까지 바뀌면 `prop=value:prop=value`)로 대응을 줘야 하고, 없거나 동적 값이면 그 사용은 보류한다. 지역 정의는 지우지 않고 주석만 단다.
+- migrate가 쓰는 `var(--…)`는 `init`이 만든 `design-system/tokens.css`가 전역에 로드돼야 값을 갖는다. 아무도 import하지 않으면 계획·적용 출력과 리포트에 안내가 나오고(`plan.tokens.loaded`), `app/layout.tsx`·`src/main.tsx`·`globals.css` 같은 전역 엔트리에서 import하면 사라진다. 안내만 하고 적용은 막지 않는다. `init`도 같은 경우 같은 안내를 낸다.
+- Tailwind: `init`이 프리셋(v3 `tailwind.preset.*`, v4 `@theme` CSS)을 함께 만든다. tailwind 설정에 연결돼 있으면 클래스명(`bg-ds-blue-400`)으로, 연결 안 됐으면 임의값(`bg-[color:var(--color-blue-400)]`)으로 바꾸고 그렇다고 알린다.
+- 파일 단위로 재파싱·재추출 검증을 하고, 실패한 파일은 쓰지 않는다. 쓰기 직전 해시를 비교해 계획 뒤 바뀐 파일도 건너뛴다. audit 뒤 파일이 바뀌었으면 `plan.stale`로 알리고 audit를 다시 하라고 한다.
+- `--branch`는 git 2.23 이상, git 작성자 정보(`user.name`·`user.email`), 커밋되지 않은 변경이 없고 `.gitignore`에 걸리지 않는 대상 파일, 아직 없는 브랜치 이름이 있어야 한다. 치환된 `var()`·프리셋이 가리킬 토큰 파일(`plan.tokens.files`)과 연결된 프리셋 파일이 커밋되지 않았거나 수정됐으면 쓰기 전에 오류로 막는다(먼저 커밋하거나 `--with-tokens`로 같은 커밋에 넣는다. `.dsmith/`는 늘 제외). 결과는 셋 중 하나다: 커밋됨 / 일부 파일 실패로 커밋 없이 남음(되돌리기 명령을 출력) / 적용된 것이 없어 브랜치를 버림. push하거나 PR을 열지 않는다.
+- 종료 코드 1: 롤백된 파일·계획 뒤 바뀐 파일·쓰기 실패가 있거나, `--revert`에서 일부만 되돌렸을 때(적용 뒤 수정된 파일은 건너뜀).
+- 알려진 한계: Tailwind v4에서 `tokens.css`의 `--color-*`·`--radius-*`·`--text-*`가 Tailwind 기본 테마 변수와 같은 이름이면 기본 유틸리티(`bg-blue-400`, `rounded-sm` 등)의 값이 바뀔 수 있다. 이 도구는 이를 다루지 않는다.
+
+### guard
+
+```
+npx dsmith guard init --ci github            # 스냅샷·ESLint 설정·GitHub Actions 워크플로
+npx dsmith guard --ci --base origin/main     # PR이 새로 들인 것만 검사
+```
+
+- `guard init`은 `.dsmith/guard.json`(토큰·DS 컴포넌트·정책 스냅샷)을 만들고 `eslint.config.*`에 `@dsmith-dev/eslint-plugin`의 `configs.recommended` 블록을 끼워 넣는다. `--ci github`면 `.github/workflows/dsmith-guard.yml`(권한 `contents: read`, `pull-requests: write`, `fetch-depth: 0`)도 쓴다. 사람이 고친 블록은 `--force` 없이 덮어쓰지 않는다. `.dsmith/guard.json`은 커밋해야 한다.
+- ESLint 설정을 고치지 못하면 이유와 붙여 넣을 코드(`snippet`)를 알려 준다: `legacy`(eslintrc — flat config만 지원), `unsupported-shape`, `needs-ts-parser`(TS 파일이 있는데 설정에 TS 파서가 없음), `not-eslint`(biome·oxlint), `no-config`. 이 경우에도 `guard --ci`는 쓸 수 있다.
+- ESLint 규칙(`dsmith/no-hardcoded-style`, `prefer-ds-component`, `no-deprecated-component`)은 JS/TS 파일만 검사한다. CSS·SCSS는 `guard --ci`가 검사한다. `.dsmith/guard.json`이 없거나 깨지면 규칙은 조용히 통과한다. `eslint --cache`를 쓰면 `guard.json`을 바꾼 뒤 첫 실행은 캐시 없이 돌린다(`packages/eslint-plugin/README.md`).
+- `guard --ci --base <ref>`는 merge-base 대비 바뀐 파일에서 신규 하드코딩·DS 밖 컴포넌트·deprecated 컴포넌트만 센다. 이름이 바뀐 파일은 옛 경로와 비교하고, 하위 디렉터리 `--root`와 모노레포도 된다. 정책(허용 목록·`failOn`)은 PR이 아니라 merge-base의 `guard.json`에서 읽는다. 신규 하드코딩이나 deprecated가 정책 임계를 넘으면 종료 코드 1이다.
+- `--comment`는 PR에 코멘트 하나를 마커로 찾아 갱신한다. 토큰이 없거나 포크 PR이라 403이 나도 경고만 하고 종료 코드는 그대로다. 토큰 파일이 `guard init` 뒤에 바뀌었으면 `staleSnapshot`에 파일 이름이, 기록되지 않은 새 토큰 파일이면 `+<파일>`로 나온다.
+
+### 같은 규칙 엔진
+
+`migrate`가 후보를 고르는 규칙, ESLint 플러그인이 보고하는 규칙, `guard --ci`가 세는 규칙, MCP `lint_snippet`의 답은 모두 `@dsmith-dev/core`의 같은 함수(`evaluateFile`·`bestReplacement`)에서 나온다. 그래서 migrate가 바꾼 것은 guard가 신규로 세지 않고, ESLint가 보고한 것은 guard가 같은 위치에서 같은 값으로 센다. `packages/cli/test/e2e-migrate-guard.test.ts`가 `examples/legacy-demo`에서 `init → migrate → guard`를 끝까지 돌려 이를 고정한다.
 
 ## 지원하는 스타일링 방식
 
@@ -116,14 +159,15 @@ npx dsmith install       # 쓰는 AI 도구를 감지해 설치. 그 뒤 AI 도�
 
 | 명령 | 하는 일 |
 | --- | --- |
-| `/ds` | 상태(0·1·2)를 감지하고 알맞은 단계(audit → decide → init → ai, check)를 순서대로 안내 |
+| `/ds` | 상태(0·1·2)를 감지하고 알맞은 단계(audit → decide → init → ai → migrate → guard, check)를 순서대로 안내 |
 | `/ds-detect` | 스타일링 방식·DS·프레임워크·시작 상태 감지 결과 설명 |
 | `/ds-audit` | 하드코딩 값·중복 컴포넌트 진단 결과 설명 |
 | `/ds-decide` | 중복·지역 재정의 중 표준으로 삼을 것을 결정 카드로 비교하고, 사람이 고른 결과를 기록 |
 | `/ds-check` | 파일의 하드코딩 값을 찾아 토큰으로 바꿀 수정안 제안 |
 | `/ds-init` | `init --dry-run`으로 토큰 수·커버리지·스캐폴드를 보여주고, 확인 뒤 실제로 DS 초안을 만듦 |
 | `/ds-ai` | `ai --dry-run`으로 카탈로그 요약을 보여주고, 확인 뒤 카탈로그와 AGENTS.md DS 섹션을 만듦 |
-| `/ds-migrate` | 아직 제공되지 않음 — 현재 가능한 단계를 안내 |
+| `/ds-migrate` | `migrate --json`으로 계획(치환 수·건너뜀 사유·close 후보·예상 점수)을 보여주고, 확인 뒤 새 브랜치에 적용·커밋. 되돌리기 명령을 알려주고 PR은 사람이 연다 |
+| `/ds-guard` | `guard init --dry-run`으로 쓸 파일과 ESLint 상태를 보여주고, 확인 뒤 스냅샷·ESLint 설정(·워크플로)을 만듦 |
 
 MCP 서버 `dsmith`(`npx -y dsmith@<설치된 0.x 마이너> mcp` — 0.x는 마이너까지, 1.x 이상은 메이저까지 고정)가 AI 도구에 내는 도구 6개:
 
@@ -170,8 +214,11 @@ node <abs>/packages/cli/dist/bin.js install --root <repo> --mcp-command "node <a
 - `packages/mcp-server` — MCP 서버(도구 6개·리소스 2개). core 함수를 부르는 얇은 핸들러와 응답 토큰 상한. 카탈로그는 core `readCatalog`로 읽는다
 - `packages/init` — `dsmith init`: audit 결과로 W3C 토큰 파일·CSS 변수·TS 상수와 컴포넌트 골격을 쓰고 커버리지를 계산
 - `packages/catalog` — `dsmith ai`: 로컬 DS·npm `.d.ts`·init 산출에서 컴포넌트 카탈로그를 만들고 AGENTS.md DS 섹션을 갱신
-- `packages/agent-skill` — 도구 중립 슬래시 명령 소스 8개와 AI 도구별 렌더러 5개(Claude Code·Codex·Cursor·Gemini CLI·AGENTS.md), 도구 감지
-- `packages/cli` — `dsmith` 바이너리(`detect`·`audit`·`install`·`mcp`·`decide`·`init`·`ai`), Extractor 레지스트리, 마크다운 리포트
+- `packages/migrate` — `dsmith migrate`: 토큰·결정 기반 치환 계획·적용·되돌리기, 컴포넌트 import 편집, git 브랜치 커밋
+- `packages/guard` — `dsmith guard`: `.dsmith/guard.json` 스냅샷, `guard init`(ESLint 설정·워크플로), `guard --ci`(PR diff 검사·코멘트)
+- `packages/eslint-plugin` — `@dsmith-dev/eslint-plugin`: 규칙 3개(core `evaluateFile` 위의 동기 래퍼)
+- `packages/agent-skill` — 도구 중립 슬래시 명령 소스 9개와 AI 도구별 렌더러 5개(Claude Code·Codex·Cursor·Gemini CLI·AGENTS.md), 도구 감지
+- `packages/cli` — `dsmith` 바이너리(`detect`·`audit`·`install`·`mcp`·`decide`·`init`·`ai`·`migrate`·`guard`), Extractor 레지스트리, 마크다운 리포트
 - `fixtures/` — e2e용 최소 레포
 - `examples/legacy-demo` — 데모 대상 가상 어드민 앱
 
