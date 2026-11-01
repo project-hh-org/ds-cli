@@ -90,6 +90,20 @@ export type { ExplainOptions, ExplainResult } from "./decisions/explain.js";
 export { DEFAULT_MAX_OPTIONS, explainDecision } from "./decisions/explain.js";
 export type { ChooseOptions } from "./decisions/choose.js";
 export { chooseDecision } from "./decisions/choose.js";
+export type { FontSizeCluster } from "./cluster/font-size.js";
+export { clusterFontSizes } from "./cluster/font-size.js";
+export { colorTokenNames, uniqueNames } from "./cluster/names.js";
+export { localDate } from "./util/local-date.js";
+export type {
+  Coverage,
+  DraftCategory,
+  DraftGroup,
+  DraftOptions,
+  DraftToken,
+  ScaleMapping,
+  TokenDraft,
+} from "./tokens/draft.js";
+export { COVERAGE_PROPERTIES, buildTokenDraft, draftCoverage, draftToTokens } from "./tokens/draft.js";
 export type { ComponentDoc } from "./component/props.js";
 export { readComponentDoc, readTypeProps } from "./component/props.js";
 export { moduleOfFile } from "./component/definition.js";
@@ -102,5 +116,3 @@ export type {
   CatalogToken,
 } from "./catalog/model.js";
 export { CATALOG_FILE, readCatalog, writeCatalog } from "./catalog/store.js";
-export { colorTokenNames, uniqueNames } from "./cluster/names.js";
-export { localDate } from "./util/local-date.js";
