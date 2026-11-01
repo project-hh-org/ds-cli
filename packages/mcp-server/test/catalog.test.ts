@@ -216,7 +216,7 @@ describe("응답 상한: 큰 카탈로그", () => {
     for (const r of results) expect(estimateTokens(textOf(r)), textOf(r).slice(0, 60)).toBeLessThanOrEqual(1500);
     const resource = await client.readResource({ uri: "components://list" });
     expect(resource.contents.length).toBe(1);
-  });
+  }, 20_000); // 병렬 실행 부하에서 5초를 넘기는 일이 있어 넉넉히 — 측정 대상은 토큰 수이지 시간이 아님
 });
 
 const sha = (file: string): string => createHash("sha256").update(fs.readFileSync(file)).digest("hex");
