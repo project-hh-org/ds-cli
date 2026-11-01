@@ -1,6 +1,6 @@
 {
   "name": "@dsmith-dev/eslint-plugin",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "ESLint rules for dsmith: no hardcoded style values, prefer design-system components, no deprecated components",
   "keywords": ["design-system", "dsmith", "eslint", "eslintplugin", "eslint-plugin"],
   "license": "MIT",

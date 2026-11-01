@@ -1,6 +1,6 @@
 {
   "name": "@dsmith-dev/mcp-server",
-  "version": "0.0.0",
+  "version": "0.2.0",
   "description": "dsmith MCP server: design-system tools for AI agents",
   "keywords": ["design-system", "dsmith", "mcp", "model-context-protocol", "ai-agent"],
   "license": "MIT",
