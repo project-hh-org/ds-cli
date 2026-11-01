@@ -8,6 +8,9 @@ import { normalizeLength } from "../src/normalize/length.js";
 import { rankTokens } from "../src/match/token-matcher.js";
 import { loadTokens, tokenCategoryOf } from "../src/tokens/load.js";
 import { proposalTokens } from "../src/tokens/proposal.js";
+import { buildTokenDraft } from "../src/tokens/draft.js";
+import { emitTokensCss, emitTokensTs } from "../src/tokens/emit.js";
+import { serializeW3c } from "../src/tokens/w3c.js";
 import { readCssVariableTokens } from "../src/tokens/css-variables.js";
 
 function colorUsage(raw: string, property: StyleUsage["property"] = "color"): StyleUsage {
@@ -388,5 +391,49 @@ describe("loadTokens — 카테고리별 폴백 (I4b·M1·M5)", () => {
     expect(loaded.tokens.filter((t) => t.name === "--c")).toHaveLength(1);
     expect(loaded.tokens.find((t) => t.name === "--c")?.normalized).toMatchObject({ hex: "#111111" });
     expect(loaded.tokens.find((t) => t.name === "--brand")?.normalized).toMatchObject({ hex: "#ff0000" });
+  });
+});
+
+describe("loadTokens .json", () => {
+  let dir: string;
+  beforeEach(() => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), "dsmith-tokens-json-"));
+  });
+  afterEach(() => {
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("init 산출 3종은 중복 없이 token-file로 읽고 tokens.ts는 ignored에 넣지 않는다", async () => {
+    const draft = buildTokenDraft([colorUsage("#3b82f6"), colorUsage("#111111"), lengthUsage("8px")]);
+    fs.mkdirSync(path.join(dir, "design-system"));
+    fs.writeFileSync(path.join(dir, "design-system/tokens.json"), serializeW3c(draft));
+    fs.writeFileSync(path.join(dir, "design-system/tokens.css"), emitTokensCss(draft));
+    fs.writeFileSync(path.join(dir, "design-system/tokens.ts"), emitTokensTs(draft));
+    const loaded = await loadTokens(
+      dir,
+      ["design-system/tokens.json", "design-system/tokens.css", "design-system/tokens.ts"],
+      [],
+    );
+    expect(loaded.source).toBe("token-file");
+    expect(loaded.tokens).toHaveLength(draft.tokens.length);
+    expect(loaded.ignored).toEqual([]);
+    expect(loaded.tokens.every((t) => t.file === "design-system/tokens.css")).toBe(true);
+  });
+
+  it("깨진 tokens.json은 warnings·ignored에 싣고 제안으로 채운다", async () => {
+    fs.writeFileSync(path.join(dir, "tokens.json"), "{oops");
+    const loaded = await loadTokens(dir, ["tokens.json"], [colorUsage("#ef4444")]);
+    expect(loaded.warnings).toContain("토큰 JSON을 읽을 수 없음: tokens.json");
+    expect(loaded.ignored).toEqual(["tokens.json"]);
+    expect(loaded.source).toBe("proposal");
+  });
+
+  it("json만 있으면 file이 json이다", async () => {
+    fs.writeFileSync(
+      path.join(dir, "tokens.json"),
+      JSON.stringify({ color: { brand: { $type: "color", $value: "#3b82f6" } } }),
+    );
+    const loaded = await loadTokens(dir, ["tokens.json"], []);
+    expect(loaded.tokens).toEqual([expect.objectContaining({ name: "--color-brand", source: "token-file", file: "tokens.json" })]);
   });
 });

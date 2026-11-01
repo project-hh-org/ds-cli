@@ -1,0 +1,139 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`serializeW3c > 스냅샷 1`] = `
+"{
+  "$description": "dsmith init이 생성한 파일입니다. 직접 고치면 다음 init이 덮어쓰지 않습니다(--force로 덮어씀).",
+  "color": {
+    "blue-400": {
+      "$type": "color",
+      "$value": {
+        "colorSpace": "srgb",
+        "components": [
+          0.2314,
+          0.5098,
+          0.9647
+        ],
+        "hex": "#3b82f6"
+      },
+      "$extensions": {
+        "dev.dsmith": {
+          "category": "color",
+          "usageCount": 3,
+          "members": [
+            "#3b82f6",
+            "#3c83f7"
+          ]
+        }
+      }
+    },
+    "gray-900": {
+      "$type": "color",
+      "$value": {
+        "colorSpace": "srgb",
+        "components": [
+          0.0667,
+          0.0667,
+          0.0667
+        ],
+        "hex": "#111111"
+      },
+      "$extensions": {
+        "dev.dsmith": {
+          "category": "color",
+          "usageCount": 1,
+          "members": [
+            "#111111"
+          ]
+        }
+      }
+    }
+  },
+  "space": {
+    "2": {
+      "$type": "dimension",
+      "$value": {
+        "value": 8,
+        "unit": "px"
+      },
+      "$extensions": {
+        "dev.dsmith": {
+          "category": "spacing",
+          "usageCount": 2,
+          "members": [
+            "8px"
+          ]
+        }
+      }
+    },
+    "4": {
+      "$type": "dimension",
+      "$value": {
+        "value": 16,
+        "unit": "px"
+      },
+      "$extensions": {
+        "dev.dsmith": {
+          "category": "spacing",
+          "usageCount": 1,
+          "members": [
+            "16px"
+          ]
+        }
+      }
+    }
+  },
+  "radius": {
+    "md": {
+      "$type": "dimension",
+      "$value": {
+        "value": 6,
+        "unit": "px"
+      },
+      "$extensions": {
+        "dev.dsmith": {
+          "category": "radius",
+          "usageCount": 1,
+          "members": [
+            "6px"
+          ]
+        }
+      }
+    }
+  },
+  "text": {
+    "sm": {
+      "$type": "dimension",
+      "$value": {
+        "value": 14,
+        "unit": "px"
+      },
+      "$extensions": {
+        "dev.dsmith": {
+          "category": "font-size",
+          "usageCount": 1,
+          "members": [
+            "14px"
+          ]
+        }
+      }
+    },
+    "base": {
+      "$type": "dimension",
+      "$value": {
+        "value": 16,
+        "unit": "px"
+      },
+      "$extensions": {
+        "dev.dsmith": {
+          "category": "font-size",
+          "usageCount": 1,
+          "members": [
+            "16px"
+          ]
+        }
+      }
+    }
+  }
+}
+"
+`;

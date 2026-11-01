@@ -1,0 +1,24 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`emitTokensTs > 스냅샷 1`] = `
+"// dsmith init이 생성한 파일입니다. 직접 고치면 다음 init이 덮어쓰지 않습니다(--force로 덮어씀).
+export const tokens = {
+  color: {
+    "gray-900": "#111111",
+    "blue-400": "#3b82f6",
+  },
+  space: {
+    "2": "8px",
+  },
+  radius: {
+    "md": "6px",
+  },
+  text: {
+    "xs": "12px",
+    "base": "16px",
+  },
+} as const;
+
+export type Tokens = typeof tokens;
+"
+`;

@@ -116,3 +116,6 @@ export type {
   CatalogToken,
 } from "./catalog/model.js";
 export { CATALOG_FILE, readCatalog, writeCatalog } from "./catalog/store.js";
+export type { DsmithExtension, W3cColorValue, W3cDimensionValue, W3cReadResult } from "./tokens/w3c.js";
+export { DSMITH_EXTENSION, draftToW3c, readW3cTokens, serializeW3c } from "./tokens/w3c.js";
+export { GENERATED_NOTICE, emitTokensCss, emitTokensTs } from "./tokens/emit.js";
