@@ -20,20 +20,48 @@ interface Segment {
   quasi: boolean;
 }
 
+/*
+ * 조각 표는 textStart 오름차순으로 빈틈없이 이어진다(빈 quasi는 길이 0). 선언마다 이진 탐색으로 조각을 찾는다.
+ */
+
 /** 시작 오프셋(포함)을 소스로. PLACEHOLDER 안이면 `${`의 위치. */
 function startToCode(segments: Segment[], t: number): number {
-  for (const s of segments) {
-    if (s.textStart <= t && t < s.textEnd) return s.quasi ? s.codeStart + (t - s.textStart) : s.codeStart;
+  // textStart <= t 인 마지막 조각. 빈 조각과 시작이 겹치면 뒤의(비어 있지 않은) 조각이 잡힌다.
+  let lo = 0;
+  let hi = segments.length - 1;
+  let found = -1;
+  while (lo <= hi) {
+    const mid = (lo + hi) >> 1;
+    if (segments[mid]!.textStart <= t) {
+      found = mid;
+      lo = mid + 1;
+    } else {
+      hi = mid - 1;
+    }
   }
-  return segments.at(-1)!.codeEnd;
+  const s = found === -1 ? undefined : segments[found]!;
+  if (s === undefined || t >= s.textEnd) return segments.at(-1)!.codeEnd;
+  return s.quasi ? s.codeStart + (t - s.textStart) : s.codeStart;
 }
 
 /** 끝 오프셋(제외)을 소스로. PLACEHOLDER 안이면 `}` 다음 위치. */
 function endToCode(segments: Segment[], t: number): number {
-  for (const s of segments) {
-    if (s.textStart < t && t <= s.textEnd) return s.quasi ? s.codeStart + (t - s.textStart) : s.codeEnd;
+  // textEnd >= t 인 첫 조각. 빈 조각과 끝이 겹치면 앞의(비어 있지 않은) 조각이 잡힌다.
+  let lo = 0;
+  let hi = segments.length - 1;
+  let found = -1;
+  while (lo <= hi) {
+    const mid = (lo + hi) >> 1;
+    if (segments[mid]!.textEnd >= t) {
+      found = mid;
+      hi = mid - 1;
+    } else {
+      lo = mid + 1;
+    }
   }
-  return segments[0]!.codeStart;
+  const s = found === -1 ? undefined : segments[found]!;
+  if (s === undefined || s.textStart >= t) return segments[0]!.codeStart;
+  return s.quasi ? s.codeStart + (t - s.textStart) : s.codeEnd;
 }
 
 /**
