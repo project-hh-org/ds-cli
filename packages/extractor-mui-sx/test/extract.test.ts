@@ -235,8 +235,8 @@ describe("muiSxExtractor extract", () => {
     ]);
   });
 
-  it("위치(line·column)는 값 노드 기준이다", () => {
+  it("위치(line·column)는 값 기준이다(문자열은 따옴표 안 값)", () => {
     const [u] = extractAll(`${MUI}\nconst A = () => (\n  <Box sx={{ color: "#fff" }} />\n);`);
-    expect(u).toMatchObject({ file: "a.tsx", line: 4, column: 20 });
+    expect(u).toMatchObject({ file: "a.tsx", line: 4, column: 21 });
   });
 });

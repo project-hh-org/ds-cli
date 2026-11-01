@@ -44,5 +44,5 @@ export type { CssDecl } from "./parse/css-text.js";
 export { PLACEHOLDER, parseCssDeclarations } from "./parse/css-text.js";
 export type { ClassifyOptions } from "./parse/css-decl-usage.js";
 export { classifyDeclaration, lineLocator } from "./parse/css-decl-usage.js";
-export type { StyleObjectContext, StyleObjectUsage } from "./parse/object-style.js";
+export type { StyleObjectContext, StyleObjectPatch, StyleObjectUsage } from "./parse/object-style.js";
 export { usagesFromStyleObject } from "./parse/object-style.js";

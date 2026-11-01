@@ -69,7 +69,7 @@ describe("usagesFromStyleObject", () => {
       ["color", "#000", "hardcoded"],
       ["padding", "8", "hardcoded"],
     ]);
-    expect(nestedCode.slice(results[1]!.patch!.start, results[1]!.patch!.end)).toBe(`"#000"`);
+    expect(nestedCode.slice(results[1]!.patch!.start, results[1]!.patch!.end)).toBe("#000");
   });
 
   it("classify override는 지정한 키만 바꾸고 undefined면 기본 분류", () => {
@@ -105,7 +105,7 @@ describe("usagesFromStyleObject", () => {
     ]);
   });
 
-  it("리터럴 값은 값 노드 구간, 그 밖은 dynamic(패치 없음)", () => {
+  it("문자열 값은 따옴표 안 구간(quote: false), 숫자는 값 노드 구간(quote: true), 그 밖은 dynamic(패치 없음)", () => {
     const code = `x({ color: "#fff", padding: 12, margin: m })`;
     const obj = firstObject(code);
     const results = usagesFromStyleObject(obj, { file: "a.ts", code, extractor: "x" });
@@ -114,7 +114,9 @@ describe("usagesFromStyleObject", () => {
       ["padding", "hardcoded"],
       ["margin", "dynamic"],
     ]);
-    expect(code.slice(results[0]!.patch!.start, results[0]!.patch!.end)).toBe(`"#fff"`);
+    expect(code.slice(results[0]!.patch!.start, results[0]!.patch!.end)).toBe("#fff");
+    expect(results[0]!.patch!.quote).toBe(false);
+    expect(results[1]!.patch!.quote).toBe(true);
     expect(results[2]!.patch).toBeNull();
   });
 });

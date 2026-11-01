@@ -65,7 +65,8 @@ const cases: ConformanceCase[] = [
     file: "h.tsx",
     code: `export const H = () => <div style={{ border: "1px solid #ef4444", background: theme.bg }} />;`,
     expect: [
-      { property: "other", source: "hardcoded", normalized: { kind: "unknown" } },
+      // 축약 값의 색 토큰만 border-color로 본다(CSS 텍스트 선언과 같은 규칙).
+      { property: "border-color", raw: "#ef4444", source: "hardcoded", normalized: { kind: "color", hex: "#ef4444" } },
       { property: "other", source: "dynamic", normalized: { kind: "unknown" } },
     ],
   },
@@ -122,10 +123,11 @@ describe("inlineStyleExtractor", () => {
     expect(inlineStyleExtractor.appliesTo(ctx("a.tsx", `<div className="x" />`))).toBe(false);
   });
 
-  it("line은 1-based, column은 0-based로 값 노드 위치를 가리킨다", () => {
-    const code = `const x = (\n  <div style={{ color: "#fff" }} />\n);`;
-    const [usage] = inlineStyleExtractor.extract({ root: "/", file: "e.tsx", code });
-    expect(usage).toMatchObject({ file: "e.tsx", line: 2, column: 23, extractor: "inline-style" });
+  it("line은 1-based, column은 0-based로 값(문자열은 따옴표 안 값) 위치를 가리킨다", () => {
+    const code = `const x = (\n  <div style={{ color: "#fff", padding: 4 }} />\n);`;
+    const [color, padding] = inlineStyleExtractor.extract({ root: "/", file: "e.tsx", code });
+    expect(color).toMatchObject({ file: "e.tsx", line: 2, column: 24, extractor: "inline-style" });
+    expect(padding).toMatchObject({ line: 2, column: 40 });
   });
 
   it("문자열 키, spread, computed 키를 처리한다", () => {

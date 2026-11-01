@@ -15,12 +15,19 @@ function apply(code: string, patch: WritePatch): string {
 }
 
 describe("muiSxExtractor.write", () => {
-  it("문자열 리터럴은 따옴표째 JSON 문자열로 치환한다", () => {
+  it("문자열 리터럴은 따옴표 안 값 구간을 tokenRef 그대로 치환한다", () => {
     const code = JSX(`{ color: "#111", p: 2 }`);
     const patch = muiSxExtractor.write(find(code, "#111"), "var(--c)")!;
     expect(patch.file).toBe("s/a.tsx");
-    expect(code.slice(patch.start, patch.end)).toBe(`"#111"`);
+    expect(code.slice(patch.start, patch.end)).toBe("#111");
     expect(apply(code, patch)).toBe(JSX(`{ color: "var(--c)", p: 2 }`));
+  });
+
+  it("여러 값 문자열은 첫 하드코딩 토큰만 치환한다", () => {
+    const code = JSX(`{ margin: "var(--m) 13px" }`);
+    const usage = find(code, "13px");
+    expect(usage).toMatchObject({ property: "margin", source: "hardcoded", normalized: { kind: "length", px: 13 } });
+    expect(apply(code, muiSxExtractor.write(usage, "var(--s)")!)).toBe(JSX(`{ margin: "var(--m) var(--s)" }`));
   });
 
   it("숫자 리터럴도 문자열 값으로 치환한다", () => {

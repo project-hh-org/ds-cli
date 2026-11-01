@@ -94,14 +94,15 @@ export function usagesFromTemplate(tpl: TemplateLiteral, ctx: ExtractContext, ex
 }
 
 /**
- * 객체 문법 스타일(`styled.div({...})`, `css={{...}}`) → StyleUsage. 규칙은 inline-style과 같다(값 노드를 문자열 리터럴로 치환).
+ * 객체 문법 스타일(`styled.div({...})`, `css={{...}}`) → StyleUsage. 규칙은 inline-style과 같다
+ * (문자열 값은 따옴표 안 하위 구간을 그대로, 숫자 값은 노드를 문자열 리터럴로 치환).
  * 중첩 선택자·미디어 쿼리 객체(`"&:hover": {…}`, `[bp]: {…}`)는 재귀한다.
  */
 export function usagesFromObject(obj: ObjectExpression, ctx: ExtractContext, extractorName: string): StyleUsage[] {
   const usages: StyleUsage[] = [];
   const objectCtx = { file: ctx.file, code: ctx.code, extractor: extractorName, nested: true };
   for (const { usage, patch } of usagesFromStyleObject(obj, objectCtx)) {
-    if (patch !== null) registerPatchTarget(usage, { ...patch, file: ctx.file, quote: true });
+    if (patch !== null) registerPatchTarget(usage, { ...patch, file: ctx.file });
     usages.push(usage);
   }
   return usages;

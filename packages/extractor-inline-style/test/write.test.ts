@@ -11,12 +11,22 @@ function extractOne(code: string, property: string) {
 describe("inlineStyleExtractor.write", () => {
   const code = `const x = <div style={{ color: "#3B82F6", padding: 12, margin: theme.m }} />;`;
 
-  it("문자열 리터럴 패치는 따옴표를 포함한 원본 구간을 가리킨다", () => {
+  it("문자열 리터럴 패치는 따옴표 안 값 구간을 tokenRef 그대로 치환한다", () => {
     const patch = inlineStyleExtractor.write(extractOne(code, "color"), "var(--color-primary-500)");
     expect(patch).not.toBeNull();
-    expect(code.slice(patch!.start, patch!.end)).toBe(`"#3B82F6"`);
-    expect(patch!.replacement).toBe(`"var(--color-primary-500)"`);
+    expect(code.slice(patch!.start, patch!.end)).toBe("#3B82F6");
+    expect(patch!.replacement).toBe("var(--color-primary-500)");
     expect(patch!.file).toBe("w.tsx");
+  });
+
+  it("축약 값은 색 토큰 구간만 치환한다", () => {
+    const src = `const x = <div style={{ border: "1px solid #ef4444" }} />;`;
+    const usage = inlineStyleExtractor.extract({ root: "/", file: "b.tsx", code: src })[0]!;
+    expect(usage).toMatchObject({ property: "border-color", raw: "#ef4444" });
+    const patch = inlineStyleExtractor.write(usage, "var(--danger)")!;
+    expect(src.slice(0, patch.start) + patch.replacement + src.slice(patch.end)).toBe(
+      `const x = <div style={{ border: "1px solid var(--danger)" }} />;`,
+    );
   });
 
   it("숫자 리터럴도 치환 패치를 만든다", () => {

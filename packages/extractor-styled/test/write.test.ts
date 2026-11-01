@@ -39,12 +39,22 @@ describe("styledExtractor.write", () => {
     );
   });
 
-  it("객체 문법 값은 문자열 리터럴로 치환한다", () => {
+  it("객체 문법 문자열 값은 따옴표 안을, 숫자 값은 문자열 리터럴로 치환한다", () => {
     const code = `${SC}const B = styled.div({ color: "#fff", padding: 12 });`;
     const color = styledExtractor.write(find(code, "#fff"), "var(--c)")!;
+    expect(code.slice(color.start, color.end)).toBe("#fff");
     expect(apply(code, color)).toBe(`${SC}const B = styled.div({ color: "var(--c)", padding: 12 });`);
     const padding = styledExtractor.write(find(code, "12"), "var(--s)")!;
     expect(apply(code, padding)).toBe(`${SC}const B = styled.div({ color: "#fff", padding: "var(--s)" });`);
+  });
+
+  it("객체 문법 여러 값 문자열(`padding: \"13px 8px\"`)은 13px 구간만 치환한다", () => {
+    const code = `${SC}const B = styled.div({ padding: "13px 8px" });`;
+    const usage = find(code, "13px");
+    expect(usage).toMatchObject({ property: "padding", normalized: { kind: "length", px: 13 } });
+    const patch = styledExtractor.write(usage, "var(--space-3)")!;
+    expect(code.slice(patch.start, patch.end)).toBe("13px");
+    expect(apply(code, patch)).toBe(`${SC}const B = styled.div({ padding: "var(--space-3) 8px" });`);
   });
 
   it("dynamic·token usage와 남이 만든 usage는 null", () => {

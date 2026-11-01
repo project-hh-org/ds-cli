@@ -1,27 +1,7 @@
 import type { StyleProperty, StyleUsage } from "@dsmith/extractor-api";
-import type { Expression, NumericLiteral, ObjectExpression, ObjectProperty, PatternLike } from "@babel/types";
-import { cssPropertyToStyleProperty, isColorProperty, isLengthProperty } from "../model/css-property.js";
-import { normalizeColor } from "../normalize/color.js";
-import { normalizeLength } from "../normalize/length.js";
-
-function camelToKebab(name: string): string {
-  return name.replace(/[A-Z]/g, (ch) => `-${ch.toLowerCase()}`);
-}
-
-/** 값이 색일 때만 색 속성으로 보는 축약 속성. 그 외 값(`1px solid red`, `url(...)`)은 "other"로 둔다. */
-const COLOR_SHORTHANDS: Readonly<Record<string, StyleProperty>> = {
-  background: "background-color",
-  border: "border-color",
-  outline: "border-color",
-};
-
-function propertyOf(key: string, value: Expression | PatternLike): StyleProperty {
-  const shorthand = COLOR_SHORTHANDS[camelToKebab(key)];
-  if (shorthand !== undefined && value.type === "StringLiteral" && normalizeColor(value.value) !== null) {
-    return shorthand;
-  }
-  return cssPropertyToStyleProperty(key);
-}
+import type { Expression, NumericLiteral, ObjectExpression, ObjectProperty, PatternLike, StringLiteral } from "@babel/types";
+import { cssPropertyToStyleProperty, isLengthProperty } from "../model/css-property.js";
+import { classifyDeclaration, lineLocator } from "./css-decl-usage.js";
 
 function propertyKeyName(prop: ObjectProperty): string | null {
   if (prop.computed) return null;
@@ -44,14 +24,13 @@ function numberRaw(node: NumericLiteral): string {
   return typeof raw === "string" ? raw : String(node.value);
 }
 
-function normalizeString(raw: string, property: StyleProperty): Normalized {
-  if (isColorProperty(property)) return normalizeColor(raw) ?? UNKNOWN;
-  const px = normalizeLength(raw);
-  return px === null ? UNKNOWN : { kind: "length", px };
-}
+/** 같은 파일의 객체가 여럿이어도 줄 시작 표를 한 번만 만든다. */
+let cachedLocator: { code: string; lineOf: (offset: number) => { line: number; column: number } } | null = null;
 
-/** `var(--…)` 값은 CSS 변수(토큰) 참조다. */
-const CSS_VAR_REF = /^\s*var\(\s*--/;
+function locatorFor(code: string): (offset: number) => { line: number; column: number } {
+  if (cachedLocator?.code !== code) cachedLocator = { code, lineOf: lineLocator(code) };
+  return cachedLocator.lineOf;
+}
 
 export interface StyleObjectContext {
   file: string;
@@ -70,20 +49,47 @@ export interface StyleObjectContext {
   ) => StyleObjectUsage | null | undefined;
 }
 
-export interface StyleObjectUsage {
-  usage: StyleUsage;
-  /** 리터럴 값 노드의 소스 구간(문자열은 따옴표 포함). 리터럴이 아닌 값(dynamic)은 null. */
-  patch: { start: number; end: number } | null;
+/**
+ * 치환할 소스 구간.
+ * - `quote: false`: 문자열 리터럴 따옴표 안의 하위 구간(`"1px solid #000"`의 `#000`). `tokenRef`를 그대로 넣는다.
+ * - `quote: true`: 숫자 리터럴 노드 전체(`12`, `-4`). `tokenRef`를 JS 문자열 리터럴로 감싸 넣는다.
+ */
+export interface StyleObjectPatch {
+  start: number;
+  end: number;
+  quote: boolean;
 }
 
-function buildUsage(
-  ctx: StyleObjectContext,
-  property: StyleProperty,
-  value: Expression | PatternLike,
-): StyleObjectUsage | null {
+export interface StyleObjectUsage {
+  usage: StyleUsage;
+  /** 하드코딩 리터럴 값의 치환 구간. token·dynamic 값은 null. */
+  patch: StyleObjectPatch | null;
+}
+
+/**
+ * 문자열 값은 CSS 텍스트 선언과 같은 `classifyDeclaration`으로 분류한다(축약 색 분리, `!important` 제거, 피연산자 단위 token 판정).
+ * 선언 값은 따옴표 안의 소스 텍스트다. 이스케이프가 없으면 `value.value`와 같고, 있어도 구간이 원본 오프셋과 1:1로 맞는다.
+ */
+function fromString(ctx: StyleObjectContext, key: string, value: StringLiteral, start: number, end: number): StyleObjectUsage | null {
+  const inner = ctx.code.slice(start + 1, end - 1);
+  const lead = inner.length - inner.trimStart().length;
+  const text = inner.trim();
+  const valueStart = start + 1 + lead;
+  const result = classifyDeclaration(
+    { property: key, value: text, start: valueStart, end: valueStart + text.length, dynamic: false },
+    { file: ctx.file, extractor: ctx.extractor, code: ctx.code, lineOf: locatorFor(ctx.code) },
+  );
+  if (result === null) return null;
+  return { usage: result.usage, patch: result.patch === null ? null : { ...result.patch, quote: false } };
+}
+
+function buildUsage(ctx: StyleObjectContext, key: string, value: Expression | PatternLike): StyleObjectUsage | null {
   const { start, end, loc } = value;
   if (start == null || end == null || loc == null) return null;
 
+  if (value.type === "StringLiteral") return fromString(ctx, key, value, start, end);
+
+  const property = cssPropertyToStyleProperty(key);
   const base = {
     file: ctx.file,
     line: loc.start.line,
@@ -91,18 +97,8 @@ function buildUsage(
     property,
     extractor: ctx.extractor,
   };
-  const patch = { start, end };
+  const patch = { start, end, quote: true };
 
-  if (value.type === "StringLiteral") {
-    const tokenRef = CSS_VAR_REF.test(value.value);
-    const usage: StyleUsage = {
-      ...base,
-      raw: value.value,
-      normalized: tokenRef ? UNKNOWN : normalizeString(value.value, property),
-      source: tokenRef ? "token" : "hardcoded",
-    };
-    return { usage, patch };
-  }
   if (value.type === "NumericLiteral") {
     const usage: StyleUsage = {
       ...base,
@@ -137,8 +133,8 @@ function buildUsage(
 
 /**
  * 스타일 객체 리터럴(`{ color: "#fff", padding: 12 }`)의 최상위 속성을 StyleUsage로 바꾼다.
- * 문자열·숫자·부호 붙은 숫자 리터럴은 hardcoded(`var(--…)` 문자열은 token), 그 밖의 값은 dynamic.
- * 계산된 키·스프레드·메서드는 건너뛴다. 리터럴 값에는 치환할 값 노드 구간을 `patch`로 돌려준다.
+ * 문자열 리터럴은 CSS 텍스트와 같은 선언 분류기(`classifyDeclaration`)로, 숫자·부호 붙은 숫자 리터럴은 hardcoded, 그 밖의 값은 dynamic.
+ * 계산된 키·스프레드·메서드는 건너뛴다. 하드코딩 리터럴에는 치환 구간을 `patch`로 돌려준다.
  * `ctx.nested`면 객체 값은 키(계산된 키 포함)와 상관없이 재귀한다.
  */
 export function usagesFromStyleObject(obj: ObjectExpression, ctx: StyleObjectContext): StyleObjectUsage[] {
@@ -152,8 +148,7 @@ export function usagesFromStyleObject(obj: ObjectExpression, ctx: StyleObjectCon
     const key = propertyKeyName(prop);
     if (key === null) continue;
     const value = prop.value;
-    const defaultClassify = (asKey: string = key): StyleObjectUsage | null =>
-      buildUsage(ctx, propertyOf(asKey, value), value);
+    const defaultClassify = (asKey: string = key): StyleObjectUsage | null => buildUsage(ctx, asKey, value);
     const override = ctx.classify?.(key, value, defaultClassify);
     const result = override === undefined ? defaultClassify() : override;
     if (result !== null) results.push(result);
