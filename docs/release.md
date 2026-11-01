@@ -8,7 +8,7 @@
 2. PR을 올린다. CI(`ci.yml`, Node 20·22)가 install(frozen)·build·test·typecheck를 돌린다.
 3. PR을 `main`에 머지한다.
 4. `release.yml`이 `chore: 버전 올림 (Version Packages)` PR을 만들거나 갱신한다. 버전·CHANGELOG 변경이 여기에 모인다. 이 PR을 머지한다.
-5. 머지된 `main`에서 `release.yml`이 `pnpm release`(`pnpm build && changeset publish`)를 실행해 npm에 게시하고 git 태그를 만든다. npm 패키지 페이지에서 새 버전과 provenance 배지를 확인한다.
+5. 머지된 `main`에서 `release.yml`이 `pnpm release`(`pnpm build && pnpm publish -r && changeset tag`)를 실행해 npm에 게시하고 git 태그를 만든다. `pnpm publish -r`을 쓰는 이유: `changeset publish`는 `npm publish`를 호출해 `workspace:*`를 실제 버전으로 치환하지 못한다(pnpm 공식 안내). npm 패키지 페이지에서 새 버전과 provenance 배지를 확인한다.
 
 `pnpm changeset status --verbose`로 대기 중인 changeset과 예정 버전을 미리 볼 수 있다. `changeset version`·`changeset publish`는 로컬에서 실행하지 않는다(릴리스 PR과 Actions가 한다).
 
