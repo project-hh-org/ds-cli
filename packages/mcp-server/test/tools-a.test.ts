@@ -57,9 +57,16 @@ describe("서버 골격", () => {
     const ensureIndex = vi.fn(indexFixture);
     const client = await connect({ root, ensureIndex });
     clients.push(client);
+    // 워크스페이스는 첫 호출에서 연다 — 연결(핸드셰이크)만으로는 audit을 돌리지 않는다.
+    expect(ensureIndex).not.toHaveBeenCalled();
+    const [first, second] = await Promise.all([
+      client.callTool({ name: "resolve_token", arguments: { raw: "#3B82F6" } }),
+      client.callTool({ name: "search_component", arguments: { intent: "button" } }),
+    ]);
+    expect(second.isError).not.toBe(true);
     expect(ensureIndex).toHaveBeenCalledTimes(1);
     expect(ensureIndex).toHaveBeenCalledWith(root);
-    const out = json(await client.callTool({ name: "resolve_token", arguments: { raw: "#3B82F6" } }));
+    const out = json(first);
     expect(out.token.name).toBe("--color-primary");
     await client.callTool({ name: "search_component", arguments: { intent: "button" } });
     expect(ensureIndex).toHaveBeenCalledTimes(1);
@@ -74,10 +81,24 @@ describe("서버 골격", () => {
     expect(ensureIndex).not.toHaveBeenCalled();
   });
 
-  it("ensureIndex 뒤에도 index가 없으면 Error", async () => {
+  it("ensureIndex 뒤에도 index가 없으면 첫 호출이 isError이고, 다음 호출이 다시 시도한다", async () => {
     const root = copyFixture("fixtures/with-ds-app");
     dirs.push(root);
-    await expect(connect({ root, ensureIndex: async () => {} })).rejects.toThrow(/index\.json/);
+    let calls = 0;
+    const client = await connect({
+      root,
+      ensureIndex: async (r) => {
+        calls += 1;
+        if (calls > 1) await indexFixture(r);
+      },
+    });
+    clients.push(client);
+    const first = await client.callTool({ name: "resolve_token", arguments: { raw: "#fff" } });
+    expect(first.isError).toBe(true);
+    expect(textOf(first)).toMatch(/index\.json/);
+    const second = await client.callTool({ name: "resolve_token", arguments: { raw: "#fff" } });
+    expect(second.isError).not.toBe(true);
+    expect(calls).toBe(2);
   });
 
   it("index.json을 다시 쓰면 다음 호출이 새 데이터를 본다", async () => {

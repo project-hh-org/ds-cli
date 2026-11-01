@@ -10,7 +10,8 @@ export interface SearchComponentInput {
 
 const DEFAULT_LIMIT = 10;
 
-/** 의도 문장으로 컴포넌트를 찾는다. 상위 limit(기본 10)개. */
-export function searchComponent(ws: Workspace, input: SearchComponentInput): ComponentMatch[] {
-  return searchComponents(ws.components, input.intent).slice(0, input.limit ?? DEFAULT_LIMIT);
+/** 의도 문장으로 컴포넌트를 찾는다. `matches`는 상위 limit(기본 10)개, `matched`는 limit 전의 일치 수. */
+export function searchComponent(ws: Workspace, input: SearchComponentInput): { matches: ComponentMatch[]; matched: number } {
+  const all = searchComponents(ws.components, input.intent);
+  return { matches: all.slice(0, input.limit ?? DEFAULT_LIMIT), matched: all.length };
 }

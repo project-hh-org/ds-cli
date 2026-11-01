@@ -86,9 +86,10 @@ export function textOf(result: { content: unknown }): string {
 }
 
 /** index.json·detect.json만 있는 합성 워크스페이스(소스 파일 없음). 예산·커서 테스트용 */
-export async function syntheticRoot(components: ComponentUsage[]): Promise<string> {
+export async function syntheticRoot(components: ComponentUsage[], opts: { mkdirs?: string[] } = {}): Promise<string> {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "dsmith-mcp-syn-"));
   fs.writeFileSync(path.join(root, "package.json"), "{}\n");
+  for (const dir of opts.mkdirs ?? []) fs.mkdirSync(path.join(root, dir), { recursive: true });
   const index: Index = {
     root,
     createdAt: new Date().toISOString(),
