@@ -134,3 +134,21 @@ describe("muiSxExtractor.tokenRef + conformance write 왕복", () => {
     expect(muiSxExtractor.write(find(code, "16px"), "2")).toBeNull();
   });
 });
+
+describe("muiSxExtractor.tokenRef: 숫자 스케일은 간격 속성에만", () => {
+  const space = { name: "--space-4", value: "16px", category: "spacing" as const, normalized: { kind: "length" as const, px: 16 } };
+
+  it("width/height 값은 간격 토큰이어도 숫자 스케일(=200%)을 쓰지 않는다", () => {
+    const code = JSX(`{ width: "16px", height: "16px", p: "16px" }`);
+    const [w, h, p] = muiSxExtractor.extract({ root: "/", file: "a.tsx", code });
+    expect(muiSxExtractor.tokenRef!(space, w!, {})).toBeNull();
+    expect(muiSxExtractor.tokenRef!(space, h!, {})).toBeNull();
+    expect(muiSxExtractor.tokenRef!(space, p!, {})).toBe("2");
+  });
+
+  it("margin·gap 계열 장문 키는 숫자 스케일을 쓴다", () => {
+    const code = JSX(`{ marginTop: "16px", gap: "16px" }`);
+    const usages = muiSxExtractor.extract({ root: "/", file: "a.tsx", code });
+    expect(usages.map((u) => muiSxExtractor.tokenRef!(space, u, {}))).toEqual(["2", "2"]);
+  });
+});

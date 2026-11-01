@@ -1,6 +1,12 @@
-import { cssVarRef } from "@dsmith-dev/extractor-api";
+import { TAILWIND_PRESET_PREFIX, cssVarRef } from "@dsmith-dev/extractor-api";
 import type { StyleProperty, StyleUsage, TokenLike, TokenRefContext, WritePatch } from "@dsmith-dev/extractor-api";
 import { isRatedUsage } from "@dsmith-dev/core";
+
+/**
+ * 프리셋 글꼴 크기 키(`ds-2xs`, `ds-xs`, `ds-2xl`, 충돌 접미 `ds-sm-2`). 프리셋이 `fontSize`에 평탄 키로 넣는 이름이다.
+ * 코어 글꼴 사다리(2xs…)와 같은 범위여야 하며, extract가 `text-ds-*`를 글꼴 크기로 읽는 기준이기도 하다.
+ */
+export const PRESET_FONT_SIZE_KEY = new RegExp(`^${TAILWIND_PRESET_PREFIX}-(?:[2-9]?xs|sm|base|lg|xl|[2-9]xl)(-\\d+)?$`);
 
 /** 치환할 클래스 토큰의 소스 구간(variant 접두 포함)과 보존할 variant 목록. */
 interface PatchTarget {
@@ -66,6 +72,7 @@ export function tokenRef(token: TokenLike, usage: StyleUsage, ctx: TokenRefConte
       return key !== undefined ? `${utility}-${key}` : `${utility}-[${variable}]`;
     case "font-size":
       if (usage.property !== "font-size") return null;
-      return key !== undefined ? `text-${key}` : `text-[length:${variable}]`;
+      // 키가 글꼴 크기 키 모양이 아니면 `text-ds-<이름>`이 색으로 읽히므로 임의값으로 쓴다.
+      return key !== undefined && PRESET_FONT_SIZE_KEY.test(key) ? `text-${key}` : `text-[length:${variable}]`;
   }
 }

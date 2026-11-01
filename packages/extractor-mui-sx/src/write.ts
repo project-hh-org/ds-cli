@@ -1,5 +1,5 @@
 import { cssVarRef } from "@dsmith-dev/extractor-api";
-import type { StyleUsage, TokenLike, WritePatch } from "@dsmith-dev/extractor-api";
+import type { StyleProperty, StyleUsage, TokenLike, WritePatch } from "@dsmith-dev/extractor-api";
 import { isRatedUsage } from "@dsmith-dev/core";
 import { SPACING_UNIT_PX } from "./theme-scale.js";
 
@@ -20,7 +20,8 @@ export function registerPatchTarget(usage: StyleUsage, target: PatchTarget): voi
   patchTargets.set(usage, target);
 }
 
-const NUMERIC_SCALE = /^\d+(\.\d+)?$/;
+const SPACING_PROPERTIES: ReadonlySet<StyleProperty> = new Set(["padding", "margin", "gap"]);
+const NUMERIC_SCALE =/^\d+(\.\d+)?$/;
 
 /**
  * 기록해 둔 구간을 치환하는 패치를 만든다. 문자열 값은 따옴표 안 구간에 `tokenRef` 그대로,
@@ -45,6 +46,8 @@ export function write(usage: StyleUsage, tokenRef: string): WritePatch | null {
  * 테마 숫자 스케일(`16px` → `"2"`), 아니면 CSS 변수 참조. 스케일은 MUI 기본 `theme.spacing`(8px)을 가정한다.
  */
 export function tokenRef(token: TokenLike, usage: StyleUsage): string | null {
+  // 숫자 스케일은 padding·margin·gap 키에서만 `theme.spacing()`이 된다. width 등에서 `2`는 200%라 쓸 수 없다.
+  if (token.category === "spacing" && !SPACING_PROPERTIES.has(usage.property)) return null;
   if (
     token.category === "spacing" &&
     token.normalized.kind === "length" &&

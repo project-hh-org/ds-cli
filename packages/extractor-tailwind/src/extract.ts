@@ -1,5 +1,5 @@
 import { normalizeColor, normalizeLength, parseTsx, traverse } from "@dsmith-dev/core";
-import { JS_FILES, TAILWIND_PRESET_PREFIX } from "@dsmith-dev/extractor-api";
+import { JS_FILES } from "@dsmith-dev/extractor-api";
 import type {
   ExtractContext,
   Extractor,
@@ -10,7 +10,7 @@ import type {
 import type { Node } from "@babel/types";
 import { parseClassToken, type ParsedClass } from "./class-parser.js";
 import { defaultTheme } from "./default-theme.js";
-import { registerPatchTarget, tokenRef, write } from "./write.js";
+import { PRESET_FONT_SIZE_KEY, registerPatchTarget, tokenRef, write } from "./write.js";
 
 export const EXTRACTOR_NAME = "tailwind";
 
@@ -86,9 +86,6 @@ const NON_STYLE_ARBITRARY = /^(?:url\(|[a-z-]*gradient\(|(?:image|percentage|pos
 const TYPE_HINT = /^(color|length):(.*)$/s;
 /** `var(--…)` 값은 CSS 변수(토큰) 참조다. */
 const CSS_VAR_REF = /^\s*var\(\s*--/;
-
-/** 프리셋 글꼴 크기 키(`ds-xs`, `ds-2xl`, 충돌 접미 `ds-sm-2`). 프리셋이 `fontSize`에 평탄 키로 넣는 이름이다. */
-const PRESET_FONT_SIZE_KEY = new RegExp(`^${TAILWIND_PRESET_PREFIX}-(xs|sm|base|lg|xl|[2-9]xl)(-\\d+)?$`);
 
 interface Resolved {
   property: StyleProperty;

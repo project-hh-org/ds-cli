@@ -197,3 +197,25 @@ describe("tailwindExtractor.tokenRef + conformance write 왕복", () => {
     ]);
   });
 });
+
+describe("tailwindExtractor 프리셋 글꼴 크기 키 범위", () => {
+  const mk = (name: string) => ({ name, value: "10px", category: "font-size" as const, normalized: { kind: "length" as const, px: 10 } });
+  const code = `const x = <div className="text-[10px]" />;`;
+  const target = { raw: "text-[10px]" };
+
+  it("2xs 키(ds-2xs)는 text-ds-2xs로 쓰고 font-size token으로 재추출된다", () => {
+    const ctx = { preset: { version: 3 as const, file: "p.ts", linked: true, keys: { "--text-2xs": "ds-2xs" } } };
+    const report = runConformance("tailwind", () => tailwindExtractor, [
+      { file: "w.tsx", code, expect: [], writes: [{ target, token: mk("--text-2xs"), ctx, ref: "text-ds-2xs", output: `const x = <div className="text-ds-2xs" />;`, reextract: { source: "token", property: "font-size" } }] },
+    ]);
+    expect(report.failed).toEqual([]);
+  });
+
+  it("프리셋 글꼴 크기 키 모양이 아니면 text-[length:var()]로 되돌린다(색으로 오인되지 않게)", () => {
+    const ctx = { preset: { version: 3 as const, file: "p.ts", linked: true, keys: { "--text-x": "ds-huge" } } };
+    const report = runConformance("tailwind", () => tailwindExtractor, [
+      { file: "w.tsx", code, expect: [], writes: [{ target, token: mk("--text-x"), ctx, ref: "text-[length:var(--text-x)]", reextract: { source: "token", property: "font-size" } }] },
+    ]);
+    expect(report.failed).toEqual([]);
+  });
+});
