@@ -48,7 +48,7 @@ describe("기본 설치 멱등성 (빈 레포, 도구 흔적 없음)", () => {
 
     const first = await installOnce(root, home);
     expect(first.tools).toEqual(["claude-code", "agents-md"]);
-    expect(first.outcomes.length).toBe(10); // 스킬 8 + .mcp.json + AGENTS.md
+    expect(first.outcomes.length).toBe(11); // 스킬 9 + .mcp.json + AGENTS.md
     expect(first.outcomes.every((o) => o.status === "created")).toBe(true);
 
     const snapshot = (): Record<string, string> => {

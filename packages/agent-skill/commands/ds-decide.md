@@ -10,6 +10,7 @@ uses: ["cli:decide --list", "mcp:list_decisions", "mcp:explain_decision"]
 2. 항목마다 `explain_decision {item}` 으로 결정 카드를 받아 표로 보여준다: 옵션별 사용 수, 영향(`impact`), 토큰 일치율(`ruleCheck`), 이력(`history`, 없으면 생략), 추천(`recommendation`과 `confidence`).
 3. 사람이 옵션을 고른다. 추천은 참고만 하고 대신 고르지 않는다.
 4. 고른 뒤 `npx dsmith decide --item "<item>" --choose "<id>"`를 실행해 기록한다.
+   카드 `differences`에 props 차이가 있으면 사람에게 대응을 묻고 `--map <from>:<to>`를 함께 넘긴다(값까지 바뀌면 `prop=value:prop=value`). `--map`은 여러 번 줄 수 있고, 다시 기록하면 mapping 전체가 바뀐다(생략하면 기존 것 유지). 대응을 모르면 비워 둔다 — migrate가 그 사용을 보류한다.
 5. 다음 항목으로 넘어간다. 항목이 없으면 끝났다고 알린다.
 
 MCP 도구가 없으면(서버 미등록) 이렇게 대신한다:
