@@ -1,6 +1,7 @@
 import path from "node:path";
 import { Command } from "commander";
 import { AI_TOOLS, type AiTool } from "@dsmith-dev/agent-skill";
+import { AI_FROM, formatAiSummary, runAiCommand } from "./commands/ai.js";
 import { runAudit } from "./commands/audit.js";
 import {
   explainJson,
@@ -47,6 +48,31 @@ interface DecideOptions {
 
 const DECIDE_KINDS = ["duplicate", "local-definition", "token-cluster"] as const;
 type DecideKind = (typeof DECIDE_KINDS)[number];
+
+interface AiCliOptions {
+  root: string;
+  json?: boolean;
+  from: string;
+  dryRun?: boolean;
+  force?: boolean;
+}
+
+interface McpOptions {
+  root?: string;
+  budget?: string;
+  git: boolean;
+}
+
+interface InstallCliOptions {
+  root: string;
+  json?: boolean;
+  tool?: string[];
+  all?: boolean;
+  global?: boolean;
+  dryRun?: boolean;
+  force?: boolean;
+  mcpCommand?: string;
+}
 
 interface McpOptions {
   root?: string;
@@ -190,6 +216,29 @@ export function buildProgram(): Command {
       process.stdout.write(opts.json ? `${JSON.stringify(result, null, 2)}\n` : `${formatInstallSummary(result)}\n`);
       // 스킬·명령을 하나도 못 썼으면 설치가 안 된 것이다.
       if (result.allSkillsSkipped === true) process.exitCode = 1;
+    });
+
+  program
+    .command("ai")
+    .description(
+      "이 레포의 DS에서 컴포넌트 카탈로그(.dsmith/catalog.json)를 만들고 AGENTS.md의 DS 섹션을 갱신. 사용자가 고친 섹션은 --force 없이 덮어쓰지 않음",
+    )
+    .option("--root <dir>", "대상 레포 경로", process.cwd())
+    .option("--json", "결과를 JSON으로만 stdout에 출력")
+    .option("--from <source>", `DS 소스(${AI_FROM.join(" | ")}). auto: detect.ds, 없으면 init 산출`, "auto")
+    .option("--dry-run", "아무것도 쓰지 않고 쓸 내용과 diff만 출력")
+    .option("--force", "사용자가 고친 DS 섹션도 덮어쓴다")
+    .action(async (opts: AiCliOptions) => {
+      if (!(AI_FROM as readonly string[]).includes(opts.from)) {
+        throw new Error(`--from은 ${AI_FROM.join(" | ")} 중 하나여야 합니다: ${opts.from}`);
+      }
+      const result = await runAiCommand({
+        root: opts.root,
+        from: opts.from as (typeof AI_FROM)[number],
+        ...(opts.dryRun === true ? { dryRun: true } : {}),
+        ...(opts.force === true ? { force: true } : {}),
+      });
+      process.stdout.write(opts.json ? `${JSON.stringify(result, null, 2)}\n` : `${formatAiSummary(result)}\n`);
     });
 
   return program;

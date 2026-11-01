@@ -85,6 +85,9 @@ importers:
       '@dsmith-dev/agent-skill':
         specifier: workspace:*
         version: link:../agent-skill
+      '@dsmith-dev/catalog':
+        specifier: workspace:*
+        version: link:../catalog
       '@dsmith-dev/core':
         specifier: workspace:*
         version: link:../core
