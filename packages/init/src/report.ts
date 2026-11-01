@@ -107,10 +107,17 @@ export function renderInitReport(r: InitResult, draft: TokenDraft): string {
   } else {
     for (const s of r.scaffolds) {
       const label =
-        s.status === "created" ? "생성" : s.status === "unchanged" || s.status === "skipped-exists" ? "유지" : s.status;
+        s.status === "created"
+          ? "생성"
+          : s.status === "updated"
+            ? "갱신"
+            : s.status === "unchanged" || s.status === "skipped-exists"
+              ? "유지"
+              : s.status;
       lines.push(`- ${label}: \`${s.file}\` — ${s.basis === "decided" ? "결정" : "추천"} ${s.from}`);
     }
     for (const s of r.skippedScaffolds) lines.push(`- 건너뜀: ${s.item} — ${s.reason}`);
+    for (const w of r.warnings) lines.push(`- 경고: ${w}`);
     lines.push("");
   }
 

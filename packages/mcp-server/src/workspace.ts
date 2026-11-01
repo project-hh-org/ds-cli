@@ -6,6 +6,8 @@ import {
   readCatalog,
   readDecisions,
   readIndex,
+  recordedTokenFiles,
+  staleCatalogTokenFiles,
   summarizeComponents,
   tokensFromCatalog,
   type Catalog,
@@ -147,17 +149,27 @@ export async function openWorkspace(deps: ServerDeps): Promise<WorkspaceHandle> 
     const candidates = index === prev?.index && catalog === prev.catalog ? prev.candidates : buildCandidates(components, catalog);
     const isDsModule = detect === prev?.detect ? prev.isDsModule : (m: string): boolean => isDsSpecifier(m, detect.ds);
 
-    // 토큰 파일의 키도 읽기 전에 잡는다.
-    const tokensStamp = await tokenStamp(root, detect.ds.tokenFiles);
+    // 토큰 파일의 키도 읽기 전에 잡는다. 카탈로그가 읽은 토큰 파일(init 산출 tokens.json 등)도 포함한다.
+    const tokenFiles = [...new Set([...detect.ds.tokenFiles, ...(catalog === null ? [] : recordedTokenFiles(catalog).map((f) => f.file))])];
+    const tokensStamp = await tokenStamp(root, tokenFiles);
     let tokens = prev?.tokens;
     let tokenSources = prev?.tokenSources;
     if (tokens === undefined || index !== prev?.index || detect !== prev.detect || catalog !== prev.catalog || tokensStamp !== prevStamps?.tokens) {
       try {
-        // 카탈로그에 토큰이 있으면 카탈로그가 먼저다. 없으면 3a 경로(토큰 파일 → audit 제안).
+        // 카탈로그에 토큰이 있으면 카탈로그가 먼저다 — 단, `dsmith ai`가 기록한 토큰 파일 해시가 지금 파일과 다르면 낡은 값이라 토큰 파일에서 다시 읽는다.
+        // 토큰이 없으면 3a 경로(토큰 파일 → audit 제안).
+        let useCatalog = catalog !== null && Array.isArray(catalog.tokens) && catalog.tokens.length > 0;
+        if (useCatalog && catalog !== null) {
+          const stale = await staleCatalogTokenFiles(root, catalog);
+          if (stale.length > 0) {
+            log(`dsmith mcp: 토큰 파일이 카탈로그 생성 뒤에 바뀜(${stale.join(", ")}) — 카탈로그 토큰 대신 토큰 파일에서 읽음. \`dsmith ai\`로 카탈로그를 갱신하세요`);
+            useCatalog = false;
+          }
+        }
         tokens =
-          catalog !== null && Array.isArray(catalog.tokens) && catalog.tokens.length > 0
+          useCatalog && catalog !== null
             ? tokensFromCatalog(catalog.tokens, index.styles)
-            : await loadTokens(root, detect.ds.tokenFiles, index.styles);
+            : await loadTokens(root, tokenFiles, index.styles);
         tokenSources = sourcesOf(tokens);
         stamps.tokens = tokensStamp;
       } catch (err) {

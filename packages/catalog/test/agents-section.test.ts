@@ -49,3 +49,40 @@ describe("renderAgentsDsSection", () => {
     for (const n of MCP_TOOL_NAMES_IN_SECTION) expect(text).toContain(n);
   });
 });
+
+describe("renderAgentsDsSection: 골격 컴포넌트", () => {
+  const comp = (name: string, extra: Partial<CatalogComponent> = {}): CatalogComponent => ({
+    name,
+    module: `design-system/components/${name}`,
+    origin: "init",
+    props: [],
+    propsStatus: "ok",
+    ...extra,
+  });
+
+  it("골격은 실제 컴포넌트 목록·개수에서 빼고 별도 줄로 '새 UI에 쓰지 말 것'을 밝힌다", () => {
+    const components = [comp("Badge"), comp("Header", { status: "scaffold" }), comp("Card", { status: "scaffold" })];
+    const text = renderAgentsDsSection(
+      {
+        version: 1,
+        dsmith: "x",
+        sources: [{ origin: "init", dir: "design-system/components" }],
+        components,
+        tokens: [],
+        stats: { components: 3, propsOk: 3, deprecated: 0, tokens: 0 },
+      },
+      ["Header", "Badge", "Card"],
+    );
+    expect(text).toContain("- 컴포넌트 1개(props 추출 1) — 많이 쓰는 순: Badge\n");
+    expect(text).toContain("- 골격(구현 전) — 새 UI에 쓰지 말 것: Header, Card\n");
+  });
+
+  it("같은 이름의 실제 구현이 있으면 골격 줄에 올리지 않고, 골격만 있으면 컴포넌트 0개", () => {
+    const base = { version: 1 as const, dsmith: "x", sources: [], tokens: [], stats: { components: 2, propsOk: 0, deprecated: 0, tokens: 0 } };
+    const both = renderAgentsDsSection({ ...base, components: [comp("Header"), comp("Header", { module: "other/Header", status: "scaffold" })] }, []);
+    expect(both).not.toContain("골격(구현 전)");
+    const only = renderAgentsDsSection({ ...base, components: [comp("Header", { status: "scaffold" })] }, []);
+    expect(only).toContain("- 컴포넌트 0개\n");
+    expect(only).toContain("새 UI에 쓰지 말 것: Header");
+  });
+});

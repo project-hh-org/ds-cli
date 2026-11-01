@@ -66,11 +66,21 @@ export function buildCandidates(components: ComponentSummary[], catalog: Catalog
  * 같은 근거로 줄 세울 때의 우선순위: 결정된 module → (DS module 또는 카탈로그에 있는 module) → (호출한 쪽의) 사용 수. 큰 값이 먼저.
  * isDs는 DS 패키지·경로 여부 그대로이고, inCatalog는 카탈로그에 실린 module인지다.
  */
-export function precedence(ws: Workspace, name: string, module: string): { decided: boolean; isDs: boolean; inCatalog: boolean } {
-  return { decided: decidedModule(ws, name) === module, isDs: ws.isDsModule(module), inCatalog: catalogEntry(ws, name, module) !== undefined };
+export function precedence(
+  ws: Workspace,
+  name: string,
+  module: string,
+): { decided: boolean; isDs: boolean; inCatalog: boolean; scaffold: boolean } {
+  const entry = catalogEntry(ws, name, module);
+  return {
+    decided: decidedModule(ws, name) === module,
+    isDs: ws.isDsModule(module),
+    inCatalog: entry !== undefined,
+    scaffold: entry?.status === "scaffold",
+  };
 }
 
-/** 정렬 키: decided → DS 또는 카탈로그 */
-export function standing(p: { decided: boolean; isDs: boolean; inCatalog: boolean }): [number, number] {
-  return [Number(p.decided), Number(p.isDs || p.inCatalog)];
+/** 정렬 키: decided → DS 또는 카탈로그. 골격(구현 전)은 DS·카탈로그에 있다는 이유로 앞서지 않는다. */
+export function standing(p: { decided: boolean; isDs: boolean; inCatalog: boolean; scaffold?: boolean }): [number, number] {
+  return [Number(p.decided), Number((p.isDs || p.inCatalog) && p.scaffold !== true)];
 }

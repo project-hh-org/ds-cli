@@ -12,6 +12,9 @@ import {
   explainDecision,
   listDecisions,
   localDate,
+  managedFileHash,
+  readCatalog,
+  readCatalogTokens,
   readComponentProps,
   readDecisions,
   readIndex,
@@ -21,6 +24,8 @@ import {
   seedDecisions,
   serializeW3c,
   summarizeComponents,
+  withTokenFiles,
+  writeCatalog,
   writeDecisions,
   type ComponentProps,
   type Coverage,
@@ -89,6 +94,13 @@ export interface InitResult {
   /** ".dsmith/init.json" */
   manifest: string;
   dryRun: boolean;
+  /** 사람이 알아야 할 것(예: 수정된 스캐폴드가 다른 옵션 기준이라 갱신하지 않음) */
+  warnings: string[];
+  /**
+   * `.dsmith/catalog.json`과의 관계. refreshed = 카탈로그의 토큰·토큰 파일 해시를 이번 산출로 갱신함, current = 이미 같음,
+   * needs-ai = 카탈로그가 없거나 이 산출 디렉터리를 담고 있지 않음(`dsmith ai` 필요), null = dry-run이라 보지 않음
+   */
+  catalog: "refreshed" | "current" | "needs-ai" | null;
 }
 
 const NEED_AUDIT = "먼저 `dsmith audit`을 실행하세요";
@@ -208,6 +220,8 @@ async function fileExists(abs: string): Promise<boolean> {
 
 interface InitManifestView {
   entries: Set<string>;
+  /** 엔트리 키 → 마지막으로 쓴 내용의 sha256 */
+  hashes: Map<string, string>;
   outDir?: string;
   updatedAt?: string;
 }
@@ -216,18 +230,51 @@ interface InitManifestView {
 async function readInitManifest(file: string): Promise<InitManifestView> {
   try {
     const parsed = JSON.parse(await fs.readFile(file, "utf-8")) as {
-      entries?: Record<string, unknown>;
+      entries?: Record<string, { sha256?: unknown } | null>;
       outDir?: unknown;
       updatedAt?: unknown;
     };
+    const hashes = new Map<string, string>();
+    for (const [key, entry] of Object.entries(parsed.entries ?? {})) {
+      if (typeof entry?.sha256 === "string") hashes.set(key, entry.sha256);
+    }
     return {
       entries: new Set(Object.keys(parsed.entries ?? {})),
+      hashes,
       ...(typeof parsed.outDir === "string" ? { outDir: parsed.outDir } : {}),
       ...(typeof parsed.updatedAt === "string" ? { updatedAt: parsed.updatedAt } : {}),
     };
   } catch {
-    return { entries: new Set() };
+    return { entries: new Set(), hashes: new Map() };
   }
+}
+
+/** 스캐폴드 첫 줄 `// dsmith init 스캐폴드 — Name (결정: X)` / `(추천: X, 결정 전)`에서 X(기준 옵션)를 읽는다. */
+function scaffoldOrigin(text: string): string | null {
+  const m = /^\/\/ dsmith init 스캐폴드 — \S+ \((?:결정|추천): (.+?)(?:, 결정 전)?\)/.exec(text);
+  return m?.[1] ?? null;
+}
+
+/**
+ * `.dsmith/catalog.json`이 이 산출 디렉터리(init 소스)를 담고 있으면 토큰과 토큰 파일 해시를 방금 쓴 파일 기준으로 맞춘다.
+ * 그러지 않으면 `decide --choose` 뒤 `init`으로 토큰 파일이 바뀌어도 카탈로그가 옛 값을 계속 내놓는다.
+ * 컴포넌트·AGENTS.md는 건드리지 않는다(`dsmith ai`의 일).
+ */
+async function refreshCatalog(root: string, outDir: string, dsTokenFiles: string[]): Promise<"refreshed" | "current" | "needs-ai"> {
+  const catalog = await readCatalog(root).catch(() => null);
+  const covers = catalog?.sources.some((s) => s.origin === "init" && (s.dir ?? "") === `${outDir}/components`) === true;
+  if (catalog === null || !covers) return "needs-ai";
+  const initTokens = `${outDir}/tokens.json`;
+  const read = await readCatalogTokens(root, [...new Set([...dsTokenFiles, initTokens])]);
+  const next = {
+    ...catalog,
+    sources: withTokenFiles(catalog.sources, read.files, initTokens),
+    tokens: read.tokens,
+    stats: { ...catalog.stats, tokens: read.tokens.length },
+  };
+  if (JSON.stringify(next) === JSON.stringify(catalog)) return "current";
+  await writeCatalog(root, next);
+  return "refreshed";
 }
 
 const byCountThenFile =(a: { file: string; count: number }, b: { file: string; count: number }): number =>
@@ -293,6 +340,7 @@ export async function runInit(opts: InitOptions): Promise<InitResult> {
   const planned = new Map<string, PlannedWrite>();
   const scaffolds: Omit<InitScaffold, "status">[] = [];
   const skippedScaffolds: InitResult["skippedScaffolds"] = [];
+  const warnings: string[] = [];
   const tokensRef = `${outDir}/tokens.css`;
 
   for (const target of targets) {
@@ -363,10 +411,23 @@ export async function runInit(opts: InitOptions): Promise<InitResult> {
       .sort(byCountThenFile)
       .slice(0, TOP_USES);
 
+    // 이미 있는 스캐폴드: init이 쓴 뒤 그대로(해시 == 매니페스트)면 dsmith 소유로 보고 새 기준으로 다시 만든다(managed).
+    // 사용자가 고쳤으면 create-only로 두어 건드리지 않는다.
+    const existing = await fs.readFile(path.join(root, file), "utf-8").catch(() => null);
+    const recorded = prevManifest.hashes.get(file);
+    const untouched = existing !== null && recorded !== undefined && managedFileHash(existing) === recorded;
+    if (existing !== null && !untouched) {
+      const was = scaffoldOrigin(existing);
+      if (was !== null && was !== chosenId) {
+        warnings.push(
+          `스캐폴드 ${file}은 다른 선택지(${was}) 기준으로 만들어진 뒤 고쳐져 있어 갱신하지 않음 (이번 ${basis === "decided" ? "결정" : "추천"}: ${chosenId}) — 새 기준이 필요하면 파일을 지우고 \`--force\`로 다시 실행(토큰 파일도 덮어씀)`,
+        );
+      }
+    }
     planned.set(file, {
       file: path.join(root, file),
       region: { kind: "file" },
-      mode: "create-only",
+      ...(untouched ? {} : { mode: "create-only" as const }),
       content: renderScaffold({ name, item: name, basis, from: chosenId, props: [...props.values()], topUses, tokensRef }),
     });
     scaffolds.push({ item: name, name, file, from: chosenId, basis });
@@ -465,12 +526,15 @@ export async function runInit(opts: InitOptions): Promise<InitResult> {
     report: null,
     manifest: MANIFEST,
     dryRun,
+    warnings,
+    catalog: null,
   };
 
   // 8. dryRun이 아니면 결정 시드와 리포트를 쓴다(.dsmith 안은 atomicWrite).
   if (!dryRun) {
     if (seed.added.length > 0 || refreshed > 0) await writeDecisions(root, seed.file);
     await recordInitDir(root, outDir, prevManifest, outcomes, opts.now ?? new Date());
+    result.catalog = await refreshCatalog(root, outDir, detected.ds.tokenFiles);
     const report = `.dsmith/reports/init-${localDate(opts.now ?? new Date())}.md`;
     await atomicWrite(path.join(root, report), renderInitReport(result, draft));
     result.report = report;
@@ -512,11 +576,13 @@ export function formatInitSummary(r: InitResult): string {
     lines.push(`알파 제외: 투명도가 있는 색 ${r.alphaDropped.length}종은 토큰 값에서 알파가 빠짐 (리포트 참고)`);
   }
   const created = r.scaffolds.filter((s) => s.status === "created").length;
+  const updated = r.scaffolds.filter((s) => s.status === "updated").length;
   const kept = r.scaffolds.filter((s) => s.status === "unchanged" || s.status === "skipped-exists").length;
   const skipped = r.skippedScaffolds.length;
   const skippedDetail =
     skipped === 0 ? "" : ` (${r.skippedScaffolds.map((s) => `${s.item} — ${s.reason}`).join("; ")})`;
-  lines.push(`스캐폴드: 생성 ${created} · 유지 ${kept} · 건너뜀 ${skipped}${skippedDetail}`);
+  lines.push(`스캐폴드: 생성 ${created}${updated > 0 ? ` · 갱신 ${updated}` : ""} · 유지 ${kept} · 건너뜀 ${skipped}${skippedDetail}`);
+  for (const w of r.warnings) lines.push(`경고: ${w}`);
   const stale = r.decisions.stale > 0 ? `, stale ${r.decisions.stale}건` : "";
   lines.push(
     r.all
@@ -531,6 +597,8 @@ export function formatInitSummary(r: InitResult): string {
       lines.push(`쓰지 못한 토큰 파일(skipped-invalid): ${TOKEN_FILE_NAMES[i]} — ${o.reason ?? "경로가 안전하지 않음"}`);
     }
   }
+  if (r.catalog === "refreshed") lines.push("카탈로그: 토큰·토큰 파일 해시를 갱신함 (.dsmith/catalog.json) — 컴포넌트·AGENTS.md는 `dsmith ai`로 갱신");
+  if (r.catalog === "needs-ai") lines.push("다음: dsmith ai");
   if (r.report !== null) lines.push(`리포트: ${r.report}`);
   if (r.dryRun) {
     for (const o of r.outcomes) {

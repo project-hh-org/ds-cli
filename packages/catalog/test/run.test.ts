@@ -143,7 +143,9 @@ describe("runAi: 상태 0 (examples/legacy-demo) → init → ai", () => {
     await forceStateZero(root);
     const init = await runInit({ root, all: true, version: VERSION });
     const r = await runAi({ root, version: VERSION });
-    expect(r.sources).toEqual([{ origin: "init", dir: "design-system/components" }]);
+    expect(r.sources).toEqual([
+      { origin: "init", dir: "design-system/components", tokenFiles: [{ file: "design-system/tokens.json", sha256: expect.stringMatching(/^[0-9a-f]{64}$/) }] },
+    ]);
     expect(init.scaffolds.length).toBeGreaterThan(0);
     expect(r.components).toBe(init.scaffolds.length);
     expect(r.tokens).toBe(init.tokens.total);
@@ -162,6 +164,9 @@ describe("runAi: 보강 (fix round 1)", () => {
     const root = copyExample("legacy-demo");
     await forceStateZero(root);
     await runInit({ root, all: true, version: VERSION });
+    // 골격(손대지 않은 init 산출)은 컴포넌트 줄에 오르지 않으므로 구현한 것처럼 고쳐 둔다
+    const dir = path.join(root, "design-system", "components");
+    for (const f of fs.readdirSync(dir)) fs.appendFileSync(path.join(dir, f), "// 구현함\n");
     await runAi({ root, version: VERSION });
     const agents = read(root, "AGENTS.md");
     const line = agents.split("\n").find((l) => l.startsWith("- 컴포넌트")) ?? "";
@@ -235,6 +240,39 @@ describe("runAi: 보강 (fix round 1)", () => {
     // 엔트리 키 이름순으로는 design-system이 앞이지만 최근 산출은 src/ds
     expect(await findInitDir(root)).toBe("src/ds");
     const r = await runAi({ root, version: VERSION });
-    expect(r.sources).toEqual([{ origin: "init", dir: "src/ds/components" }]);
+    expect(r.sources).toMatchObject([{ origin: "init", dir: "src/ds/components" }]);
+  });
+});
+
+describe("runAi: 골격 표시", () => {
+  it("init 산출 중 init.json 해시와 같은 파일은 status scaffold, 고친 파일은 실제 구현으로 본다", async () => {
+    const root = copyExample("legacy-demo");
+    await forceStateZero(root);
+    const init = await runInit({ root, all: true, version: VERSION });
+    const [edited, ...rest] = init.scaffolds;
+    if (edited === undefined) throw new Error("scaffold 없음");
+    fs.appendFileSync(path.join(root, edited.file), "// 구현함\n");
+    await runAi({ root, version: VERSION });
+    const catalog = JSON.parse(read(root, ".dsmith/catalog.json")) as { components: { name: string; status?: string }[] };
+    expect(catalog.components.find((c) => c.name === edited.name)?.status).toBeUndefined();
+    expect(rest.length).toBeGreaterThan(0);
+    for (const s of rest) expect(catalog.components.find((c) => c.name === s.name)?.status, s.name).toBe("scaffold");
+    const agents = read(root, "AGENTS.md");
+    expect(agents).toContain("- 골격(구현 전) — 새 UI에 쓰지 말 것:");
+    const scaffoldLine = agents.split("\n").find((l) => l.startsWith("- 골격")) ?? "";
+    expect(scaffoldLine).not.toContain(edited.name);
+    for (const s of rest) expect(scaffoldLine).toContain(s.name);
+  });
+
+  it("읽은 토큰 파일의 sha256을 소스에 기록한다", async () => {
+    const root = copyExample("legacy-demo");
+    await forceStateZero(root);
+    await runInit({ root, all: true, version: VERSION });
+    await runAi({ root, version: VERSION });
+    const catalog = JSON.parse(read(root, ".dsmith/catalog.json")) as { sources: { tokenFiles?: { file: string; sha256: string }[] }[] };
+    const files = catalog.sources.flatMap((s) => s.tokenFiles ?? []);
+    expect(files.map((f) => f.file)).toEqual(["design-system/tokens.json"]);
+    const { createHash } = await import("node:crypto");
+    expect(files[0]?.sha256).toBe(createHash("sha256").update(fs.readFileSync(path.join(root, "design-system/tokens.json"))).digest("hex"));
   });
 });

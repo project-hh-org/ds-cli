@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { normalizeColor, writeCatalog, type Catalog, type CatalogComponent, type CatalogProp } from "@dsmith-dev/core";
@@ -215,5 +216,111 @@ describe("응답 상한: 큰 카탈로그", () => {
     for (const r of results) expect(estimateTokens(textOf(r)), textOf(r).slice(0, 60)).toBeLessThanOrEqual(1500);
     const resource = await client.readResource({ uri: "components://list" });
     expect(resource.contents.length).toBe(1);
+  });
+});
+
+const sha = (file: string): string => createHash("sha256").update(fs.readFileSync(file)).digest("hex");
+
+describe("카탈로그 토큰 신선도", () => {
+  const css = (hex: string): string => `:root {\n  --color-primary: ${hex};\n}\n`;
+  const bump = (file: string, seconds: number): void => {
+    const later = new Date(Date.now() + seconds * 1000);
+    fs.utimesSync(file, later, later);
+  };
+
+  it("ai 뒤 토큰 파일이 바뀌면 카탈로그 토큰 대신 토큰 파일 값을 쓰고 stderr에 알린다", async () => {
+    const logs: string[] = [];
+    const root = copyFixture("fixtures/with-ds-app");
+    dirs.push(root);
+    await indexFixture(root);
+    const file = path.join(root, "design-system.tokens.css");
+    fs.writeFileSync(file, css("#3b82f6"));
+    const catalog = catalogOf([BUTTON], [{ ...TOKEN, file: "design-system.tokens.css" }]);
+    catalog.sources[0] = { ...catalog.sources[0], origin: "ds-local", tokenFiles: [{ file: "design-system.tokens.css", sha256: sha(file) }] };
+    await writeCatalog(root, catalog);
+    const client = await connect({ root, log: (l) => logs.push(l) });
+    clients.push(client);
+
+    expect(json(await call(client, "resolve_token", { raw: "#3b82f6", property: "color" }))).toMatchObject({ source: "catalog", confidence: "high" });
+    expect(logs.some((l) => l.includes("토큰 파일이 카탈로그 생성 뒤에 바뀜"))).toBe(false);
+
+    fs.writeFileSync(file, css("#ff0000"));
+    bump(file, 5);
+    const after = json(await call(client, "resolve_token", { raw: "#ff0000", property: "color" }));
+    expect(after).toMatchObject({ token: { name: "--color-primary", value: "#ff0000" }, source: "token-file", confidence: "high" });
+    expect(logs.some((l) => l.includes("design-system.tokens.css") && l.includes("dsmith ai"))).toBe(true);
+
+    // 원래 내용으로 되돌리면 해시가 다시 맞아 카탈로그로 돌아간다
+    fs.writeFileSync(file, css("#3b82f6"));
+    bump(file, 10);
+    expect(json(await call(client, "resolve_token", { raw: "#3b82f6", property: "color" }))).toMatchObject({ source: "catalog" });
+  });
+
+  it("토큰 파일이 지워져도(해시 불일치) 카탈로그를 쓰지 않는다", async () => {
+    const root = copyFixture("fixtures/with-ds-app");
+    dirs.push(root);
+    await indexFixture(root);
+    const file = path.join(root, "gone.tokens.css");
+    fs.writeFileSync(file, css("#3b82f6"));
+    const catalog = catalogOf([BUTTON], [{ ...TOKEN, file: "gone.tokens.css" }]);
+    catalog.sources[0] = { ...catalog.sources[0], origin: "ds-local", tokenFiles: [{ file: "gone.tokens.css", sha256: sha(file) }] };
+    await writeCatalog(root, catalog);
+    fs.rmSync(file);
+    const client = await connect({ root });
+    clients.push(client);
+    const res = await client.readResource({ uri: "tokens://list" });
+    const body = JSON.parse((res.contents[0] as { text: string }).text);
+    expect(body.names).not.toContain("--color-primary");
+  });
+
+  it("해시를 기록하지 않은 카탈로그는 검증하지 않고 그대로 쓴다", async () => {
+    const { client } = await open(catalogOf([BUTTON], [TOKEN]));
+    expect(json(await call(client, "resolve_token", { raw: "#3B82F6", property: "color" })).source).toBe("catalog");
+  });
+});
+
+describe("골격(scaffold) 컴포넌트", () => {
+  const SCAFFOLD_WIDGET: CatalogComponent = {
+    name: "Widget",
+    module: "design-system/components/Widget",
+    origin: "init",
+    file: "design-system/components/Widget.tsx",
+    props: [],
+    propsStatus: "none",
+    status: "scaffold",
+  };
+  const REAL_WIDGET_GROUP: CatalogComponent = {
+    name: "WidgetGroup",
+    module: "components/ui/WidgetGroup",
+    origin: "ds-local",
+    file: "components/ui/WidgetGroup.tsx",
+    props: [],
+    propsStatus: "none",
+  };
+  const SCAFFOLD_BUTTON: CatalogComponent = { ...SCAFFOLD_WIDGET, name: "Button", module: "design-system/components/Button", file: "design-system/components/Button.tsx" };
+
+  it("search_component: 골격은 점수가 더 높아도 실제 구현 뒤에 오고 status·why로 밝힌다", async () => {
+    const { client } = await open(catalogOf([SCAFFOLD_WIDGET, REAL_WIDGET_GROUP]));
+    const out = json(await call(client, "search_component", { intent: "widget" }));
+    const names = out.results.map((m: { name: string }) => m.name);
+    expect(names).toEqual(["WidgetGroup", "Widget"]);
+    expect(out.results[1]).toMatchObject({ status: "scaffold" });
+    expect(out.results[1].why).toContain("골격(구현 전)");
+    expect(out.results[0].status).toBeUndefined();
+  });
+
+  it("get_component: status scaffold와 안내를 돌려준다", async () => {
+    const { client } = await open(catalogOf([SCAFFOLD_WIDGET]));
+    const out = json(await call(client, "get_component", { name: "Widget" }));
+    expect(out).toMatchObject({ name: "Widget", source: "catalog", status: "scaffold" });
+    expect(out.note).toContain("골격(구현 전)");
+  });
+
+  it("같은 이름이면 카탈로그에 있어도 골격보다 실제 구현을 고른다", async () => {
+    const { client } = await open(catalogOf([BUTTON, SCAFFOLD_BUTTON]));
+    const out = json(await call(client, "get_component", { name: "Button" }));
+    expect(out).toMatchObject({ module: "components/ui/Button" });
+    expect(out.status).toBeUndefined();
+    expect(out.otherModules.map((o: { module: string }) => o.module)).toContain("design-system/components/Button");
   });
 });

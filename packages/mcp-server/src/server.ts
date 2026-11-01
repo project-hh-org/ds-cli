@@ -114,7 +114,7 @@ export function createDsmithServer(deps: ServerDeps): Promise<McpServer> {
     "search_component",
     {
       description:
-        "Find existing components in this repo by intent (e.g. 'date picker', '버튼'), including design-system components in the catalog that nothing uses yet. Returns up to limit matches (matched = count before limit). Use before creating a new component to avoid duplicates.",
+        "Find existing components in this repo by intent (e.g. 'date picker', '버튼'), including design-system components in the catalog that nothing uses yet. Returns up to limit matches (matched = count before limit); status scaffold marks an unimplemented shell made by dsmith init, listed after real implementations — do not use it in new UI. Use before creating a new component to avoid duplicates.",
       inputSchema: z.object({
         intent: z.string().min(1).max(MAX_TEXT),
         limit: z.number().int().min(1).max(50).optional(),
@@ -134,7 +134,7 @@ export function createDsmithServer(deps: ServerDeps): Promise<McpServer> {
     "get_component",
     {
       description:
-        "Get a component's props (with allowed values), variants, usage count and definition file from this repo. When the repo has a catalog (dsmith ai), the answer comes from it (source catalog: also description, deprecated, one usage example, origin); otherwise from the usage index and the definition file (source index). When several modules export the same name, returns the one chosen with decide, else the design-system or catalog one, else the most used (isDs and decided say which; the rest are in otherModules). Use before using or changing a component.",
+        "Get a component's props (with allowed values), variants, usage count and definition file from this repo. When the repo has a catalog (dsmith ai), the answer comes from it (source catalog: also description, deprecated, one usage example, origin); otherwise from the usage index and the definition file (source index). When several modules export the same name, returns the one chosen with decide, else the design-system or catalog one, else the most used (isDs and decided say which; the rest are in otherModules). status scaffold (with a note) means an unimplemented shell made by dsmith init. Use before using or changing a component.",
       inputSchema: z.object({ name: z.string().min(1).max(MAX_TEXT), module: z.string().max(MAX_TEXT).optional() }),
       annotations: readOnly,
     },

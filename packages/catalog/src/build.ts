@@ -1,7 +1,9 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import {
-  loadTokens,
+  managedFileHash,
+  readCatalogTokens,
+  withTokenFiles,
   type Catalog,
   type CatalogComponent,
   type CatalogSource,
@@ -9,7 +11,7 @@ import {
   type Index,
 } from "@dsmith-dev/core";
 import type { DetectResult } from "@dsmith-dev/detect";
-import { findInitDir } from "./init-dir.js";
+import { findInitDir, readInitHashes } from "./init-dir.js";
 import { catalogFromDir } from "./local.js";
 import { compareCodeUnits } from "./names.js";
 import { catalogFromPackage } from "./npm.js";
@@ -41,6 +43,22 @@ async function attachExamples(root: string, dir: string, components: CatalogComp
       if (code !== null) comp.examples = [{ file, code }];
     } catch {
       // 예제는 선택 정보 — 읽지 못하면 건너뛴다
+    }
+  }
+}
+
+/** init이 쓴 뒤 한 글자도 안 바뀐 파일(현재 해시 == `init.json` 엔트리)은 아직 골격이다 → status "scaffold" */
+async function markScaffolds(root: string, components: CatalogComponent[]): Promise<void> {
+  const hashes = await readInitHashes(root);
+  if (hashes.size === 0) return;
+  for (const comp of components) {
+    if (comp.file === undefined) continue;
+    const recorded = hashes.get(comp.file);
+    if (recorded === undefined) continue;
+    try {
+      if (managedFileHash(await fs.readFile(path.join(root, comp.file), "utf-8")) === recorded) comp.status = "scaffold";
+    } catch {
+      // 못 읽으면 골격으로 단정하지 않는다
     }
   }
 }
@@ -78,30 +96,19 @@ export async function buildCatalog(opts: BuildCatalogOptions): Promise<BuildCata
       const compDir = initDir === "." ? "components" : `${initDir}/components`;
       const res = await catalogFromDir(root, compDir, "init", index);
       await attachExamples(root, compDir, res.components);
+      await markScaffolds(root, res.components);
       sources.push({ origin: "init", dir: compDir });
       components.push(...res.components);
       warnings.push(...res.warnings);
     }
   }
 
-  const tokenFiles = [
-    ...new Set([...ds.tokenFiles, ...(initDir !== null ? [initDir === "." ? "tokens.json" : `${initDir}/tokens.json`] : [])]),
-  ];
-  const loaded = await loadTokens(root, tokenFiles, []);
-  const tokens: CatalogToken[] = [];
-  for (const t of loaded.tokens) {
-    if (t.source !== "token-file" || t.file === undefined) continue;
-    tokens.push({
-      name: t.name,
-      value: t.value,
-      normalized: t.normalized,
-      category: t.category,
-      file: t.file as string,
-    });
-  }
-  tokens.sort((a, b) => compareCodeUnits(a.file, b.file) || compareCodeUnits(a.name, b.name));
-  warnings.push(...loaded.warnings.filter((w) => !w.startsWith("토큰 파일에서 색 토큰")));
-  for (const f of loaded.ignored) warnings.push(`토큰 파일 형식을 읽지 않음(건너뜀): ${f}`);
+  const initTokens = initDir !== null ? (initDir === "." ? "tokens.json" : `${initDir}/tokens.json`) : null;
+  const tokenFiles = [...new Set([...ds.tokenFiles, ...(initTokens !== null ? [initTokens] : [])])];
+  const read = await readCatalogTokens(root, tokenFiles);
+  const tokens: CatalogToken[] = read.tokens;
+  warnings.push(...read.warnings);
+  for (const f of read.ignored) warnings.push(`토큰 파일 형식을 읽지 않음(건너뜀): ${f}`);
 
   const rank = (c: CatalogComponent): number => (c.origin === "init" ? 1 : 0);
   components.sort((a, b) => rank(a) - rank(b) || compareCodeUnits(a.name, b.name) || compareCodeUnits(a.module, b.module));
@@ -109,7 +116,7 @@ export async function buildCatalog(opts: BuildCatalogOptions): Promise<BuildCata
   const catalog: Catalog = {
     version: 1,
     dsmith: version,
-    sources,
+    sources: withTokenFiles(sources, read.files, initTokens),
     components,
     tokens,
     stats: {

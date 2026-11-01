@@ -41,17 +41,17 @@ describe("renderScaffold", () => {
     ).toMatchInlineSnapshot(`
       "// dsmith init 스캐폴드 — Button (결정: src/components/Button)
       // 원 사용처 상위 2: app/page.tsx (4회), app/orders/page.tsx (2회)
-      // TODO: 원 구현을 옮기고 하드코딩 값 대신 design-system/tokens.css 변수를 쓰세요. 이 파일은 dsmith가 다시 덮어쓰지 않습니다.
+      // TODO: 원 구현을 옮기고 하드코딩 값 대신 design-system/tokens.css 변수를 쓰세요. 고치기 전에는 결정이 바뀌면 dsmith가 다시 만들고, 고친 뒤에는 덮어쓰지 않습니다.
 
       export interface ButtonProps {
         "aria-label": string;
-        children?: unknown; // 원 타입: ReactNode
+        children?: React.ReactNode;
         onClick?: unknown; // TODO: 타입 확인 (사용처에서만 관측)
         variant?: "primary" | "secondary" | "danger";
       }
 
-      export function Button(props: ButtonProps) {
-        // TODO: 구현
+      export function Button() {
+        // TODO: 구현 — 받을 props는 ButtonProps 참고
         return null;
       }
       "

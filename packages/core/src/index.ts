@@ -59,7 +59,7 @@ export type {
   WriteOutcome,
   WriteStatus,
 } from "./fs/safe-write.js";
-export { atomicWrite, regionKey, safeWrite } from "./fs/safe-write.js";
+export { atomicWrite, managedFileHash, regionKey, safeWrite } from "./fs/safe-write.js";
 export { DEFINITION_EXTENSIONS, resolveDefinitionFile } from "./component/definition.js";
 export type { ComponentProps, PropInfo } from "./component/props.js";
 export { readComponentProps } from "./component/props.js";
@@ -113,9 +113,12 @@ export type {
   CatalogOrigin,
   CatalogProp,
   CatalogSource,
+  CatalogTokenFile,
   CatalogToken,
 } from "./catalog/model.js";
 export { CATALOG_FILE, readCatalog, writeCatalog } from "./catalog/store.js";
+export type { CatalogTokensResult } from "./catalog/tokens.js";
+export { readCatalogTokens, recordedTokenFiles, staleCatalogTokenFiles, withTokenFiles } from "./catalog/tokens.js";
 export type { DsmithExtension, W3cColorValue, W3cDimensionValue, W3cReadResult } from "./tokens/w3c.js";
 export { DSMITH_EXTENSION, draftToW3c, readW3cTokens, serializeW3c } from "./tokens/w3c.js";
 export { GENERATED_NOTICE, emitTokensCss, emitTokensTs } from "./tokens/emit.js";

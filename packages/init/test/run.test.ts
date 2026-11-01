@@ -345,3 +345,111 @@ describe("runInit: 보강 (fix round 1)", () => {
     expect(formatInitSummary(r)).not.toContain("--all 로 추천안 사용");
   });
 });
+
+describe("runInit: 결정 뒤 재실행 (골격 재생성)", () => {
+  const pickOther = async (root: string, item: string): Promise<string> => {
+    const index = (await readIndex(root)) as Index;
+    const record = listDecisions(index, await readDecisions(root)).find((i) => i.item === item && i.kind === "duplicate");
+    const options = (record as { options: string[] }).options;
+    const recommended = read(root, `design-system/components/${item}.tsx`).split("\n")[0]?.match(/추천: (.+?),/)?.[1];
+    const other = options.find((o) => o !== recommended) as string;
+    await chooseDecision(root, index, item, other, { kind: "duplicate" });
+    return other;
+  };
+
+  it("손대지 않은 골격은 결정한 옵션 기준으로 다시 만든다(updated)", async () => {
+    const root = await legacyDemo(true);
+    await run(root, { all: true });
+    const before = read(root, "design-system/components/Badge.tsx");
+    expect(before.split("\n")[0]).toContain("결정 전");
+    const other = await pickOther(root, "Badge");
+    const r = await run(root);
+    const badge = r.scaffolds.find((s) => s.name === "Badge");
+    expect(badge).toMatchObject({ status: "updated", basis: "decided", from: other });
+    const after = read(root, "design-system/components/Badge.tsx");
+    expect(after.split("\n")[0]).toBe(`// dsmith init 스캐폴드 — Badge (결정: ${other})`);
+    expect(after).not.toBe(before);
+    expect(r.warnings).toEqual([]);
+    // 한 번 더 돌려도 변하지 않는다
+    expect((await run(root)).scaffolds.find((s) => s.name === "Badge")?.status).toBe("unchanged");
+  });
+
+  it("사용자가 고친 골격은 건드리지 않고, 다른 옵션 기준이라는 경고를 남긴다", async () => {
+    const root = await legacyDemo(true);
+    await run(root, { all: true });
+    const file = path.join(root, "design-system/components/Badge.tsx");
+    const mine = `${fs.readFileSync(file, "utf-8")}// 내가 구현 중\n`;
+    fs.writeFileSync(file, mine);
+    const other = await pickOther(root, "Badge");
+    const r = await run(root);
+    expect(r.scaffolds.find((s) => s.name === "Badge")?.status).toBe("skipped-exists");
+    expect(fs.readFileSync(file, "utf-8")).toBe(mine);
+    expect(r.warnings).toHaveLength(1);
+    expect(r.warnings[0]).toContain("design-system/components/Badge.tsx");
+    expect(r.warnings[0]).toContain("다른 선택지");
+    expect(r.warnings[0]).toContain(other);
+    expect(formatInitSummary(r)).toContain("경고: 스캐폴드 design-system/components/Badge.tsx");
+    expect(read(root, r.report as string)).toContain("- 경고: 스캐폴드 design-system/components/Badge.tsx");
+  });
+
+  it("고친 골격이라도 기준 옵션이 그대로면 경고하지 않는다", async () => {
+    const root = await legacyDemo(true);
+    await run(root, { all: true });
+    const file = path.join(root, "design-system/components/Badge.tsx");
+    fs.appendFileSync(file, "// 내가 구현 중\n");
+    expect((await run(root, { all: true })).warnings).toEqual([]);
+  });
+});
+
+describe("runInit: 카탈로그 갱신", () => {
+  const fakeCatalog = (outDir: string, tokens: unknown[] = []): string =>
+    JSON.stringify({
+      version: 1,
+      dsmith: "0.0.0",
+      sources: [{ origin: "init", dir: `${outDir}/components` }],
+      components: [],
+      tokens,
+      stats: { components: 0, propsOk: 0, deprecated: 0, tokens: tokens.length },
+    });
+
+  it("카탈로그가 없으면 '다음: dsmith ai'를 안내한다", async () => {
+    const root = await legacyDemo(true);
+    const r = await run(root);
+    expect(r.catalog).toBe("needs-ai");
+    expect(formatInitSummary(r)).toContain("다음: dsmith ai");
+    expect((await run(root, { dryRun: true })).catalog).toBeNull();
+    expect(formatInitSummary(await run(root, { dryRun: true }))).not.toContain("다음: dsmith ai");
+  });
+
+  it("카탈로그가 있으면 토큰과 토큰 파일 해시를 방금 쓴 파일로 갱신하고 안내는 없다", async () => {
+    const root = await legacyDemo(true);
+    await run(root);
+    fs.writeFileSync(path.join(root, ".dsmith/catalog.json"), fakeCatalog("design-system"));
+    const r = await run(root);
+    // 토큰 파일은 그대로이므로 카탈로그만 채워진다
+    expect(r.catalog).toBe("refreshed");
+    const catalog = JSON.parse(read(root, ".dsmith/catalog.json")) as {
+      tokens: { name: string; file: string }[];
+      sources: { tokenFiles?: { file: string; sha256: string }[] }[];
+      stats: { tokens: number };
+    };
+    expect(catalog.tokens).toHaveLength(r.tokens.total);
+    expect(catalog.stats.tokens).toBe(r.tokens.total);
+    expect(catalog.tokens.every((t) => t.file === "design-system/tokens.json")).toBe(true);
+    expect(catalog.sources[0]?.tokenFiles?.map((f) => f.file)).toEqual(["design-system/tokens.json"]);
+    expect(formatInitSummary(r)).not.toContain("다음: dsmith ai");
+    expect(formatInitSummary(r)).toContain("카탈로그: 토큰");
+    // 같은 상태에서 다시 돌리면 그대로
+    expect((await run(root)).catalog).toBe("current");
+  });
+
+  it("카탈로그가 다른 산출 디렉터리를 담고 있으면 건드리지 않고 ai를 안내한다", async () => {
+    const root = await legacyDemo(true);
+    await run(root);
+    const stale = fakeCatalog("other");
+    fs.writeFileSync(path.join(root, ".dsmith/catalog.json"), stale);
+    const r = await run(root);
+    expect(r.catalog).toBe("needs-ai");
+    expect(read(root, ".dsmith/catalog.json")).toBe(stale);
+  });
+});

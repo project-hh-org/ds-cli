@@ -28,6 +28,14 @@ export interface CatalogComponent {
   examples?: { file: string; code: string }[];
   /** ≤10 */
   tokensUsed?: string[];
+  /** "scaffold": dsmith init이 만든 뒤 아직 손대지 않은 골격(구현 전). 없으면 실제 구현 */
+  status?: "scaffold";
+}
+
+/** `dsmith ai`가 읽은 토큰 파일의 내용 해시 — 이 해시가 어긋나면 카탈로그 토큰은 낡은 것이다 */
+export interface CatalogTokenFile {
+  file: string;
+  sha256: string;
 }
 
 export interface CatalogSource {
@@ -36,6 +44,8 @@ export interface CatalogSource {
   packageName?: string;
   packageVersion?: string;
   typesEntry?: string;
+  /** 이 소스의 토큰 파일과 해시(추가 필드 — 없으면 신선도를 검증하지 않는다) */
+  tokenFiles?: CatalogTokenFile[];
 }
 
 export interface CatalogToken extends Token {

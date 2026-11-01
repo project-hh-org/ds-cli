@@ -72,6 +72,8 @@ function propLine(p: ScaffoldProp): string {
   if (p.type === undefined) return `  ${key}${optional}: unknown; // TODO: 타입 확인 (사용처에서만 관측)`;
   const oneLine = p.type.replace(/\s+/g, " ").trim();
   if (isSelfContainedType(oneLine)) return `  ${key}${optional}: ${oneLine};`;
+  // React 네임스페이스는 타입 위치에서 전역으로 쓸 수 있어 import가 필요 없다.
+  if (/^(?:React\.)?ReactNode$/.test(oneLine)) return `  ${key}${optional}: React.ReactNode;`;
   return `  ${key}${optional}: unknown; // 원 타입: ${oneLine}`;
 }
 
@@ -86,7 +88,7 @@ export function renderScaffold(input: ScaffoldInput): string {
     );
   }
   lines.push(
-    `// TODO: 원 구현을 옮기고 하드코딩 값 대신 ${input.tokensRef} 변수를 쓰세요. 이 파일은 dsmith가 다시 덮어쓰지 않습니다.`,
+    `// TODO: 원 구현을 옮기고 하드코딩 값 대신 ${input.tokensRef} 변수를 쓰세요. 고치기 전에는 결정이 바뀌면 dsmith가 다시 만들고, 고친 뒤에는 덮어쓰지 않습니다.`,
     "",
   );
   const props = [...input.props].sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
@@ -97,8 +99,8 @@ export function renderScaffold(input: ScaffoldInput): string {
   }
   lines.push(
     "",
-    `export function ${input.name}(props: ${input.name}Props) {`,
-    "  // TODO: 구현",
+    `export function ${input.name}() {`,
+    `  // TODO: 구현 — 받을 props는 ${input.name}Props 참고`,
     "  return null;",
     "}",
     "",

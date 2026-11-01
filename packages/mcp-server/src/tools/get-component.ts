@@ -56,9 +56,15 @@ export interface GetComponentOutput {
   examples?: string[];
   /** source "catalog"일 때 카탈로그가 어디서 읽었는지 */
   origin?: CatalogOrigin;
+  /** "scaffold": dsmith init이 만든 뒤 손대지 않은 골격(구현 전). 없으면 실제 구현 */
+  status?: "scaffold";
+  /** status가 scaffold일 때의 안내 */
+  note?: string;
   /** "catalog": 카탈로그(.dsmith/catalog.json)의 항목에서 답했다. "index": 사용처 인덱스와 정의 파일 */
   source: "index" | "catalog";
 }
+
+const SCAFFOLD_NOTE = "골격(구현 전) — dsmith init이 만든 빈 컴포넌트다. 새 UI에 쓰지 말고, 원 구현을 쓰거나 이 파일을 구현한 뒤 쓴다";
 
 const SIMILAR_LIMIT = 5;
 const USAGE_FILES = 5;
@@ -196,6 +202,7 @@ export async function getComponent(ws: Workspace, input: GetComponentInput): Pro
     ...(doc.deprecated === undefined ? {} : { deprecated: doc.deprecated }),
     ...(fromEntry?.examples === undefined ? {} : { examples: fromEntry.examples }),
     ...(fromEntry?.origin === undefined ? {} : { origin: fromEntry.origin }),
+    ...(entry?.status === "scaffold" ? { status: "scaffold" as const, note: SCAFFOLD_NOTE } : {}),
     usage: { count: chosen.count, files: chosen.files.slice(0, USAGE_FILES).map((f) => f.file) },
     ...(definitionFile === null ? {} : { definitionFile }),
     ...(otherModules.length > 0 ? { otherModules } : {}),

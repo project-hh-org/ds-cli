@@ -40,3 +40,19 @@ export async function findInitDir(root: string): Promise<string | null> {
   }
   return (await isFile(path.join(root, DEFAULT_DIR, "tokens.json"))) ? DEFAULT_DIR : null;
 }
+
+/** `.dsmith/init.json` 엔트리의 키 → 마지막으로 쓴 내용의 sha256. 없거나 깨졌으면 빈 맵. */
+export async function readInitHashes(root: string): Promise<Map<string, string>> {
+  const out = new Map<string, string>();
+  try {
+    const parsed = JSON.parse(await fs.readFile(path.join(root, ".dsmith", "init.json"), "utf-8")) as {
+      entries?: Record<string, { sha256?: unknown } | null>;
+    };
+    for (const [key, entry] of Object.entries(parsed.entries ?? {})) {
+      if (typeof entry?.sha256 === "string") out.set(key, entry.sha256);
+    }
+  } catch {
+    // 매니페스트 없음·깨짐 — 골격 판정 불가
+  }
+  return out;
+}

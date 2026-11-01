@@ -88,6 +88,11 @@ export interface WriteManifest {
 
 const sha256 = (text: string): string => createHash("sha256").update(text).digest("hex");
 const toLf = (text: string): string => text.replace(/\r\n/g, "\n");
+
+/** 매니페스트에 기록되는 해시와 같은 방식으로 파일 전체 텍스트(BOM·CRLF 무시)의 sha256을 낸다 — `file` 영역 비교용. */
+export function managedFileHash(text: string): string {
+  return sha256(toLf(text.startsWith("﻿") ? text.slice(1) : text));
+}
 const toPosix = (p: string): string => p.split(path.sep).join("/");
 const BOM = "﻿";
 

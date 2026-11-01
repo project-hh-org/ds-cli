@@ -7,8 +7,12 @@ import { Client } from "@modelcontextprotocol/client";
 import { StdioClientTransport } from "@modelcontextprotocol/client/stdio";
 import { TOOL_NAMES } from "@dsmith-dev/mcp-server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { readCatalog } from "@dsmith-dev/core";
+import { readDetect, writeDetect } from "@dsmith-dev/detect";
 import { runAiCommand } from "../src/commands/ai.js";
 import { runAudit } from "../src/commands/audit.js";
+import { runDecideChoose, runDecideList } from "../src/commands/decide.js";
+import { runInitCommand } from "../src/commands/init.js";
 import { runInstall } from "../src/commands/install.js";
 import { findProjectRoot } from "../src/commands/mcp.js";
 
@@ -245,4 +249,69 @@ describe("dsmith mcp (실제 stdio)", () => {
     expect(stdout).toBe("");
     expect(stderr).toContain("--budget");
   }, 30_000);
+});
+
+describe("dsmith mcp: 카탈로그 토큰 신선도 (init → ai → 토큰 파일 수정)", () => {
+  it("ai 뒤 tokens.json이 바뀌면 MCP resolve_token이 새 값을 돌려주고, init이 카탈로그를 갱신하면 다시 카탈로그를 쓴다", async () => {
+    const root = path.join(tmp, "legacy-demo");
+    fs.cpSync(path.join(repoRoot, "examples", "legacy-demo"), root, {
+      recursive: true,
+      filter: (src) => !src.split(path.sep).includes(".dsmith"),
+    });
+    // 상태 0 강제: ds none overrides → 다시 audit
+    await runAudit(root);
+    const current = await readDetect(root);
+    if (current === null) throw new Error("detect.json 없음");
+    await writeDetect(root, { ...current, overrides: { ds: { kind: "none", tokenFiles: [] }, state: 0 } });
+    await runAudit(root);
+    await runInitCommand({ root, all: true });
+    await runAiCommand({ root });
+
+    const tokensFile = path.join(root, "design-system", "tokens.json");
+    const catalog = await readCatalog(root);
+    const color = catalog?.tokens.find((t) => t.category === "color");
+    if (color === undefined) throw new Error("색 토큰 없음");
+    expect(catalog?.sources.flatMap((s) => s.tokenFiles ?? []).map((f) => f.file)).toEqual(["design-system/tokens.json"]);
+
+    const transport = new StdioClientTransport({ command: process.execPath, args: [bin, "mcp", "--root", root, "--no-git"], stderr: "pipe" });
+    let stderr = "";
+    transport.stderr?.on("data", (chunk: Buffer) => (stderr += chunk.toString()));
+    const client = new Client({ name: "test", version: "0" });
+    const resolve = async (raw: string): Promise<{ token: { name: string; value: string }; source: string }> =>
+      JSON.parse(((await client.callTool({ name: "resolve_token", arguments: { raw, property: "color" } })).content as { text: string }[])[0]?.text ?? "{}");
+    try {
+      await client.connect(transport);
+      expect(await resolve(color.value)).toMatchObject({ token: { name: color.name }, source: "catalog" });
+
+      // 토큰 파일을 손으로 고친다(예: git pull) — 같은 이름의 색 값이 바뀐다
+      const text = fs.readFileSync(tokensFile, "utf-8");
+      const hex = color.value.toLowerCase();
+      expect(text).toContain(hex);
+      fs.writeFileSync(tokensFile, text.split(hex).join("#0a0b0c"));
+      const later = new Date(Date.now() + 5000);
+      fs.utimesSync(tokensFile, later, later);
+
+      const fresh = await resolve("#0a0b0c");
+      expect(fresh).toMatchObject({ token: { name: color.name, value: "#0a0b0c" }, source: "token-file" });
+      expect(stderr).toContain("design-system/tokens.json");
+      expect(stderr).toContain("dsmith ai");
+
+      // --force로 init을 다시 돌리면 tokens.json이 원래 내용으로 돌아가 해시가 맞으므로 카탈로그 값을 다시 쓴다
+      const { result } = await runInitCommand({ root, all: true, force: true });
+      expect(result.catalog).toBe("current");
+      expect(await resolve(color.value)).toMatchObject({ token: { name: color.name }, source: "catalog" });
+
+      // 색 클러스터에서 다른 hex를 고르고 init을 돌리면 init이 카탈로그 토큰·해시를 갱신하고, MCP는 새 값을 카탈로그에서 준다
+      const cluster = (await runDecideList(root)).find((i) => i.kind === "token-cluster");
+      if (cluster === undefined) throw new Error("token-cluster 결정 없음");
+      const picked = (cluster.options[1] as string).toLowerCase();
+      await runDecideChoose(root, cluster.item, picked, undefined, { kind: "token-cluster" });
+      const { result: chosen } = await runInitCommand({ root, all: true });
+      expect(chosen.catalog).toBe("refreshed");
+      expect((await readCatalog(root))?.tokens.some((t) => t.value.toLowerCase() === picked)).toBe(true);
+      expect(await resolve(picked)).toMatchObject({ token: { value: picked }, source: "catalog" });
+    } finally {
+      await client.close();
+    }
+  }, 60_000);
 });

@@ -20,6 +20,7 @@ export const SECTION_MAX_LINES = 80;
 
 const TOP_COMPONENTS = 20;
 const MAX_DEPRECATED = 10;
+const MAX_SCAFFOLDS = 20;
 const MAX_TOKEN_FILES = 3;
 const DEPRECATED_NOTE_MAX = 80;
 
@@ -96,14 +97,22 @@ export function renderAgentsDsSection(catalog: Catalog, usageOrder: string[]): s
   const tokens = tokenLine(catalog);
   if (tokens !== null) lines.push(tokens);
 
-  const names = orderedNames(catalog.components, usageOrder);
+  // 골격(init이 만들고 아직 손대지 않은 빈 컴포넌트)은 실제 컴포넌트 목록에 넣지 않는다.
+  const real = catalog.components.filter((c) => c.status !== "scaffold");
+  const names = orderedNames(real, usageOrder);
   const top = names.slice(0, TOP_COMPONENTS);
   const label = names.length > TOP_COMPONENTS ? `많이 쓰는 순 상위 ${TOP_COMPONENTS}` : "많이 쓰는 순";
   lines.push(
     top.length === 0
       ? `- 컴포넌트 0개`
-      : `- 컴포넌트 ${catalog.stats.components}개(props 추출 ${catalog.stats.propsOk}) — ${label}: ${top.join(", ")}`,
+      : `- 컴포넌트 ${real.length}개(props 추출 ${real.filter((c) => c.propsStatus === "ok").length}) — ${label}: ${top.join(", ")}`,
   );
+  const realNames = new Set(real.map((c) => c.name));
+  const scaffolds = [...new Set(catalog.components.filter((c) => c.status === "scaffold" && !realNames.has(c.name)).map((c) => c.name))];
+  if (scaffolds.length > 0) {
+    const more = scaffolds.length > MAX_SCAFFOLDS ? ` 외 ${scaffolds.length - MAX_SCAFFOLDS}개` : "";
+    lines.push(`- 골격(구현 전) — 새 UI에 쓰지 말 것: ${scaffolds.slice(0, MAX_SCAFFOLDS).join(", ")}${more}`);
+  }
 
   const deprecated = catalog.components.filter((c) => c.deprecated !== undefined);
   if (deprecated.length > 0) {
