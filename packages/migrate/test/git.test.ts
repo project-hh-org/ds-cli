@@ -1,0 +1,139 @@
+import { execFileSync } from "node:child_process";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { abandonBranch, checkBranch, commitFiles, commitMessage, createBranch } from "../src/git.js";
+
+const KEYS = ["HOME", "GIT_CONFIG_NOSYSTEM", "GIT_CONFIG_GLOBAL", "EMAIL", "GIT_AUTHOR_NAME", "GIT_AUTHOR_EMAIL", "GIT_COMMITTER_NAME", "GIT_COMMITTER_EMAIL", "XDG_CONFIG_HOME"];
+const saved: Record<string, string | undefined> = {};
+const dirs: string[] = [];
+
+beforeEach(() => {
+  for (const k of KEYS) saved[k] = process.env[k];
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "dsmith-githome-"));
+  dirs.push(home);
+  process.env.HOME = home;
+  process.env.XDG_CONFIG_HOME = path.join(home, ".config");
+  process.env.GIT_CONFIG_NOSYSTEM = "1";
+  process.env.GIT_CONFIG_GLOBAL = path.join(home, "nope");
+  for (const k of ["EMAIL", "GIT_AUTHOR_NAME", "GIT_AUTHOR_EMAIL", "GIT_COMMITTER_NAME", "GIT_COMMITTER_EMAIL"]) delete process.env[k];
+});
+afterEach(() => {
+  for (const k of KEYS) {
+    if (saved[k] === undefined) delete process.env[k];
+    else process.env[k] = saved[k];
+  }
+  for (const d of dirs.splice(0)) fs.rmSync(d, { recursive: true, force: true });
+});
+
+const git = (cwd: string, ...args: string[]): string =>
+  execFileSync("git", ["-c", "user.name=Fixture", "-c", "user.email=fixture@example.com", ...args], { cwd, encoding: "utf-8" });
+
+/** 커밋 하나가 있는 레포. identity=true면 레포 로컬 user.name/email을 설정한다 */
+function repo(identity: boolean): string {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "dsmith-gitrepo-"));
+  dirs.push(root);
+  git(root, "init", "-q", "-b", "main");
+  fs.writeFileSync(path.join(root, "a.ts"), "export const a = 1;\n");
+  fs.writeFileSync(path.join(root, "b.ts"), "export const b = 1;\n");
+  git(root, "add", ".");
+  git(root, "commit", "-q", "-m", "init");
+  if (identity) {
+    git(root, "config", "user.name", "Repo Author");
+    git(root, "config", "user.email", "repo@example.com");
+  } else {
+    git(root, "config", "user.useConfigOnly", "true");
+  }
+  return root;
+}
+
+describe("commitMessage", () => {
+  it("토큰만 / 컴포넌트 포함", () => {
+    expect(commitMessage(12, 0)).toBe("chore(ds): 하드코딩 12건을 토큰으로 치환 (dsmith migrate)");
+    expect(commitMessage(12, 3)).toBe("chore(ds): 하드코딩 12건을 토큰으로, 컴포넌트 import 3건을 DS로 치환 (dsmith migrate)");
+  });
+});
+
+describe("checkBranch / createBranch / commitFiles", () => {
+  it("깨끗한 트리: 브랜치 생성·커밋 — 메시지, .dsmith 미포함, 작성자는 레포 user.name", async () => {
+    const root = repo(true);
+    const baseSha = git(root, "rev-parse", "HEAD").trim();
+    const check = await checkBranch(root, "ds/migrate-test", ["a.ts"]);
+    expect(check).toEqual({ ok: true, base: "main", baseSha });
+
+    await createBranch(root, "ds/migrate-test");
+    expect(git(root, "branch", "--show-current").trim()).toBe("ds/migrate-test");
+    fs.writeFileSync(path.join(root, "a.ts"), "export const a = 2;\n");
+    fs.mkdirSync(path.join(root, ".dsmith"));
+    fs.writeFileSync(path.join(root, ".dsmith", "x.json"), "{}");
+    fs.writeFileSync(path.join(root, "b.ts"), "export const b = 2; // 대상 아님\n");
+    git(root, "add", "b.ts"); // 인덱스에 다른 스테이징이 있어도 섞이지 않는다
+
+    const sha = await commitFiles(root, ["a.ts"], commitMessage(1, 0));
+    expect(sha).toMatch(/^[0-9a-f]{40}$/);
+    expect(git(root, "rev-parse", "HEAD").trim()).toBe(sha);
+    expect(git(root, "log", "-1", "--format=%s%n%an <%ae>").trim()).toBe(
+      "chore(ds): 하드코딩 1건을 토큰으로 치환 (dsmith migrate)\nRepo Author <repo@example.com>",
+    );
+    expect(git(root, "show", "--name-only", "--format=", "HEAD").trim()).toBe("a.ts");
+    expect(git(root, "status", "--porcelain").split("\n").filter(Boolean).sort()).toEqual(["?? .dsmith/", "M  b.ts"]);
+  });
+
+  it("작성자 정보가 없으면 쓰기 전에 오류", async () => {
+    const root = repo(false);
+    const check = await checkBranch(root, "ds/x", ["a.ts"]);
+    expect(check.ok).toBe(false);
+    expect(!check.ok && check.reason).toContain("작성자");
+    expect(git(root, "branch", "--list", "ds/x")).toBe("");
+  });
+
+  it("같은 이름의 브랜치가 있으면 오류", async () => {
+    const root = repo(true);
+    git(root, "branch", "ds/x");
+    const check = await checkBranch(root, "ds/x", ["a.ts"]);
+    expect(!check.ok && check.reason).toContain("이미 있음");
+  });
+
+  it("대상 파일이 dirty면 오류, 대상이 아닌 파일의 변경은 허용", async () => {
+    const root = repo(true);
+    fs.writeFileSync(path.join(root, "b.ts"), "// 손댐\n");
+    expect((await checkBranch(root, "ds/x", ["a.ts"])).ok).toBe(true);
+    fs.writeFileSync(path.join(root, "a.ts"), "// 손댐\n");
+    const check = await checkBranch(root, "ds/x", ["a.ts"]);
+    expect(!check.ok && check.reason).toContain("a.ts");
+  });
+
+  it("git 레포가 아니면 오류", async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "dsmith-nogit-"));
+    dirs.push(root);
+    process.env.GIT_CEILING_DIRECTORIES = path.dirname(root);
+    try {
+      const check = await checkBranch(root, "ds/x", []);
+      expect(!check.ok && check.reason).toContain("git 작업 트리가 아님");
+    } finally {
+      delete process.env.GIT_CEILING_DIRECTORIES;
+    }
+  });
+
+  it("잘못된 브랜치 이름은 오류", async () => {
+    const root = repo(true);
+    const check = await checkBranch(root, "bad name~", []);
+    expect(check.ok).toBe(false);
+  });
+
+  it("분리 HEAD면 base는 sha", async () => {
+    const root = repo(true);
+    const sha = git(root, "rev-parse", "HEAD").trim();
+    git(root, "switch", "--detach", sha);
+    expect(await checkBranch(root, "ds/x", [])).toEqual({ ok: true, base: sha, baseSha: sha });
+  });
+
+  it("abandonBranch는 base로 돌아가 브랜치를 지운다", async () => {
+    const root = repo(true);
+    await createBranch(root, "ds/gone");
+    await abandonBranch(root, "main", "ds/gone");
+    expect(git(root, "branch", "--show-current").trim()).toBe("main");
+    expect(git(root, "branch", "--list", "ds/gone")).toBe("");
+  });
+});

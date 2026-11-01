@@ -1,8 +1,23 @@
 import path from "node:path";
-import { atomicWrite, listMigrations, localDate, readIndex, type Index, type Token } from "@dsmith-dev/core";
+import {
+  atomicWrite,
+  listMigrations,
+  localDate,
+  readIndex,
+  readMigration,
+  writeMigration,
+  type Index,
+  type MigrationRecord,
+  type Token,
+} from "@dsmith-dev/core";
 import { readDetect, type DetectResult } from "@dsmith-dev/detect";
 import {
+  abandonBranch,
   applyMigration,
+  checkBranch,
+  commitFiles,
+  commitMessage,
+  createBranch,
   formatPlanSummary,
   planExcludes,
   planMigration,
@@ -39,6 +54,8 @@ export interface MigrateOutput {
   json: unknown;
   /** 사람용 출력 */
   text: string;
+  /** 종료 코드: 롤백·계획 뒤 변경된 파일이 있거나 커밋하지 못했으면 1 */
+  exitCode?: number;
 }
 
 const CATEGORIES = ["color", "spacing", "radius", "font-size"] as const;
@@ -106,7 +123,6 @@ export async function runMigrateCommand(opts: MigrateCommandOptions): Promise<Mi
   const modes = [opts.list === true, opts.revert !== undefined, opts.apply === true].filter(Boolean).length;
   if (modes > 1) throw new Error("--list, --revert <id>, --apply는 함께 쓸 수 없습니다");
   if (opts.branch !== undefined && opts.apply !== true) throw new Error("--branch는 --apply와 함께 씁니다");
-  if (opts.branch !== undefined) throw new Error("--branch는 아직 지원하지 않습니다");
 
   if (opts.list === true) {
     const items = await listMigrations(root);
@@ -151,7 +167,49 @@ export async function runMigrateCommand(opts: MigrateCommandOptions): Promise<Mi
     };
   }
 
-  const applied: ApplyResult = await applyMigration(root, plan, { extractors, version: cliVersion() });
+  // --branch: 아무것도 쓰기 전에 git 상태를 확인한다(식별 정보·같은 이름 브랜치·대상 파일이 깨끗한가)
+  let branch: NonNullable<MigrationRecord["branch"]> | undefined;
+  if (opts.branch !== undefined) {
+    const check = await checkBranch(
+      root,
+      opts.branch,
+      plan.files.map((f) => f.file),
+    );
+    if (!check.ok) throw new Error(`--branch를 쓸 수 없음: ${check.reason}`);
+    await createBranch(root, opts.branch);
+    branch = { name: opts.branch, base: check.base, baseSha: check.baseSha, commit: null };
+  }
+
+  const applied: ApplyResult = await applyMigration(root, plan, { extractors, version: cliVersion(), ...(branch === undefined ? {} : { branch }) });
+  const appliedPaths = applied.files.filter((f) => f.status === "applied").map((f) => f.file);
+  const failedFiles = applied.files.length - appliedPaths.length;
+  const branchLines: string[] = [];
+  let exitCode = failedFiles > 0 ? 1 : 0;
+  if (branch !== undefined) {
+    if (appliedPaths.length === 0) {
+      await abandonBranch(root, branch.base, branch.name);
+      branchLines.push(`적용된 파일이 없어 브랜치 ${branch.name}를 만들지 않음(${branch.base}로 복귀)`);
+    } else if (failedFiles > 0) {
+      // 부분 실패는 커밋하지 않는다: 브랜치와 적용된 변경을 그대로 남기고 사람이 확인한다
+      branchLines.push(
+        `일부 파일(${failedFiles}개)을 적용하지 못해 커밋하지 않음 — 브랜치 ${branch.name}에 적용된 변경 ${appliedPaths.length}개 파일이 커밋되지 않은 채 남아 있음. 확인한 뒤 직접 커밋하거나 \`dsmith migrate --revert ${applied.id}\`로 되돌리세요`,
+      );
+    } else {
+      try {
+        const sha = await commitFiles(root, appliedPaths, commitMessage(applied.replaced, applied.components));
+        branch.commit = sha;
+        const record = await readMigration(root, applied.id);
+        if (record !== null) {
+          record.branch = branch;
+          await writeMigration(root, record);
+        }
+        branchLines.push(`브랜치 ${branch.name}에 커밋 ${sha.slice(0, 7)} — PR은 직접 여세요`);
+      } catch (err) {
+        exitCode = 1;
+        branchLines.push(`커밋하지 못함: ${(err as Error).message} — 브랜치 ${branch.name}에 변경이 커밋되지 않은 채 남아 있음`);
+      }
+    }
+  }
   const { result: auditAfter } = await runAudit(root);
   const indexAfter = await readIndex(root);
   if (indexAfter === null) throw new Error("audit 뒤에도 .dsmith/index.json을 읽을 수 없음");
@@ -163,13 +221,12 @@ export async function runMigrateCommand(opts: MigrateCommandOptions): Promise<Mi
   const reportRel = `.dsmith/reports/migrate-${localDate(new Date())}.md`;
   await atomicWrite(path.join(root, ...reportRel.split("/")), renderMigrateReport({ plan, applied, before, after }));
 
-  const appliedFiles = applied.files.filter((f) => f.status === "applied").length;
-  const rolledBack = applied.files.length - appliedFiles;
   const text = [
     formatPlanSummary(plan, projected, { hint: false }),
-    `적용: ${appliedFiles}개 파일 · 치환 ${applied.replaced}${componentPart(applied)} (되돌린 파일 ${rolledBack}) → 기록 ${applied.record}`,
+    `적용: ${appliedPaths.length}개 파일 · 치환 ${applied.replaced}${componentPart(applied)} (되돌린 파일 ${failedFiles}) → 기록 ${applied.record}`,
     `실제: 점수 ${before.score} → ${after.score}, 하드코딩 비율 ${pct(before.hardcodedShare)} → ${pct(after.hardcodedShare)}`,
     `리포트: ${reportRel}`,
+    ...branchLines,
   ].join("\n");
-  return { json: { plan, projected, applied, actual: { before, after } }, text };
+  return { json: { plan, projected, applied, actual: { before, after }, branch: branch ?? null }, text, exitCode };
 }

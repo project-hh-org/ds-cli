@@ -26,6 +26,6 @@ export interface MigrationRecord {
   createdAt: string;
   status: "applying" | "applied" | "reverted";
   summary: { tokens: number; components: number; files: number };
-  branch?: { name: string; base: string; commit: string | null };
+  branch?: { name: string; base: string; /** 브랜치를 만들기 직전 HEAD */ baseSha?: string; commit: string | null };
   files: MigrationFile[];
 }

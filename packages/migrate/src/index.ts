@@ -25,3 +25,5 @@ export { revertMigration } from "./revert.js";
 export { planExcludes, projectStyles, residualByCategory, usageKey } from "./project.js";
 export type { AuditNumbers } from "./report.js";
 export { formatPlanSummary, pct, renderMigrateReport } from "./report.js";
+export type { BranchCheck } from "./git.js";
+export { abandonBranch, checkBranch, commitFiles, commitMessage, createBranch } from "./git.js";

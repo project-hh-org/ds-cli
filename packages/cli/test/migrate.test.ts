@@ -3,7 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { COVERAGE_PROPERTIES, isRatedUsage, loadReplacementTokens, parseTsx, readIndex, replaceableToken, tokenCategoryOf } from "@dsmith-dev/core";
 import { readDetect, writeDetect } from "@dsmith-dev/detect";
 import type { ApplyResult, MigratePlan } from "@dsmith-dev/migrate";
@@ -414,3 +414,98 @@ async function expectedResidual(root: string): Promise<{ total: number }> {
   ).length;
   return { total };
 }
+
+describe("dsmith migrate --apply --branch", () => {
+  const ENV_KEYS = ["HOME", "GIT_CONFIG_NOSYSTEM", "GIT_CONFIG_GLOBAL", "XDG_CONFIG_HOME", "EMAIL", "GIT_AUTHOR_NAME", "GIT_AUTHOR_EMAIL", "GIT_COMMITTER_NAME", "GIT_COMMITTER_EMAIL"];
+  const savedEnv: Record<string, string | undefined> = {};
+  beforeEach(() => {
+    for (const k of ENV_KEYS) savedEnv[k] = process.env[k];
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), "dsmith-branch-home-"));
+    tmps.push(home);
+    process.env.HOME = home;
+    process.env.XDG_CONFIG_HOME = path.join(home, ".config");
+    process.env.GIT_CONFIG_NOSYSTEM = "1";
+    process.env.GIT_CONFIG_GLOBAL = path.join(home, "nope");
+    for (const k of ["EMAIL", "GIT_AUTHOR_NAME", "GIT_AUTHOR_EMAIL", "GIT_COMMITTER_NAME", "GIT_COMMITTER_EMAIL"]) delete process.env[k];
+  });
+  afterEach(() => {
+    for (const k of ENV_KEYS) {
+      if (savedEnv[k] === undefined) delete process.env[k];
+      else process.env[k] = savedEnv[k];
+    }
+  });
+
+  const git = (cwd: string, ...args: string[]): string =>
+    spawnSync("git", ["-c", "user.name=Fixture", "-c", "user.email=fixture@example.com", ...args], { cwd, encoding: "utf-8" }).stdout;
+
+  /** legacy-demo(상태 0) + Button 결정 → git 레포(.dsmith는 무시)로 만들어 커밋한다 */
+  async function gitRepo(identity: boolean): Promise<string> {
+    const { root } = await prepare("examples/legacy-demo", { stateZero: true });
+    await runDecideChoose(root, "Button", DS_BUTTON, undefined, { mapping: BUTTON_MAP });
+    fs.writeFileSync(path.join(root, ".gitignore"), ".dsmith/\n");
+    git(root, "init", "-q", "-b", "main");
+    git(root, "add", ".");
+    git(root, "commit", "-q", "-m", "init");
+    if (identity) {
+      git(root, "config", "user.name", "Repo Author");
+      git(root, "config", "user.email", "repo@example.com");
+    } else {
+      git(root, "config", "user.useConfigOnly", "true");
+    }
+    return root;
+  }
+
+  it("브랜치를 만들어 적용 파일만 커밋한다(.dsmith 제외, 작성자는 레포 설정), push·PR은 없다", async () => {
+    const root = await gitRepo(true);
+    const baseSha = git(root, "rev-parse", "HEAD").trim();
+    const { json, text, exitCode } = await runMigrateCommand({ root, apply: true, branch: "ds/migrate-test" });
+    expect(exitCode).toBe(0);
+    expect(git(root, "branch", "--show-current").trim()).toBe("ds/migrate-test");
+    const applied = (json as Json).applied!;
+    const sha = git(root, "rev-parse", "HEAD").trim();
+    expect(text).toContain(`브랜치 ds/migrate-test에 커밋 ${sha.slice(0, 7)} — PR은 직접 여세요`);
+    expect(git(root, "log", "-1", "--format=%s%n%an <%ae>").trim()).toBe(
+      `chore(ds): 하드코딩 ${applied.replaced}건을 토큰으로, 컴포넌트 import ${applied.components}건을 DS로 치환 (dsmith migrate)\nRepo Author <repo@example.com>`,
+    );
+    const committed = git(root, "show", "--name-only", "--format=", "HEAD").trim().split("\n").sort();
+    expect(committed).toEqual(applied.files.filter((f) => f.status === "applied").map((f) => f.file).sort());
+    expect(committed.some((f) => f.startsWith(".dsmith"))).toBe(false);
+    expect(git(root, "status", "--porcelain").trim()).toBe("");
+    expect(git(root, "remote").trim()).toBe("");
+    const record = JSON.parse(fs.readFileSync(path.join(root, applied.record), "utf-8"));
+    expect(record.branch).toEqual({ name: "ds/migrate-test", base: "main", baseSha, commit: sha });
+    expect((json as { branch: { commit: string } }).branch.commit).toBe(sha);
+  }, 180_000);
+
+  it("git 식별 정보가 없으면 아무것도 쓰기 전에 오류이고 트리·브랜치가 그대로다", async () => {
+    const root = await gitRepo(false);
+    const tree = treeHash(root, { includeDsmith: true });
+    await expect(runMigrateCommand({ root, apply: true, branch: "ds/migrate-test" })).rejects.toThrow(/--branch를 쓸 수 없음: git 작성자 정보가 없음/);
+    expect(treeHash(root, { includeDsmith: true })).toBe(tree);
+    expect(git(root, "branch", "--list", "ds/migrate-test").trim()).toBe("");
+    expect(git(root, "branch", "--show-current").trim()).toBe("main");
+  }, 120_000);
+
+  it("같은 이름의 브랜치가 있거나 대상 파일이 dirty면 오류, 쓰지 않는다", async () => {
+    const root = await gitRepo(true);
+    git(root, "branch", "ds/taken");
+    const tree = treeHash(root, { includeDsmith: true });
+    await expect(runMigrateCommand({ root, apply: true, branch: "ds/taken" })).rejects.toThrow("이미 있음");
+    expect(treeHash(root, { includeDsmith: true })).toBe(tree);
+
+    fs.appendFileSync(path.join(root, OLD_PAGE), "\n// dirty\n");
+    const dirtyTree = treeHash(root, { includeDsmith: true });
+    await expect(runMigrateCommand({ root, apply: true, branch: "ds/new" })).rejects.toThrow(/커밋하지 않은 변경.*orders\/page\.tsx/);
+    expect(treeHash(root, { includeDsmith: true })).toBe(dirtyTree);
+    expect(git(root, "branch", "--list", "ds/new").trim()).toBe("");
+  }, 120_000);
+
+  it("계획이 0건이면 브랜치를 만들지 않는다", async () => {
+    const { root } = await prepare("examples/legacy-demo", { stateZero: true });
+    git(root, "init", "-q", "-b", "main");
+    // 컴포넌트 결정이 없고 --only components라 편집이 없다
+    const out = await runMigrateCommand({ root, apply: true, branch: "ds/none", only: "components" });
+    expect(out.text).toContain("적용할 치환이 없음");
+    expect(git(root, "branch", "--list", "ds/none").trim()).toBe("");
+  }, 120_000);
+});

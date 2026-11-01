@@ -296,8 +296,9 @@ export function buildProgram(): Command {
     .option("--revert <id>", "기록된 마이그레이션을 되돌린다(적용 뒤 고친 파일은 건너뜀)")
     .option("--list", "마이그레이션 기록 목록")
     .action(async (opts: MigrateCliOptions) => {
-      const { json, text } = await runMigrateCommand(opts);
+      const { json, text, exitCode } = await runMigrateCommand(opts);
       process.stdout.write(opts.json ? `${JSON.stringify(json, null, 2)}\n` : `${text}\n`);
+      if (exitCode !== undefined && exitCode !== 0) process.exitCode = exitCode;
     });
 
   return program;
