@@ -86,6 +86,8 @@ node packages/cli/dist/bin.js audit --root fixtures/tailwind-app
 - `emotion-app` — Emotion만(`css` 태그, `@emotion/styled`, `css` prop 객체). 중첩 `"&:hover"` 안의 색까지 하드코딩 색 2종으로 센다.
 - `mui-app` — MUI `sx`. `@mui/material`이 대표 DS이고, `@mui/material`과 `@mui/material/Button`의 `Button`은 중복이 아니다. 긴 이름 간격 키(`paddingTop: 1`)도 테마 token으로 센다.
 
+데모 대상 `examples/legacy-demo`(Tailwind + inline style + `globals.css`)도 같은 e2e에서 점수 52, `Button`·`Badge` 중복, 리포트 스냅샷으로 고정한다.
+
 ## Extractor 추가하기
 
 1. `@dsmith/extractor-api`의 `Extractor`를 구현한다 — 메타 `ExtractorMeta`(`name`: 소문자 kebab-case, detect 방식 이름과 같게 / `files`: 읽을 glob, 소스를 읽으면 `JS_FILES` / `parses`: `"tsx"` 또는 `"none"`)와 `appliesTo`·`extract`·`write`.

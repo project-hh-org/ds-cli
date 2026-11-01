@@ -5,7 +5,9 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { runAudit } from "../src/commands/audit.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-const fixture = (name: string): string => path.resolve(here, "../../../fixtures", name);
+/** `fixtures/<name>` 또는 `examples/<name>`(base 지정) 절대 경로. */
+const fixture = (name: string, base: "fixtures" | "examples" = "fixtures"): string =>
+  path.resolve(here, "../../..", base, name);
 
 /** 실행 시각·체크아웃 위치에 따라 바뀌는 값(날짜, ISO 타임스탬프, 절대 경로)을 가린다. */
 function mask(markdown: string, root: string): string {
@@ -29,8 +31,8 @@ beforeEach(() => {
 });
 afterEach(clean);
 
-async function audit(name: string) {
-  root = fixture(name);
+async function audit(name: string, base: "fixtures" | "examples" = "fixtures") {
+  root = fixture(name, base);
   clean();
   const { result, reportPath } = await runAudit(root);
   return { result, report: mask(fs.readFileSync(reportPath, "utf-8"), root) };
@@ -167,6 +169,21 @@ describe("fixtures/mui-app", () => {
     // paddingTop(장문 spacing 키)도 token으로 센다.
     expect(tokens).toContainEqual(expect.objectContaining({ file: "src/pages/Plans.tsx", property: "padding", extractor: "mui-sx" }));
     expect(result.hardcoded.colors.flatMap((c) => c.members.map((m) => m.hex))).toContain("#111111");
+    expect(report).toMatchSnapshot();
+  });
+});
+
+describe("examples/legacy-demo", () => {
+  it("Tailwind·inline·CSS가 섞인 데모 어드민: 점수 52, Button·Badge 중복, 세 Extractor가 켜진다", async () => {
+    const { result, report } = await audit("legacy-demo", "examples");
+    expect(result.detect.activeExtractors).toEqual(["tailwind", "inline-style", "css"]);
+    expect(result.detect.ds).toMatchObject({ kind: "local", dir: "src/components/ui" });
+    expect(result.detect.state).toBe(1);
+    expect(result.duplicates).toEqual([{ names: ["Button", "Badge"], reason: "same-name-different-source" }]);
+    expect(result.index.files).toEqual({ scanned: 26, skipped: [] });
+    // css 추출기가 app/globals.css의 하드코딩 값 7건을 평가에 더해 53 → 52가 됐다.
+    expect(result.hardcoded.byFile).toContainEqual({ file: "app/globals.css", count: 7 });
+    expect(result.health).toMatchObject({ score: 52, rated: 187, hardcodedShare: 0.3422, dsImportShare: 0.0909, duplicateCount: 2 });
     expect(report).toMatchSnapshot();
   });
 });
