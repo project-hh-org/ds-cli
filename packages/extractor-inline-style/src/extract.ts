@@ -50,7 +50,7 @@ const UNKNOWN: Normalized = { kind: "unknown" };
 
 /** 단위 없는 숫자는 길이 속성에서만 px로 본다. opacity·zIndex·fontWeight 등은 길이가 아니다. */
 function normalizeNumber(px: number, property: StyleProperty): Normalized {
-  return isLengthProperty(property) ?{ kind: "length", px } : UNKNOWN;
+  return isLengthProperty(property) ? { kind: "length", px } : UNKNOWN;
 }
 
 /** 숫자 리터럴의 원본 소스 텍스트(`1.50` 등). */

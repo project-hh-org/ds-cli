@@ -13,10 +13,14 @@ export interface CssDecl {
   dynamic: boolean;
 }
 
-/** `/* *\/` 주석을 같은 길이의 공백으로 바꾼다(줄바꿈은 유지). 문자열 안의 `/*`는 건드리지 않는다. */
-function blankComments(text: string): string {
+/**
+ * `/* *\/` 주석을 같은 길이의 공백으로 바꾼다(줄바꿈은 유지). 문자열 안의 `/*`는 건드리지 않는다.
+ * `lineComments`면 괄호 밖·따옴표 밖의 `//`부터 줄 끝까지도 공백으로 바꾼다(`url(//cdn/x)`는 괄호 안이라 보존).
+ */
+function blankComments(text: string, lineComments: boolean): string {
   let out = "";
   let quote: string | null = null;
+  let parens = 0;
   for (let i = 0; i < text.length; i++) {
     const ch = text[i]!;
     if (quote !== null) {
@@ -28,6 +32,15 @@ function blankComments(text: string): string {
     if (ch === '"' || ch === "'") {
       quote = ch;
       out += ch;
+      continue;
+    }
+    if (ch === "(") parens++;
+    else if (ch === ")" && parens > 0) parens--;
+    if (lineComments && parens === 0 && ch === "/" && text[i + 1] === "/") {
+      const newline = text.indexOf("\n", i);
+      const end = newline === -1 ? text.length : newline;
+      out += " ".repeat(end - i);
+      i = end - 1;
       continue;
     }
     if (ch === "/" && text[i + 1] === "*") {
@@ -42,7 +55,8 @@ function blankComments(text: string): string {
   return out;
 }
 
-const DECLARATION = /^(\s*)([A-Za-z_$-][\w$-]*)\s*:/;
+/** 속성명 앞에 올 수 있는 `${mixin}` 자리 표식(세미콜론 없는 믹스인 문장 뒤에 선언이 이어지는 경우). */
+const DECLARATION = /^\s*(?:\u0000\d+\u0000\s*)*([A-Za-z_$-][\w$-]*)\s*:/;
 
 /** `text[from, to)` 구간이 선언이면 CssDecl로. 아니면 null. */
 function declarationOf(text: string, from: number, to: number, offset: number): CssDecl | null {
@@ -56,7 +70,7 @@ function declarationOf(text: string, from: number, to: number, offset: number): 
   if (value === "") return null;
   const start = from + valueFrom + lead;
   return {
-    property: head[2]!,
+    property: head[1]!,
     value,
     start: start + offset,
     end: start + value.length + offset,
@@ -69,9 +83,14 @@ function declarationOf(text: string, from: number, to: number, offset: number): 
  * `{` 앞의 문장(선택자·at-rule 머리)과 `@import ...;` 같은 문장은 선언이 아니다.
  * 세미콜론·중괄호는 따옴표·괄호·scss 보간(`#{}`) 안에서는 끝 표지로 보지 않는다.
  * `offset`은 반환하는 start/end에 더해진다(더 큰 파일 안에서 잘라 온 텍스트일 때).
+ * `options.lineComments`(기본 false)면 scss·CSS-in-JS의 `//` 줄 주석도 무시한다.
  */
-export function parseCssDeclarations(text: string, offset = 0): CssDecl[] {
-  const src = blankComments(text);
+export function parseCssDeclarations(
+  text: string,
+  offset = 0,
+  options: { lineComments?: boolean } = {},
+): CssDecl[] {
+  const src = blankComments(text, options.lineComments ?? false);
   const decls: CssDecl[] = [];
 
   let segStart = 0;

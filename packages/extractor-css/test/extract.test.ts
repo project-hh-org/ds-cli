@@ -143,3 +143,44 @@ describe("cssExtractor.extract", () => {
     expect(extractAll("")).toEqual([]);
   });
 });
+
+describe("cssExtractor 혼합 값", () => {
+  it("var()와 하드코딩이 섞인 길이는 하드코딩 토큰을 보고한다", () => {
+    const usage = find("a{margin: var(--x) 13px}", "13px");
+    expect(usage).toMatchObject({ property: "margin", source: "hardcoded", normalized: { kind: "length", px: 13 } });
+    const code = "a{margin: var(--x) 13px}";
+    const patch = cssExtractor.write(usage, "var(--space-3)")!;
+    expect(code.slice(0, patch.start) + patch.replacement + code.slice(patch.end)).toBe(
+      "a{margin: var(--x) var(--space-3)}",
+    );
+  });
+
+  it("var()와 하드코딩이 섞인 border 축약은 색을 보고한다", () => {
+    const usage = find("a{border: var(--w) solid #000}", "#000");
+    expect(usage).toMatchObject({ property: "border-color", source: "hardcoded" });
+  });
+
+  it("값 전체가 var()/$변수 토큰들뿐이면 token", () => {
+    const usages = extractAll("a{margin: var(--a) var(--b); padding: $a $b; width: var(--w, 3px)}");
+    expect(usages.map((u) => u.source)).toEqual(["token", "token", "token"]);
+  });
+
+  it("var()가 값의 일부일 뿐인 다른 속성은 token이 아니다", () => {
+    const [usage] = extractAll("a{transition: opacity var(--d) ease}");
+    expect(usage).toMatchObject({ property: "other", source: "hardcoded" });
+  });
+});
+
+describe("cssExtractor scss", () => {
+  it(".scss는 // 줄 주석을 무시한다", () => {
+    const code = "a {\n  // padding: 99px (\n  padding: 1px; // note\n  margin: 2px;\n}";
+    const usages = extractAll(code, "a.scss");
+    expect(usages.map((u) => u.raw)).toEqual(["1px", "2px"]);
+    expect(usages[1]).toMatchObject({ line: 4, column: 10 });
+  });
+
+  it(".css는 //를 주석으로 보지 않는다", () => {
+    const usages = extractAll("a { background: url(//cdn/x.png); margin: 2px }", "a.css");
+    expect(usages.map((u) => u.property)).toEqual(["other", "margin"]);
+  });
+});

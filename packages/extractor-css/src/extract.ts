@@ -15,8 +15,8 @@ export const EXTRACTOR_NAME = "css";
 type Normalized = StyleUsage["normalized"];
 const UNKNOWN: Normalized = { kind: "unknown" };
 
-/** `var(--…)`(CSS 변수) 또는 `$name`(scss 변수) 값은 토큰 참조다. */
-const TOKEN_REF = /^(?:var\(\s*--|\$)/i;
+/** 공백으로 나뉜 토큰 하나가 `var(--…)`(CSS 변수) 또는 `$name`(scss 변수)이면 토큰 참조다. */
+const TOKEN_REF = /^(?:var\(\s*--.*\)|\$[\w-]+)$/is;
 const IMPORTANT = /\s*!\s*important\s*$/i;
 
 /** 각 줄의 시작 오프셋. */
@@ -40,16 +40,33 @@ function locate(starts: number[], offset: number): { line: number; column: numbe
   return { line: lo + 1, column: offset - starts[lo]! };
 }
 
-/** 괄호 밖 첫 공백 전까지의 토큰 길이. `calc(1px + 2px) 3px` → `calc(1px + 2px)`. */
-function firstTokenLength(value: string): number {
+interface Token {
+  from: number;
+  to: number;
+  text: string;
+}
+
+/** 괄호 밖 공백으로 값을 나눈다. `calc(1px + 2px) 3px` → `calc(1px + 2px)`, `3px`. */
+function tokenize(value: string): Token[] {
+  const tokens: Token[] = [];
   let depth = 0;
+  let from = -1;
+  const close = (to: number): void => {
+    if (from !== -1) tokens.push({ from, to, text: value.slice(from, to) });
+    from = -1;
+  };
   for (let i = 0; i < value.length; i++) {
     const ch = value[i]!;
+    if (depth === 0 && /\s/.test(ch)) {
+      close(i);
+      continue;
+    }
+    if (from === -1) from = i;
     if (ch === "(") depth++;
     else if (ch === ")") depth = Math.max(0, depth - 1);
-    else if (depth === 0 && /\s/.test(ch)) return i;
   }
-  return value.length;
+  close(value.length);
+  return tokens;
 }
 
 interface Classified {
@@ -66,7 +83,11 @@ function classify(prop: string, value: string, dynamic: boolean): Classified {
   const property = cssPropertyToStyleProperty(prop);
 
   if (dynamic) return { property, ...whole, normalized: UNKNOWN, source: "dynamic" };
-  if (TOKEN_REF.test(value)) return { property, ...whole, normalized: UNKNOWN, source: "token" };
+  // 값 전체가 토큰 참조뿐일 때만 token. 하드코딩이 섞이면 아래에서 그 부분을 보고한다.
+  const tokens = tokenize(value);
+  if (tokens.every((t) => TOKEN_REF.test(t.text))) {
+    return { property, ...whole, normalized: UNKNOWN, source: "token" };
+  }
 
   const shorthand = splitShorthandColor(prop, value);
   if (shorthand !== null) {
@@ -82,12 +103,13 @@ function classify(prop: string, value: string, dynamic: boolean): Classified {
     return { property, ...whole, normalized: normalizeColor(value) ?? UNKNOWN, source: "hardcoded" };
   }
   if (isLengthProperty(property)) {
-    const to = firstTokenLength(value);
-    const px = normalizeLength(value.slice(0, to));
+    // 토큰 참조는 건너뛰고 처음 나오는 하드코딩 토큰을 정규화한다(`var(--x) 13px` → 13px).
+    const target = tokens.find((t) => !TOKEN_REF.test(t.text)) ?? tokens[0]!;
+    const px = normalizeLength(target.text);
     return {
       property,
-      from: 0,
-      to,
+      from: target.from,
+      to: target.to,
       normalized: px === null ? UNKNOWN : { kind: "length", px },
       source: "hardcoded",
     };
@@ -99,7 +121,8 @@ function extract(ctx: ExtractContext): StyleUsage[] {
   const starts = lineStartsOf(ctx.code);
   const usages: StyleUsage[] = [];
 
-  for (const decl of parseCssDeclarations(ctx.code)) {
+  const lineComments = /\.scss$/.test(ctx.file);
+  for (const decl of parseCssDeclarations(ctx.code, 0, { lineComments })) {
     const value = decl.value.replace(IMPORTANT, "");
     if (value === "") continue;
 

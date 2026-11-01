@@ -99,3 +99,67 @@ describe("parseCssDeclarations", () => {
     expect(parseCssDeclarations("")).toEqual([]);
   });
 });
+
+describe("parseCssDeclarations lineComments", () => {
+  const opts = { lineComments: true };
+  const names = (text: string, options?: { lineComments?: boolean }) =>
+    parseCssDeclarations(text, 0, options).map((d) => [d.property, d.value]);
+
+  it("// 줄 주석 뒤의 선언을 잃지 않는다", () => {
+    expect(names("a{\n // note\n padding:1px;\n}", opts)).toEqual([["padding", "1px"]]);
+  });
+
+  it("선언 뒤의 // 주석이 다음 선언을 삼키지 않는다", () => {
+    expect(names("a{ padding:1px; // x\n margin:2px;\n}", opts)).toEqual([
+      ["padding", "1px"],
+      ["margin", "2px"],
+    ]);
+  });
+
+  it("// 주석 안의 짝 없는 괄호·선언은 무시한다", () => {
+    expect(names("a{\n // oops ( color: red;\n margin:2px;\n}", opts)).toEqual([["margin", "2px"]]);
+  });
+
+  it("주석 처리로 위치가 밀리지 않는다", () => {
+    const text = "a{ // c\n padding:1px; }";
+    const [decl] = parseCssDeclarations(text, 0, opts);
+    expect(text.slice(decl!.start, decl!.end)).toBe("1px");
+  });
+
+  it("url() 안과 따옴표 안의 //는 주석이 아니다", () => {
+    expect(
+      names(`a{ background: url(//cdn/x.png); content: "//x"; src: url(http://a/b); margin: 1px }`, opts),
+    ).toEqual([
+      ["background", "url(//cdn/x.png)"],
+      ["content", `"//x"`],
+      ["src", "url(http://a/b)"],
+      ["margin", "1px"],
+    ]);
+  });
+
+  it("옵션이 꺼져 있으면(기본) //를 주석으로 보지 않는다", () => {
+    expect(names("a{ background: url(//cdn/x.png) }")).toEqual([["background", "url(//cdn/x.png)"]]);
+    expect(names("a{ background: url(//cdn/x.png) }", { lineComments: false })).toEqual([
+      ["background", "url(//cdn/x.png)"],
+    ]);
+  });
+});
+
+describe("parseCssDeclarations 선행 플레이스홀더", () => {
+  it("세미콜론 없는 믹스인 문장이 다음 선언을 삼키지 않는다", () => {
+    const text = "a{\n \u00000\u0000\n color: red;\n}";
+    const decls = parseCssDeclarations(text);
+    expect(decls.map((d) => [d.property, d.value])).toEqual([["color", "red"]]);
+    expect(text.slice(decls[0]!.start, decls[0]!.end)).toBe("red");
+  });
+
+  it("세미콜론이 있는 믹스인 문장과 닫는 괄호 앞 단독 믹스인은 선언이 아니다", () => {
+    expect(slices("a{ \u00000\u0000; color: red }")).toEqual([["color", "red", "red"]]);
+    expect(slices("a{ \u00000\u0000\n}")).toEqual([]);
+  });
+
+  it("플레이스홀더 값을 가진 선언은 그대로 dynamic", () => {
+    const [decl] = parseCssDeclarations("a{ \u00000\u0000 \u00001\u0000: red; margin: \u00002\u0000 }");
+    expect(decl).toMatchObject({ property: "margin", dynamic: true });
+  });
+});
