@@ -5,6 +5,7 @@ import path from "node:path";
 import { componentDeclarations } from "../component/declarations.js";
 import type { Token } from "../model/token.js";
 import { buildDecisionCard } from "./card.js";
+import { buildTokenClusterCard } from "./token-card.js";
 import { candidatesOf, similarItems } from "./candidates.js";
 import { readGitHistory } from "./git-history.js";
 import type { DecisionCard, DecisionKind, DecisionsFile, GitHistory } from "./model.js";
@@ -73,8 +74,8 @@ async function otherDeclarationRanges(
 
 const CHECK_LIST = "list_decisions(또는 decide --list)로 항목을 확인하세요";
 
-function notFound(index: Index, item: string, kind: DecisionKind | undefined): Extract<ExplainResult, { error: "not-found" }> {
-  const available = kind === undefined ? [] : candidatesOf(index, item).map((c) => c.kind);
+function notFound(index: Index, item: string, kind: DecisionKind | undefined, decisions?: DecisionsFile): Extract<ExplainResult, { error: "not-found" }> {
+  const available = kind === undefined ? [] : candidatesOf(index, item, undefined, decisions).map((c) => c.kind);
   if (kind !== undefined && available.length > 0) {
     return {
       error: "not-found",
@@ -96,11 +97,16 @@ export async function explainDecision(
   item: string,
   opts: ExplainOptions,
 ): Promise<ExplainResult> {
-  const matches = candidatesOf(index, item, opts.kind);
-  if (matches.length === 0) return notFound(index, item, opts.kind);
+  const matches = candidatesOf(index, item, opts.kind, opts.decisions);
+  if (matches.length === 0) return notFound(index, item, opts.kind, opts.decisions);
   const [candidate] = matches;
   if (matches.length > 1 || candidate === undefined) {
     return { error: "ambiguous-kind", kinds: matches.map((c) => c.kind) };
+  }
+
+  if (candidate.kind === "token-cluster") {
+    const tokenRecord = opts.decisions?.items.find((r) => r.item === candidate.item && r.kind === "token-cluster");
+    return { card: buildTokenClusterCard({ candidate, index, ...(tokenRecord ? { record: tokenRecord } : {}) }) };
   }
 
   const definitionFiles: Record<string, string | null> = {};

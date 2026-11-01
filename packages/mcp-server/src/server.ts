@@ -155,7 +155,7 @@ export function createDsmithServer(deps: ServerDeps): Promise<McpServer> {
     {
       description:
         "Explain a duplicate or locally redefined component: options, differences, impact of each choice and a recommendation. impact.byOption[x] = call sites and files that would have to change if x is chosen (not x's usage; usage is options[].usageCount). ruleCheck.tokenUsageRate[x] = share of the rated styles in x's definition file that already use a token; null = nothing rated. Use when several components do the same job and you must pick one.",
-      inputSchema: z.object({ item: z.string().min(1).max(MAX_TEXT), kind: z.enum(["duplicate", "local-definition"]).optional() }),
+      inputSchema: z.object({ item: z.string().min(1).max(MAX_TEXT), kind: z.enum(["duplicate", "local-definition", "token-cluster"]).optional() }),
       annotations: readOnly,
     },
     async (args): Promise<CallToolResult> => {

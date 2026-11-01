@@ -23,7 +23,8 @@ export async function chooseDecision(
   optionId: string,
   opts: ChooseOptions = {},
 ): Promise<DecisionRecord> {
-  const matches = candidatesOf(index, item, opts.kind);
+  const file = await readDecisions(root);
+  const matches = candidatesOf(index, item, opts.kind, file);
   if (matches.length === 0) {
     const similar = similarItems(index, item);
     const hint = similar.length > 0 ? ` 비슷한 항목: ${similar.join(", ")}` : "";
@@ -39,7 +40,6 @@ export async function chooseDecision(
     throw new Error(`종류가 모호함: ${item}의 ${optionId}는 ${owners.map((c) => c.kind).join(", ")} 모두에 있습니다. kind를 지정하세요`);
   }
 
-  const file = await readDecisions(root);
   const existing = file.items.find((r) => r.item === candidate.item && r.kind === candidate.kind);
   if (
     existing?.status === "decided" &&

@@ -45,7 +45,7 @@ interface DecideOptions {
   git: boolean;
 }
 
-const DECIDE_KINDS = ["duplicate", "local-definition"] as const;
+const DECIDE_KINDS = ["duplicate", "local-definition", "token-cluster"] as const;
 type DecideKind = (typeof DECIDE_KINDS)[number];
 
 interface McpOptions {
@@ -104,7 +104,7 @@ export function buildProgram(): Command {
     .option("--limit <n>", "--list에 보일 최대 항목 수(기본: 전부)")
     .option("--explain <item>", "항목의 결정 카드(옵션·차이·영향·추천)")
     .option("--no-git", "--explain에서 git 이력을 읽지 않는다")
-    .option("--kind <kind>", "같은 이름이 duplicate와 local-definition 둘 다일 때 종류 지정")
+    .option("--kind <kind>", "종류 지정(duplicate | local-definition | token-cluster). 같은 이름이 둘 이상일 때 필요")
     .option("--item <name>", "--choose로 결정할 항목")
     .option("--choose <id>", "--item의 선택지 id를 결정으로 기록")
     .option("--note <text>", "--choose에 남길 메모")

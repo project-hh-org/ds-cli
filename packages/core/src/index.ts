@@ -122,3 +122,8 @@ export { GENERATED_NOTICE, emitTokensCss, emitTokensTs } from "./tokens/emit.js"
 export type { ComponentDeclaration } from "./component/declarations.js";
 export { componentDeclarations } from "./component/declarations.js";
 export { FULL_RADIUS_MIN_PX } from "./tokens/draft.js";
+export { tokenClusterCandidates } from "./decisions/candidates.js";
+export type { TokenCardInput } from "./decisions/token-card.js";
+export { buildTokenClusterCard } from "./decisions/token-card.js";
+export type { SeedLimits, TokenClusterSeed } from "./decisions/seed.js";
+export { seedDecisions } from "./decisions/seed.js";
