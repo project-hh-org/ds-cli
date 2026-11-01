@@ -5,5 +5,5 @@
     "outDir": "dist"
   },
   "include": ["src"],
-  "references": [{ "path": "../extractor-api" }, { "path": "../core" }, { "path": "../extractor-styled" }]
+  "references": [{ "path": "../extractor-api" }, { "path": "../extractor-styled" }]
 }

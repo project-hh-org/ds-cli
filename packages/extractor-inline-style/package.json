@@ -20,7 +20,6 @@
     "@dsmith/extractor-api": "workspace:*"
   },
   "devDependencies": {
-    "@babel/types": "^7.29.11",
     "vitest": "^3.0.0"
   },
   "scripts": {

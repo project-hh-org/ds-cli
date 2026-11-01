@@ -43,12 +43,16 @@ export function readStyleImports(program: Program): StyleImports {
     const sc = source === "styled-components" || source.startsWith("styled-components/");
     const emotion = source.startsWith("@emotion/");
     const emotionStyled = source === "@emotion/styled" || source === "@emotion/styled/macro" || source === "@emotion/native";
+    const isType = (spec: (typeof stmt.specifiers)[number]): boolean =>
+      stmt.importKind === "type" || (spec.type === "ImportSpecifier" && spec.importKind === "type");
+    for (const spec of stmt.specifiers) imports.bound.add(spec.local.name);
+    // 타입만 가져오는 import(`import type { DefaultTheme } from "styled-components"`)는 귀속에 영향을 주지 않는다.
+    const valueSpecs = stmt.specifiers.filter((spec) => !isType(spec));
+    if (stmt.importKind === "type" || (stmt.specifiers.length > 0 && valueSpecs.length === 0)) continue;
     if (sc) imports.fromStyledComponents = true;
     if (emotion) imports.fromEmotion = true;
-    for (const spec of stmt.specifiers) {
+    for (const spec of valueSpecs) {
       const local = spec.local.name;
-      imports.bound.add(local);
-      if (stmt.importKind === "type" || (spec.type === "ImportSpecifier" && spec.importKind === "type")) continue;
       const imported =
         spec.type === "ImportDefaultSpecifier"
           ? "default"
@@ -139,6 +143,15 @@ export function extractCssInJs(
   const fromCssProp = (node: Expression): void => {
     if (node.type === "ArrayExpression") {
       for (const el of node.elements) if (el !== null && el.type !== "SpreadElement") fromCssProp(el);
+      return;
+    }
+    if (node.type === "ConditionalExpression") {
+      fromCssProp(node.consequent);
+      fromCssProp(node.alternate);
+      return;
+    }
+    if (node.type === "LogicalExpression") {
+      fromCssProp(node.right);
       return;
     }
     if (node.type === "TaggedTemplateExpression") {

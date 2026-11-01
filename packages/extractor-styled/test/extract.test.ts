@@ -173,6 +173,15 @@ describe("styledExtractor.extract — 객체 문법", () => {
     ]);
   });
 
+  it("중첩 선택자 객체는 재귀하고 키 자체는 usage를 내지 않는다", () => {
+    const code = SC + 'const A = styled.div({ color: "#fff", "&:hover": { color: "#000" }, [mq.md]: { padding: 8 } });';
+    expect(summary(code)).toEqual([
+      ["color", "#fff", "hardcoded"],
+      ["color", "#000", "hardcoded"],
+      ["padding", "8", "hardcoded"],
+    ]);
+  });
+
   it(".attrs({...}) 인자와 styled(Base) 인자는 스타일이 아니다", () => {
     const code = SC + "const A = styled.div.attrs({ color: '#fff' })`padding: 1px;`;\nconst B = styled({ color: '#000' });";
     expect(summary(code)).toEqual([["padding", "1px", "hardcoded"]]);
@@ -180,6 +189,11 @@ describe("styledExtractor.extract — 객체 문법", () => {
 });
 
 describe("styledExtractor.extract — 귀속", () => {
+  it("styled-components 타입만 import한 파일은 귀속을 바꾸지 않는다", () => {
+    const code = `import type { DefaultTheme } from "styled-components";\nconst a = <div css={{ color: "#fff" }} />;`;
+    expect(extractAll(code)).toEqual([]);
+  });
+
   it("@emotion/styled에서 import한 파일은 0건", () => {
     const code = `import styled from "@emotion/styled";\nconst A = styled.div\`color: #fff;\`;\nconst B = styled.div({ color: "#000" });`;
     expect(extractAll(code)).toEqual([]);

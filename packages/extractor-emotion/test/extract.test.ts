@@ -89,6 +89,41 @@ describe("emotionExtractor.extract", () => {
     ]);
   });
 
+  it("css prop: 함수가 돌려주는 객체의 중첩 선택자를 재귀한다", () => {
+    const code = 'const a = <div css={(t) => ({ "&:hover": { color: "#444" } })} />;';
+    expect(summary(code)).toEqual([["color", "#444", "hardcoded"]]);
+  });
+
+  it("css prop: 미디어 쿼리 객체를 재귀하고 키는 usage를 내지 않는다", () => {
+    const code = 'const a = <div css={{ "@media (min-width: 600px)": { padding: "8px" } }} />;';
+    const usages = extractAll(code);
+    expect(usages.map((u) => [u.property, u.raw, u.source])).toEqual([["padding", "8px", "hardcoded"]]);
+    expect(usages.some((u) => u.property === "other" || u.source === "dynamic")).toBe(false);
+  });
+
+  it("css prop: 조건식은 두 분기를 모두 본다", () => {
+    const code = 'const a = <div css={on ? { color: "#111" } : { color: "#222" }} />;';
+    expect(summary(code)).toEqual([
+      ["color", "#111", "hardcoded"],
+      ["color", "#222", "hardcoded"],
+    ]);
+  });
+
+  it("css prop: 배열 안의 논리식은 오른쪽을 본다", () => {
+    const code = 'const a = <div css={[base, on && { color: "#333" }]} />;';
+    expect(summary(code)).toEqual([["color", "#333", "hardcoded"]]);
+  });
+
+  it("css prop: 배열 밖 논리식·조건식 안의 css`` 도 본다", () => {
+    const code = "const a = <div css={on && css`color: #555;`} />;";
+    expect(summary(code)).toEqual([["color", "#555", "hardcoded"]]);
+  });
+
+  it("styled-components 타입만 import한 파일의 css prop은 emotion이 맡는다", () => {
+    const code = `import type { DefaultTheme } from "styled-components";\nconst a = <div css={{ color: "#fff" }} />;`;
+    expect(summary(code)).toEqual([["color", "#fff", "hardcoded"]]);
+  });
+
   it("css prop 안의 import 없는 css`` 도 본다", () => {
     expect(summary("const a = <div css={css`color: #fff;`} />;")).toEqual([["color", "#fff", "hardcoded"]]);
   });

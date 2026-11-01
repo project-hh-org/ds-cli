@@ -16,8 +16,6 @@
     "dist"
   ],
   "dependencies": {
-    "@babel/types": "^7.29.11",
-    "@dsmith/core": "workspace:*",
     "@dsmith/extractor-api": "workspace:*",
     "@dsmith/extractor-styled": "workspace:*"
   },
