@@ -39,8 +39,10 @@ export function readStyleImports(program: Program): StyleImports {
   for (const stmt of program.body) {
     if (stmt.type !== "ImportDeclaration") continue;
     const source = stmt.source.value;
-    const sc = source === "styled-components";
+    // `styled-components/native`·`/macro`, `@emotion/styled/macro`·`@emotion/native`도 같은 API다.
+    const sc = source === "styled-components" || source.startsWith("styled-components/");
     const emotion = source.startsWith("@emotion/");
+    const emotionStyled = source === "@emotion/styled" || source === "@emotion/styled/macro" || source === "@emotion/native";
     if (sc) imports.fromStyledComponents = true;
     if (emotion) imports.fromEmotion = true;
     for (const spec of stmt.specifiers) {
@@ -59,7 +61,7 @@ export function readStyleImports(program: Program): StyleImports {
         if (imported === "default" || imported === "styled") imports.styled = local;
         else if (imported === "css") imports.scCss = local;
         else if (imported === "createGlobalStyle") imports.createGlobalStyle = local;
-      } else if (source === "@emotion/styled" && imported === "default") {
+      } else if (emotionStyled && imported === "default") {
         imports.emotionStyled = local;
       } else if ((source === "@emotion/react" || source === "@emotion/css") && imported === "css") {
         imports.emotionCss = local;
@@ -168,7 +170,8 @@ export function extractCssInJs(
       fromCssProp(value.expression);
     },
   });
-  return usages;
+  // css prop은 자식 템플릿보다 먼저 방문되므로 소스 순서로 되돌린다.
+  return usages.sort((a, b) => a.line - b.line || a.column - b.column);
 }
 
 function nonNull(...names: (string | null)[]): Set<string> {

@@ -118,6 +118,25 @@ importers:
         specifier: ^3.0.0
         version: 3.2.7(@types/node@22.20.5)
 
+  packages/extractor-emotion:
+    dependencies:
+      '@babel/types':
+        specifier: ^7.29.11
+        version: 7.29.11
+      '@dsmith/core':
+        specifier: workspace:*
+        version: link:../core
+      '@dsmith/extractor-api':
+        specifier: workspace:*
+        version: link:../extractor-api
+      '@dsmith/extractor-styled':
+        specifier: workspace:*
+        version: link:../extractor-styled
+    devDependencies:
+      vitest:
+        specifier: ^3.0.0
+        version: 3.2.7(@types/node@22.20.5)
+
   packages/extractor-inline-style:
     dependencies:
       '@dsmith/core':

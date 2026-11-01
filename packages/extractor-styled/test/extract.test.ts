@@ -199,6 +199,11 @@ describe("styledExtractor.extract — 귀속", () => {
     expect(extractAll(code)).toEqual([]);
   });
 
+  it("styled-components/native에서 import한 styled도 맡는다", () => {
+    const code = `import styled from "styled-components/native";\nconst V = styled.View\`padding: 8px;\`;`;
+    expect(summary(code)).toEqual([["padding", "8px", "hardcoded"]]);
+  });
+
   it("이름을 바꿔 import한 styled도 따라간다", () => {
     const code = `import sc from "styled-components";\nconst A = sc.div\`color: #fff;\`;`;
     expect(summary(code)).toEqual([["color", "#fff", "hardcoded"]]);
