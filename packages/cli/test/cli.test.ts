@@ -8,7 +8,10 @@ import { auditWarnings, localDate } from "../src/report/audit-report.js";
 import type { Index } from "@dsmith-dev/core";
 import type { DetectResult } from "@dsmith-dev/detect";
 import type { Extractor, StyleUsage } from "@dsmith-dev/extractor-api";
+import { AI_TOOLS, loadCommands } from "@dsmith-dev/agent-skill";
+import { TOOL_NAMES } from "@dsmith-dev/mcp-server";
 import { computeAudit, runAudit } from "../src/commands/audit.js";
+import { buildProgram } from "../src/program.js";
 import { detectHints, runDetect } from "../src/commands/detect.js";
 import { registry } from "../src/registry.js";
 
@@ -382,5 +385,33 @@ describe("제외 (--exclude, overrides.exclude)", () => {
     expect(run("audit", "--exclude", "legacy/**", "--exclude", "old/**").index.files.scanned).toBe(1);
     const detected = run("detect", "--exclude", "legacy/**", "old/**", "src/**");
     expect(detected.styling.methods).toEqual([{ name: "inline-style", evidence: ["fallback"], share: 0 }]);
+  });
+});
+
+describe("슬래시 명령 ↔ CLI·MCP 일관성", () => {
+  it("명령 소스가 부르는 MCP 도구는 서버가 내는 도구 이름 안에 있다", async () => {
+    const used = (await loadCommands()).flatMap((c) => c.uses.filter((u) => u.startsWith("mcp:")).map((u) => u.slice(4)));
+    expect(used.length).toBeGreaterThan(0);
+    for (const tool of used) expect(TOOL_NAMES as readonly string[]).toContain(tool);
+  });
+
+  it("명령 소스가 부르는 CLI 서브커맨드와 플래그는 실제로 등록돼 있다", async () => {
+    const program = buildProgram();
+    expect(program.commands.map((c) => c.name()).sort()).toEqual(["audit", "decide", "detect", "install", "mcp"]);
+    const used = (await loadCommands()).flatMap((c) => c.uses.filter((u) => u.startsWith("cli:")).map((u) => u.slice(4)));
+    expect(used.length).toBeGreaterThan(0);
+    for (const use of used) {
+      const [name, ...flags] = use.split(" ");
+      const cmd = program.commands.find((c) => c.name() === name);
+      expect(cmd, `서브커맨드 ${name}`).toBeDefined();
+      for (const flag of flags) {
+        expect(cmd?.options.map((o) => o.long), `${name}의 ${flag}`).toContain(flag);
+      }
+    }
+  });
+
+  it("install 옵션이 AI 도구 이름을 도움말에 보인다", () => {
+    const help = buildProgram().commands.find((c) => c.name() === "install")?.helpInformation() ?? "";
+    for (const tool of AI_TOOLS) expect(help).toContain(tool);
   });
 });

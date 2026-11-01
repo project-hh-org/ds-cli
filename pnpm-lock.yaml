@@ -39,6 +39,9 @@ importers:
 
   packages/cli:
     dependencies:
+      '@dsmith-dev/agent-skill':
+        specifier: workspace:*
+        version: link:../agent-skill
       '@dsmith-dev/core':
         specifier: workspace:*
         version: link:../core

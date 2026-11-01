@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { startStdioServer } from "@dsmith-dev/mcp-server";
 import { buildExtractors, registry } from "../registry.js";
+import { cliVersion } from "../version.js";
 import { runAudit } from "./audit.js";
 
 export interface McpCommandOptions {
@@ -17,15 +18,6 @@ export function findProjectRoot(start: string): string {
   for (let dir = origin; ; dir = path.dirname(dir)) {
     if (fs.existsSync(path.join(dir, ".dsmith")) || fs.existsSync(path.join(dir, ".git"))) return dir;
     if (path.dirname(dir) === dir) return origin;
-  }
-}
-
-function cliVersion(): string {
-  try {
-    const pkg = JSON.parse(fs.readFileSync(new URL("../../package.json", import.meta.url), "utf-8")) as { version?: unknown };
-    return typeof pkg.version === "string" ? pkg.version : "0.0.0";
-  } catch {
-    return "0.0.0";
   }
 }
 

@@ -6,6 +6,7 @@
   },
   "include": ["src"],
   "references": [
+    { "path": "../agent-skill" },
     { "path": "../core" },
     { "path": "../detect" },
     { "path": "../extractor-api" },

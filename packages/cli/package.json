@@ -26,6 +26,7 @@
     "dist"
   ],
   "dependencies": {
+    "@dsmith-dev/agent-skill": "workspace:*",
     "@dsmith-dev/core": "workspace:*",
     "@dsmith-dev/detect": "workspace:*",
     "@dsmith-dev/extractor-api": "workspace:*",
