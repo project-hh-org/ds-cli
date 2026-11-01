@@ -47,6 +47,7 @@ describe("loadCommands — 실제 명령 소스", () => {
       const c = commands.find((x) => x.name === name);
       expect(c?.uses, name).toEqual([]);
       expect(c?.body, name).toContain("아직 제공되지 않음");
+      expect(c?.body, name).not.toMatch(/\d+\.\d+\.\d+/); // 버전 번호를 약속하지 않는다
     }
   });
 
@@ -69,7 +70,8 @@ describe("loadCommands — 실제 명령 소스", () => {
     const ds = (await loadCommands()).find((c) => c.name === "ds");
     expect(ds?.body).toContain("state");
     expect(ds?.body).toMatch(/audit.*decide.*init.*ai/s);
-    expect(ds?.body).toContain("0.3.0");
+    expect(ds?.body).toContain("아직 제공되지 않음");
+    expect(ds?.body).toContain("직접 입력해 달라고 하고 멈춘다");
   });
 });
 
@@ -116,6 +118,26 @@ describe("loadCommands — 검증", () => {
     await expect(loadCommands(dir)).rejects.toThrow(/ds-a\.md.*args/s);
   });
 
+  it("알 수 없는 frontmatter 키는 Error", async () => {
+    const dir = tmpCommands({ "ds-a.md": valid("ds-a", "argument-hint: x\n") });
+    await expect(loadCommands(dir)).rejects.toThrow(/ds-a\.md.*argument-hint/s);
+  });
+
+  it("args를 선언했는데 본문에 {{args}}가 없으면 Error", async () => {
+    const dir = tmpCommands({ "ds-a.md": valid("ds-a", 'args: "[x]"\n') });
+    await expect(loadCommands(dir)).rejects.toThrow(/ds-a\.md.*args/s);
+  });
+
+  it("본문에 {{args}}가 있는데 args를 선언하지 않았으면 Error", async () => {
+    const dir = tmpCommands({ "ds-a.md": valid("ds-a", "", "실행 {{args}}") });
+    await expect(loadCommands(dir)).rejects.toThrow(/ds-a\.md.*args/s);
+  });
+
+  it("args와 {{args}}가 짝이면 통과", async () => {
+    const dir = tmpCommands({ "ds-a.md": valid("ds-a", 'args: "[x]"\n', "실행 {{args}}") });
+    expect((await loadCommands(dir))[0]?.args).toBe("[x]");
+  });
+
   it("frontmatter가 없으면 Error", async () => {
     const dir = tmpCommands({ "ds-a.md": "본문만 있음\n" });
     await expect(loadCommands(dir)).rejects.toThrow(/ds-a\.md.*frontmatter/s);
@@ -124,5 +146,35 @@ describe("loadCommands — 검증", () => {
   it(".md가 아닌 파일은 무시한다", async () => {
     const dir = tmpCommands({ "ds-a.md": valid("ds-a"), "notes.txt": "무시" });
     expect((await loadCommands(dir)).map((c) => c.name)).toEqual(["ds-a"]);
+  });
+});
+
+describe("명령 본문 규칙", () => {
+  it("MCP 목록·객체 응답을 쓰는 명령(ds-check, ds-decide)은 truncated/nextCursor 규칙을 담는다", async () => {
+    const commands = await loadCommands();
+    for (const name of ["ds-check", "ds-decide"]) {
+      const body = commands.find((c) => c.name === name)?.body ?? "";
+      expect(body, name).toContain("`truncated`가 true면 `nextCursor`를 `cursor`로 넘겨 이어 받는다");
+      expect(body, name).toContain("`omitted`");
+    }
+  });
+
+  it("ds-check는 변경·신규 파일을 둘 다 고르고 파일이 없으면 멈춘다", async () => {
+    const body = (await loadCommands()).find((c) => c.name === "ds-check")?.body ?? "";
+    expect(body).toContain("git diff --name-only HEAD");
+    expect(body).toContain("git ls-files --others --exclude-standard");
+    expect(body).toContain("검사할 파일이 없으면 그렇게 말하고 멈춘다");
+  });
+
+  it("ds-decide는 항목·옵션 id를 따옴표로 감싸고 대체 목록은 --status pending을 쓴다", async () => {
+    const body = (await loadCommands()).find((c) => c.name === "ds-decide")?.body ?? "";
+    expect(body).toContain('--item "<item>" --choose "<id>"');
+    expect(body).toContain("decide --list --status pending --json");
+  });
+
+  it("args를 선언한 명령만 {{args}}를 갖는다", async () => {
+    for (const c of await loadCommands()) {
+      expect(c.body.includes("{{args}}"), c.name).toBe(c.args !== undefined);
+    }
   });
 });

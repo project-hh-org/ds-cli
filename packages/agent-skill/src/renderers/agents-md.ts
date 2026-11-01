@@ -51,7 +51,7 @@ function block(commands: CommandSource[], ctx: RenderContext): string {
     "",
     "규칙:",
     "- 명령 출력 JSON에 없는 숫자는 말하지 않는다.",
-    "- 결정은 사람이 고른 뒤 `npx dsmith decide --item <이름> --choose <id>` 로 기록한다.",
+    '- 결정은 사람이 고른 뒤 `npx dsmith decide --item "<이름>" --choose "<id>"` 로 기록한다.',
     "- 스타일 값을 하드코딩하기 전에 `resolve_token`으로 토큰을 찾는다.",
   ].join("\n");
 }

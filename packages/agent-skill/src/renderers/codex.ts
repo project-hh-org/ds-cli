@@ -34,7 +34,7 @@ export const codexRenderer: Renderer = {
     const writes: PlannedWrite[] = commands.map((c) => ({
       file: path.join(base, ".agents", "skills", c.name, "SKILL.md"),
       region: { kind: "file" },
-      content: skillMarkdown(c, "사용자가 함께 준 인자"),
+      content: skillMarkdown(c, "<사용자가 함께 준 인자, 없으면 생략>"),
     }));
     writes.push({
       file: path.join(base, ".codex", "config.toml"),

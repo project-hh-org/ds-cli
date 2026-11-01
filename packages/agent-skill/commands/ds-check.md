@@ -5,7 +5,9 @@ args: "[파일 경로 ...]"
 uses: ["mcp:lint_snippet", "mcp:resolve_token"]
 ---
 
-검사할 파일을 정한다: `{{args}}` 가 있으면 그 파일, 없으면 `git diff --name-only` 중 스타일 코드가 있는 파일(.tsx .jsx .ts .js .css .scss).
+검사할 파일을 정한다. 인자로 받은 파일 경로: {{args}}
+- 위 인자가 비어 있으면 `git diff --name-only HEAD` 와 `git ls-files --others --exclude-standard` 결과 중 스타일 코드가 있는 파일(.tsx .jsx .ts .js .css .scss)을 쓴다.
+- 검사할 파일이 없으면 그렇게 말하고 멈춘다.
 
 파일마다:
 1. 내용을 MCP 도구 `lint_snippet {code, filename}` 에 넘긴다.
@@ -19,3 +21,4 @@ MCP 도구가 없으면(서버 미등록) 도구를 쓸 수 없다고 말하고 
 - `confidence`가 `low`인 제안은 후보로만 보여주고 자동 적용하지 않는다.
 - `distance`와 개수는 도구 결과의 값만 말한다. 직접 계산하지 않는다.
 - 토큰 이름은 도구가 돌려준 것만 쓴다.
+- `truncated`가 true면 `nextCursor`를 `cursor`로 넘겨 이어 받는다. 개수는 `total`만 말한다. `omitted`가 있으면 잘린 항목이 있다고 알린다.

@@ -70,7 +70,7 @@ description: '샘플: "따옴표"와 콜론이 있는 설명. 두 번째 문장.
 
 <!-- dsmith install이 관리하는 파일입니다. 직접 고치면 다음 install이 덮어쓰지 않습니다(--force로 덮어씀). -->
 
-\`npx dsmith audit --json 사용자가 함께 준 인자\` 를 실행한다.
+\`npx dsmith audit --json <사용자가 함께 준 인자, 없으면 생략>\` 를 실행한다.
 
 - 항목 하나
 ",
@@ -144,7 +144,7 @@ MCP 서버 dsmith(\`npx -y dsmith@0.2 mcp\`) 도구: resolve_token, lint_snippet
 
 규칙:
 - 명령 출력 JSON에 없는 숫자는 말하지 않는다.
-- 결정은 사람이 고른 뒤 \`npx dsmith decide --item <이름> --choose <id>\` 로 기록한다.
+- 결정은 사람이 고른 뒤 \`npx dsmith decide --item "<이름>" --choose "<id>"\` 로 기록한다.
 - 스타일 값을 하드코딩하기 전에 \`resolve_token\`으로 토큰을 찾는다.",
       "file": "/r/AGENTS.md",
       "region": {
@@ -240,7 +240,7 @@ description: '샘플: "따옴표"와 콜론이 있는 설명. 두 번째 문장.
 
 <!-- dsmith install이 관리하는 파일입니다. 직접 고치면 다음 install이 덮어쓰지 않습니다(--force로 덮어씀). -->
 
-\`npx dsmith audit --json 사용자가 함께 준 인자\` 를 실행한다.
+\`npx dsmith audit --json <사용자가 함께 준 인자, 없으면 생략>\` 를 실행한다.
 
 - 항목 하나
 ",
@@ -305,7 +305,7 @@ exports[`스냅샷 (repo scope) > cursor 1`] = `
 
 샘플: "따옴표"와 콜론이 있는 설명. 두 번째 문장.
 
-\`npx dsmith audit --json 명령 뒤에 적은 내용\` 를 실행한다.
+\`npx dsmith audit --json <명령 뒤에 적은 내용, 없으면 생략>\` 를 실행한다.
 
 - 항목 하나
 ",

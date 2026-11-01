@@ -25,7 +25,7 @@ import {
 } from "./shared.js";
 
 function commandMarkdown(c: CommandSource): string {
-  return `<!-- ${MANAGED_NOTICE} -->\n# /${c.name}\n\n${c.description}\n\n${substituteArgs(c.body, "명령 뒤에 적은 내용")}\n`;
+  return `<!-- ${MANAGED_NOTICE} -->\n# /${c.name}\n\n${c.description}\n\n${substituteArgs(c.body, "<명령 뒤에 적은 내용, 없으면 생략>")}\n`;
 }
 
 export const cursorRenderer: Renderer = {

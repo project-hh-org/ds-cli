@@ -22,6 +22,7 @@ export interface CommandSource {
 export const COMMANDS_DIR: URL = new URL("../commands/", import.meta.url);
 
 export const MAX_BODY_LINES = 40;
+const FRONTMATTER_KEYS = ["name", "description", "args", "uses"];
 const NAME_RE = /^[a-z0-9]+(-[a-z0-9]+)*$/;
 const USES_RE = /^(cli|mcp):[a-z_-]+( --[a-z-]+)*$/;
 const FRONTMATTER_RE = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/;
@@ -43,6 +44,11 @@ function parseCommand(file: string, text: string): CommandSource {
   }
   if (front === null || typeof front !== "object" || Array.isArray(front)) return fail(file, "frontmatter가 객체가 아님");
   const fm = front as Record<string, unknown>;
+
+  const unknownKeys = Object.keys(fm).filter((k) => !FRONTMATTER_KEYS.includes(k));
+  if (unknownKeys.length > 0) {
+    return fail(file, `알 수 없는 frontmatter 키: ${unknownKeys.join(", ")} (허용: ${FRONTMATTER_KEYS.join(", ")})`);
+  }
 
   const stem = file.replace(/\.md$/, "");
   const { name, description, args, uses } = fm;
@@ -66,6 +72,8 @@ function parseCommand(file: string, text: string): CommandSource {
   if (lines > MAX_BODY_LINES) return fail(file, `본문이 ${lines}줄 — ${MAX_BODY_LINES}줄 이하여야 함`);
   const argSlots = body.split("{{args}}").length - 1;
   if (argSlots > 1) return fail(file, `{{args}}는 본문에 최대 1회(현재 ${argSlots}회)`);
+  if (args !== undefined && argSlots === 0) return fail(file, "args를 선언했으면 본문에 {{args}}가 있어야 함");
+  if (args === undefined && argSlots === 1) return fail(file, "본문에 {{args}}가 있으면 frontmatter에 args를 선언해야 함");
 
   return { name, description, ...(args !== undefined ? { args } : {}), uses: uses as string[], body };
 }

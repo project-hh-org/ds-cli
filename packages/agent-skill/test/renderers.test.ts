@@ -154,9 +154,9 @@ describe("codex", () => {
     }
   });
 
-  it("{{args}}를 '사용자가 함께 준 인자'로 치환한다", () => {
+  it("{{args}}를 자리표시자 `<사용자가 함께 준 인자, 없으면 생략>`으로 치환한다", () => {
     const sample = out.writes.find((w) => w.file.includes("ds-sample"));
-    expect(sample?.content).toContain("사용자가 함께 준 인자");
+    expect(sample?.content).toContain("<사용자가 함께 준 인자, 없으면 생략>");
     expect(sample?.content).not.toContain("{{args}}");
   });
 
@@ -208,8 +208,8 @@ describe("cursor", () => {
     }
   });
 
-  it("{{args}}를 '명령 뒤에 적은 내용'으로 치환한다", () => {
-    expect(out.writes[0]?.content).toContain("명령 뒤에 적은 내용");
+  it("{{args}}를 자리표시자 `<명령 뒤에 적은 내용, 없으면 생략>`으로 치환한다", () => {
+    expect(out.writes[0]?.content).toContain("<명령 뒤에 적은 내용, 없으면 생략>");
   });
 });
 
@@ -303,7 +303,7 @@ describe("실제 명령 8개 렌더 불변식", () => {
     expect(rows).toHaveLength(8);
     expect(content).toContain("resolve_token, lint_snippet, search_component, get_component, explain_decision, list_decisions");
     expect(content).toContain("npx -y dsmith@0.2 mcp");
-    expect(content).toContain("npx dsmith decide --item <이름> --choose <id>");
+    expect(content).toContain('npx dsmith decide --item "<이름>" --choose "<id>"');
   });
 
   it("모든 write는 절대 경로이고 file/block/json-key 영역만 쓴다", async () => {
@@ -331,5 +331,46 @@ describe("global scope", () => {
       expect(out.writes, tool).toEqual([]);
       expect(out.notes, tool).toHaveLength(1);
     }
+  });
+});
+
+describe("실제 렌더 결과 구조 검사", () => {
+  const tomlString = (line: string, key: string): unknown => {
+    expect(line.startsWith(`${key} = `), line).toBe(true);
+    return JSON.parse(line.slice(key.length + 3));
+  };
+
+  it("Gemini toml: ''' 는 정확히 두 번(열기·닫기), description은 따옴표 균형이 맞는 한 줄 문자열", async () => {
+    const commands = await loadCommands();
+    for (const w of renderers.gemini.render(commands, repoCtx).writes.filter((x) => x.file.endsWith(".toml"))) {
+      expect(w.content.split("'''").length - 1, w.file).toBe(2);
+      expect(w.content.endsWith("'''\n"), w.file).toBe(true);
+      const lines = w.content.split("\n");
+      const desc = lines.find((l) => l.startsWith("description = ")) ?? "";
+      expect(typeof tomlString(desc, "description"), w.file).toBe("string");
+      expect(lines.filter((l) => l.startsWith("prompt = ")), w.file).toEqual(["prompt = '''"]);
+    }
+  });
+
+  it("Codex config 블록: [mcp_servers.dsmith] 헤더 정확히 하나, command·args가 따옴표 균형이 맞는 값", async () => {
+    const commands = await loadCommands();
+    for (const ctx of [repoCtx, globalCtx]) {
+      const block = renderers.codex
+        .render(commands, ctx)
+        .writes.filter((w) => w.region.kind === "block")
+        .map((w) => w.content);
+      expect(block).toHaveLength(1);
+      const lines = (block[0] ?? "").trimEnd().split("\n");
+      expect(lines.filter((l) => l.startsWith("["))).toEqual(["[mcp_servers.dsmith]"]);
+      expect(lines).toHaveLength(3);
+      expect(tomlString(lines[1] ?? "", "command")).toBe("npx");
+      expect(tomlString(lines[2] ?? "", "args")).toEqual(["-y", "dsmith@0.2", "mcp"]);
+    }
+  });
+
+  it("실제 AGENTS.md 블록의 정확한 바이트", async () => {
+    const commands = await loadCommands();
+    const content = renderers["agents-md"].render(commands, repoCtx).writes[0]?.content ?? "";
+    await expect(content).toMatchFileSnapshot("./__snapshots__/agents-md.real.md");
   });
 });

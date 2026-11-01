@@ -59,11 +59,17 @@ describe("detectTools", () => {
     expect(d.evidence.codex).toEqual([".agents/"]);
   });
 
-  it("AGENTS.md · .codex/ → codex", async () => {
-    for (const trace of ["AGENTS.md", ".codex/"]) {
-      const { root, home } = setup([trace], []);
-      expect((await detectTools(root, home)).tools, trace).toEqual(["codex", "agents-md"]);
-    }
+  it(".codex/ → codex + agents-md", async () => {
+    const { root, home } = setup([".codex/"], []);
+    expect((await detectTools(root, home)).tools).toEqual(["codex", "agents-md"]);
+  });
+
+  it("AGENTS.md는 agents-md만 가리키고 codex 증거가 아니다(첫 install이 만든 파일이 감지를 바꾸면 멱등이 깨진다)", async () => {
+    const { root, home } = setup(["AGENTS.md"], []);
+    const d = await detectTools(root, home);
+    expect(d.tools).toEqual(["agents-md"]);
+    expect(d.evidence).toEqual({ "agents-md": ["AGENTS.md"] });
+    expect(d.defaulted).toBe(false);
   });
 
   it("홈 흔적: ~/.claude/ ~/.codex/ ~/.cursor/ ~/.gemini/", async () => {

@@ -26,7 +26,9 @@ const REPO_TRACES: Trace[] = [
   { tool: "cursor", entry: ".cursor", kind: "dir" },
   { tool: "gemini", entry: ".gemini", kind: "dir" },
   { tool: "codex", entry: ".agents", kind: "dir" },
-  { tool: "codex", entry: "AGENTS.md", kind: "file" },
+  // AGENTS.md는 agents-md 렌더러가 쓰는 파일이라 Codex 증거로 치지 않는다 — 첫 install이 만든 파일이 두 번째 install의
+  // 감지 결과를 바꾸면 멱등이 깨진다.
+  { tool: "agents-md", entry: "AGENTS.md", kind: "file" },
   { tool: "codex", entry: ".codex", kind: "dir" },
 ];
 

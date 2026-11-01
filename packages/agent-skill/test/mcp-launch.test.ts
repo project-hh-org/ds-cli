@@ -12,8 +12,13 @@ describe("defaultMcpLaunch", () => {
     expect(defaultMcpLaunch("2.0.0").args[1]).toBe("dsmith@2");
   });
 
-  it("prerelease 접미사가 있어도 숫자만 쓴다", () => {
-    expect(defaultMcpLaunch("0.2.0-beta.1").args[1]).toBe("dsmith@0.2");
+  it("prerelease는 정식판 범위가 아니라 정확한 버전으로 고정한다", () => {
+    expect(defaultMcpLaunch("0.2.0-beta.1").args[1]).toBe("dsmith@0.2.0-beta.1");
+    expect(defaultMcpLaunch("1.4.0-rc.2").args[1]).toBe("dsmith@1.4.0-rc.2");
+  });
+
+  it("빌드 메타데이터는 무시한다", () => {
+    expect(defaultMcpLaunch("0.2.0+sha.abc").args[1]).toBe("dsmith@0.2");
   });
 
   it("버전 형식이 아니면 Error", () => {
@@ -28,6 +33,11 @@ describe("parseMcpCommand", () => {
 
   it("여러 공백을 하나로 본다", () => {
     expect(parseMcpCommand("  node   /x/bin.js ")).toEqual({ command: "node", args: ["/x/bin.js", "mcp"] });
+  });
+
+  it("값 끝에 이미 mcp를 적었으면 한 번만 붙는다", () => {
+    expect(parseMcpCommand("node /x/bin.js mcp")).toEqual({ command: "node", args: ["/x/bin.js", "mcp"] });
+    expect(parseMcpCommand("dsmith mcp")).toEqual({ command: "dsmith", args: ["mcp"] });
   });
 
   it("명령만 있어도 된다", () => {
