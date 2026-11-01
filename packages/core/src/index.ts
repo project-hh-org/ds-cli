@@ -102,3 +102,5 @@ export type {
   CatalogToken,
 } from "./catalog/model.js";
 export { CATALOG_FILE, readCatalog, writeCatalog } from "./catalog/store.js";
+export { colorTokenNames, uniqueNames } from "./cluster/names.js";
+export { localDate } from "./util/local-date.js";

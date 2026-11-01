@@ -149,4 +149,16 @@ describe("renderAuditReport", () => {
     expect(out).toContain("건강 점수: 0");
     expect(out).toContain(FORMULA);
   });
+
+  it("같은 제안 이름의 색 클러스터는 -2 접미사로 구분해 표기한다", () => {
+    const dup = fixture();
+    const first = dup.hardcoded.colors[0]!;
+    dup.hardcoded.colors = [
+      { ...first, suggestedName: "gray-500" },
+      { ...first, representative: { ...first.representative, hex: "#777777" }, suggestedName: "gray-500" },
+    ];
+    const out = renderAuditReport(dup);
+    expect(out).toContain("| gray-500 |");
+    expect(out).toContain("| gray-500-2 |");
+  });
 });

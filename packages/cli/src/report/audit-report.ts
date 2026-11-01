@@ -1,14 +1,11 @@
+import { colorTokenNames, localDate } from "@dsmith-dev/core";
 import type { AuditResult } from "../audit-result.js";
+
+export { localDate };
 
 const COLOR_LIMIT = 20;
 const SPACING_LIMIT = 20;
 const COMPONENT_LIMIT = 50;
-
-/** 로컬 시간대 기준 YYYY-MM-DD. */
-export function localDate(d: Date): string {
-  const pad = (n: number): string => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-}
 
 /** 표 셀 안에서 표를 깨는 문자를 이스케이프한다. */
 function cell(text: string): string {
@@ -87,13 +84,14 @@ export function renderAuditReport(r: AuditResult): string {
   if (hardcoded.colors.length === 0) lines.push("없음");
   else {
     const shown = hardcoded.colors.slice(0, COLOR_LIMIT);
+    const names = colorTokenNames(hardcoded.colors);
     lines.push(
       ...table(
         ["대표 hex", "사용 수", "제안 이름", "변종"],
-        shown.map((c) => [
+        shown.map((c, i) => [
           c.representative.hex,
           String(c.total),
-          c.suggestedName,
+          names[i] ?? c.suggestedName,
           c.members.map((m) => `${m.hex} ×${m.count}`).join(", "),
         ]),
       ),
