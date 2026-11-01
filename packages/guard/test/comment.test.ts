@@ -20,8 +20,19 @@ const base = (over: Partial<Input> = {}): Input => ({
   newFindings: [],
   counts: { newHardcoded: 0, newReplaceable: 0, newNonDs: 0, newDeprecated: 0, removedHardcoded: 0 },
   staleSnapshot: [],
+  parseFailed: [],
+  policyChanged: false,
   exitCode: 0,
   ...over,
+});
+
+const component = (rule: "prefer-ds-component" | "no-deprecated-component", line: number, extra: Record<string, string> = {}): Finding => ({
+  rule,
+  file: "src/Page.tsx",
+  line,
+  column: 0,
+  message: "m",
+  component: { name: "OldButton", module: "@/legacy/Button", ...extra },
 });
 
 describe("renderComment", () => {
@@ -85,6 +96,29 @@ describe("renderComment", () => {
     expect(lines[1]).toContain("> ⚠ 토큰 파일이 guard.json보다 새것입니다 — dsmith guard init으로 갱신하세요");
     expect(body).toContain("| 하드코딩 스타일 | 0 (토큰으로 바꿀 수 있음 0) | 5 |");
     expect(body).toContain("| deprecated 컴포넌트 | 0 | 1 |");
+  });
+
+  it("DS 밖·deprecated 컴포넌트도 file:line 표를 낸다", () => {
+    const body = renderComment(
+      base({
+        newFindings: [component("prefer-ds-component", 7, { preferModule: "@/ui" }), component("no-deprecated-component", 9, { deprecated: "Button으로 대체" })],
+        counts: { newHardcoded: 0, newReplaceable: 0, newNonDs: 1, newDeprecated: 1, removedHardcoded: 0 },
+        exitCode: 1,
+      }),
+      DEFAULT_GUARD_POLICY,
+    );
+    expect(body).toContain("<details><summary>신규 DS 밖 컴포넌트 1건</summary>");
+    expect(body).toContain("| `src/Page.tsx:7` | OldButton | `@/legacy/Button` | @/ui 사용 |");
+    expect(body).toContain("<details><summary>신규 deprecated 컴포넌트 1건</summary>");
+    expect(body).toContain("| `src/Page.tsx:9` | OldButton | `@/legacy/Button` | Button으로 대체 |");
+  });
+
+  it("파싱 실패 파일과 정책 변경 문구를 적는다", () => {
+    const body = renderComment(base({ parseFailed: ["a.tsx", "b.tsx"], policyChanged: true }), DEFAULT_GUARD_POLICY);
+    expect(body).toContain("> ℹ 이 PR이 guard 정책을 바꿉니다 (기준: merge-base 정책 적용)");
+    expect(body).toContain("파싱 실패 2건");
+    expect(body).toContain("- `a.tsx`");
+    expect(body).toContain("- `b.tsx`");
   });
 
   it("결정적이고 표의 | 는 이스케이프한다", () => {

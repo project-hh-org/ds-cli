@@ -76,7 +76,7 @@ export async function upsertComment(
       if (!res.ok) return await fail(res);
       const items = (await res.json()) as ApiComment[];
       if (!Array.isArray(items) || items.length === 0) break;
-      found = items.find((c) => typeof c.body === "string" && c.body.includes(COMMENT_MARKER)) ?? null;
+      found = items.find((c) => typeof c.body === "string" && c.body.trim().startsWith(COMMENT_MARKER)) ?? null;
     }
 
     const json = { ...headers, "Content-Type": "application/json" };

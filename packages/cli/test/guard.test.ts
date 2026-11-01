@@ -21,7 +21,8 @@ const tmps: string[] = [];
 beforeAll(async () => {
   base = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "dsmith-guard-cli-")));
   fs.cpSync(path.join(repoRoot, "examples/legacy-demo"), base, { recursive: true, filter: (p) => !p.split(path.sep).includes(".dsmith") });
-  fs.writeFileSync(path.join(base, "eslint.config.mjs"), 'export default [\n  { rules: {} },\n];\n');
+  // legacy-demo에는 .tsx가 있어 TS 파서(typescript-eslint)가 설정에 보여야 guard init이 설정을 고친다
+  fs.writeFileSync(path.join(base, "eslint.config.mjs"), 'import tseslint from "typescript-eslint";\n\nexport default [\n  tseslint.configs.base,\n  { rules: {} },\n];\n');
   await runAudit(base);
   await runInitCommand({ root: base, all: true });
   await runAudit(base);
@@ -105,6 +106,24 @@ describe("dsmith guard", () => {
     });
     expect(r.status).toBe(1);
     expect(r.stderr).toContain("경고: PR 코멘트를 달지 못했습니다");
+  });
+
+  it("플래그 없이 guard만 쓰면 도움말을 내고 종료 0", () => {
+    const r = dsmith(clone(), "guard");
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain("Usage: dsmith guard");
+    expect(r.stdout).toContain("init");
+    expect(r.stderr).toBe("");
+  });
+
+  it("깨진 guard.json은 guard init이 중단(종료 1)하고 파일 이름을 말한다", () => {
+    const root = clone();
+    expect(dsmith(root, "guard", "init").status).toBe(0);
+    fs.writeFileSync(path.join(root, ".dsmith/guard.json"), "{ nope");
+    const r = dsmith(root, "guard", "init");
+    expect(r.status).toBe(1);
+    expect(r.stderr).toContain(".dsmith/guard.json");
+    expect(dsmith(root, "guard", "init", "--force").status).toBe(0);
   });
 
   it("--base 없이 --ci, guard.json 없음, base ref 없음은 오류(종료 1)", () => {

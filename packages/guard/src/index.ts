@@ -1,6 +1,6 @@
 export type { BuildGuardSnapshotOptions } from "./snapshot.js";
 export { buildGuardSnapshot } from "./snapshot.js";
-export type { EslintPlan } from "./eslint-config.js";
+export type { EslintPlan, TsParserContext } from "./eslint-config.js";
 export {
   CONFIG_BLOCK,
   ESLINT_CONFIG_MARKERS,

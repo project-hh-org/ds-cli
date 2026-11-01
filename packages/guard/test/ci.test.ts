@@ -3,7 +3,7 @@ import path from "node:path";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { GUARD_FILE, readGuardSnapshotSync } from "@dsmith-dev/core";
 import { COMMENT_MARKER, runGuardCi, type GuardCiResult } from "../src/index.js";
-import { ALL, baseRepo, cleanupTmps, cloneRepo, commitAll, git, keep, read, write } from "./helpers.js";
+import { ALL, baseRepo, cleanupTmps, cloneRepo, commitAll, git, keep, monoRepo, read, write } from "./helpers.js";
 
 let base: string;
 beforeAll(async () => {
@@ -17,9 +17,21 @@ const EXTRA = `export const Extra = () => (
 );
 `;
 
-/** base 복사 → feat 브랜치 → edit → 커밋 */
-function branch(edit: (root: string) => void): string {
+type Snap = { policy: { failOn: { newHardcoded: number; deprecated: number }; allow: { files: string[] } }; exclude: string[]; tokenFiles: { file: string }[] };
+function editSnapshot(root: string, fn: (s: Snap) => void): void {
+  const file = path.join(root, GUARD_FILE);
+  const snap = JSON.parse(fs.readFileSync(file, "utf-8")) as Snap;
+  fn(snap);
+  fs.writeFileSync(file, `${JSON.stringify(snap, null, 2)}\n`);
+}
+
+/** base 복사 → (onBase면 main에 먼저 커밋) → feat 브랜치 → edit → 커밋 */
+function branch(edit: (root: string) => void, onBase?: (root: string) => void): string {
   const root = cloneRepo(base);
+  if (onBase !== undefined) {
+    onBase(root);
+    commitAll(root, "base 정책");
+  }
   git(root, "switch", "-q", "-c", "feat");
   edit(root);
   commitAll(root, "feat");
@@ -92,19 +104,62 @@ describe("runGuardCi", () => {
     expect(res.exitCode).toBe(1);
   });
 
-  it("policy failOn.newHardcoded: 5면 2건이어도 exitCode 0", async () => {
-    const root = branch((r) => {
-      write(r, "src/components/Extra.tsx", EXTRA);
-      const file = path.join(r, GUARD_FILE);
-      const snap = JSON.parse(fs.readFileSync(file, "utf-8")) as { policy: { failOn: { newHardcoded: number } } };
-      snap.policy.failOn.newHardcoded = 5;
-      fs.writeFileSync(file, `${JSON.stringify(snap, null, 2)}\n`);
-    });
+  it("base(main)에 커밋된 policy failOn.newHardcoded: 5면 2건이어도 exitCode 0", async () => {
+    const root = branch((r) => write(r, "src/components/Extra.tsx", EXTRA), (r) => editSnapshot(r, (s) => (s.policy.failOn.newHardcoded = 5)));
     const res = await run(root);
     expect(res.counts.newHardcoded).toBe(2);
     expect(res.exitCode).toBe(0);
+    expect(res.policyChanged).toBe(false);
+    expect(res.body).not.toContain("이 PR이 guard 정책을 바꿉니다");
     expect(res.body).toContain("| 하드코딩 스타일 | 2 (토큰으로 바꿀 수 있음 ");
     expect(res.body).toMatch(/\| 5 \|/);
+  });
+
+  it("PR이 failOn.newHardcoded를 5로 풀어도 merge-base 정책(0)으로 판정하고 본문에 알린다", async () => {
+    const root = branch((r) => {
+      write(r, "src/components/Extra.tsx", EXTRA);
+      editSnapshot(r, (s) => (s.policy.failOn.newHardcoded = 5));
+    });
+    const res = await run(root);
+    expect(res.counts.newHardcoded).toBe(2);
+    expect(res.exitCode).toBe(1);
+    expect(res.policyChanged).toBe(true);
+    expect(res.body).toContain("> ℹ 이 PR이 guard 정책을 바꿉니다 (기준: merge-base 정책 적용)");
+    expect(res.body).toContain("| 하드코딩 스타일 | 2 (토큰으로 바꿀 수 있음 ");
+    expect(res.body).toMatch(/\| 0 \|/);
+  });
+
+  it("PR이 allow.files·exclude에 경로를 더해도 그 파일을 계속 검사한다", async () => {
+    const root = branch((r) => {
+      write(r, "src/legacy/Old.tsx", EXTRA);
+      editSnapshot(r, (s) => {
+        s.policy.allow.files = ["src/legacy/**"];
+        s.exclude.push("src/legacy/**");
+      });
+    });
+    const res = await run(root);
+    expect(res.files).toEqual(["src/legacy/Old.tsx"]);
+    expect(res.counts.newHardcoded).toBe(2);
+    expect(res.exitCode).toBe(1);
+    expect(res.policyChanged).toBe(true);
+  });
+
+  it("merge-base에 guard.json이 없으면(첫 guard PR) head 정책을 쓰고 정책 변경 문구도 없다", async () => {
+    const root = cloneRepo(base);
+    const saved = read(root, GUARD_FILE);
+    fs.rmSync(path.join(root, GUARD_FILE));
+    commitAll(root, "guard.json 없는 base");
+    git(root, "switch", "-q", "-c", "feat");
+    const snap = JSON.parse(saved) as { policy: { failOn: { newHardcoded: number } } };
+    snap.policy.failOn.newHardcoded = 5;
+    write(root, GUARD_FILE, `${JSON.stringify(snap, null, 2)}\n`);
+    write(root, "src/components/Extra.tsx", EXTRA);
+    commitAll(root, "feat");
+    const res = await run(root);
+    expect(res.counts.newHardcoded).toBe(2);
+    expect(res.exitCode).toBe(0);
+    expect(res.policyChanged).toBe(false);
+    expect(res.body).not.toContain("이 PR이 guard 정책을 바꿉니다");
   });
 
   it("토큰 파일을 고친 뒤 스냅샷을 갱신하지 않으면 staleSnapshot과 본문 경고", async () => {
@@ -121,14 +176,13 @@ describe("runGuardCi", () => {
   });
 
   it("snapshot의 exclude·allow.files에 걸리는 변경 파일은 검사하지 않는다", async () => {
-    const root = branch((r) => {
-      write(r, "legacy/Old.tsx", EXTRA);
-      write(r, "src/components/Extra.tsx", EXTRA);
-      const file = path.join(r, GUARD_FILE);
-      const snap = JSON.parse(fs.readFileSync(file, "utf-8")) as { policy: { allow: { files: string[] } } };
-      snap.policy.allow.files = ["legacy/**"];
-      fs.writeFileSync(file, `${JSON.stringify(snap, null, 2)}\n`);
-    });
+    const root = branch(
+      (r) => {
+        write(r, "legacy/Old.tsx", EXTRA);
+        write(r, "src/components/Extra.tsx", EXTRA);
+      },
+      (r) => editSnapshot(r, (s) => (s.policy.allow.files = ["legacy/**"])),
+    );
     const res = await run(root);
     expect(res.files).toEqual(["src/components/Extra.tsx"]);
     expect(res.counts.newHardcoded).toBe(2);
@@ -221,5 +275,77 @@ describe("runGuardCi — 코멘트", () => {
     const res = await run(root, { comment: true, env: env(root), fetchImpl });
     expect(res.comment).toEqual({ status: "updated" });
     expect(calls.find((c) => c.method === "PATCH")?.url).toBe("https://api.github.com/repos/o/r/issues/comments/77");
+  });
+});
+
+describe("runGuardCi — 하위 디렉터리 root·이름 바꾼 파일", () => {
+  it("모노레포 apps/web을 root로 주면 root 상대 경로로 변경 파일을 읽고 신규 2건을 센다", async () => {
+    const { top, root } = monoRepo(base);
+    git(top, "switch", "-q", "-c", "feat");
+    write(root, "src/components/Extra.tsx", EXTRA);
+    write(top, "apps/other/Other.tsx", EXTRA); // root 밖 변경은 보지 않는다
+    commitAll(top, "feat");
+    const res = await run(root);
+    expect(res.files).toEqual(["src/components/Extra.tsx"]);
+    expect(res.counts.newHardcoded).toBe(2);
+    expect(res.exitCode).toBe(1);
+  });
+
+  it("모노레포: 기존 하드코딩이 있는 파일을 고치면 base(하위 경로)와 비교해 신규만 센다", async () => {
+    const { top, root } = monoRepo(base);
+    git(top, "switch", "-q", "-c", "feat");
+    const file = "src/components/KpiCard.tsx";
+    write(root, file, `// 주석\n${read(root, file)}`);
+    commitAll(top, "feat");
+    const res = await run(root);
+    expect(res.files).toEqual([file]);
+    expect(res.counts.newHardcoded).toBe(0);
+    expect(res.exitCode).toBe(0);
+  });
+
+  it("순수 git mv는 신규 0건(옛 경로의 base와 비교)", async () => {
+    const root = branch((r) => {
+      fs.mkdirSync(path.join(r, "src/components/kpi"), { recursive: true });
+      git(r, "mv", "src/components/KpiCard.tsx", "src/components/kpi/KpiCard.tsx");
+    });
+    const res = await run(root);
+    expect(res.files).toEqual(["src/components/kpi/KpiCard.tsx"]);
+    expect(res.counts.newHardcoded).toBe(0);
+    expect(res.exitCode).toBe(0);
+  });
+
+  it("이름을 바꾸고 색 하나를 더하면 그 하나만 신규", async () => {
+    const root = branch((r) => {
+      fs.mkdirSync(path.join(r, "src/components/kpi"), { recursive: true });
+      git(r, "mv", "src/components/KpiCard.tsx", "src/components/kpi/KpiCard.tsx");
+      const moved = "src/components/kpi/KpiCard.tsx";
+      write(r, moved, read(r, moved).replace("minWidth: 200", 'minWidth: 200, backgroundColor: "#12ab34"'));
+    });
+    const res = await run(root);
+    expect(res.counts.newHardcoded).toBe(1);
+    expect(res.newFindings[0]?.style?.raw).toBe("#12ab34");
+    expect(res.exitCode).toBe(1);
+  });
+});
+
+describe("runGuardCi — 파싱 실패·새 토큰 파일", () => {
+  it("파싱하지 못한 head 파일은 files에 세고 본문에 파싱 실패 N건으로 적는다", async () => {
+    const root = branch((r) => write(r, "src/components/Broken.tsx", "export const A = () => <div style={{ color: \n"));
+    const res = await run(root);
+    expect(res.files).toEqual(["src/components/Broken.tsx"]);
+    expect(res.parseFailed).toEqual(["src/components/Broken.tsx"]);
+    expect(res.body).toContain("파싱 실패 1건");
+    expect(res.body).toContain("`src/components/Broken.tsx`");
+  });
+
+  it("스냅샷에 없는 토큰 파일은 staleSnapshot에 +파일로 들어간다", async () => {
+    const root = branch(
+      (r) => write(r, "src/components/Extra.tsx", EXTRA),
+      (r) => editSnapshot(r, (s) => (s.tokenFiles = s.tokenFiles.filter((t) => t.file !== "tailwind.config.ts"))),
+    );
+    const res = await run(root);
+    expect(res.staleSnapshot).toEqual(["+tailwind.config.ts"]);
+    expect(res.body).toContain("> ⚠ 토큰 파일이 guard.json보다 새것입니다");
+    expect(res.body).toContain("+tailwind.config.ts");
   });
 });

@@ -1,5 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
+import picomatch from "picomatch";
 import {
   GUARD_FILE,
   readGuardSnapshotSync,
@@ -17,6 +18,7 @@ import {
   IMPORT_BLOCK,
   planEslintConfig,
   type EslintPlan,
+  type TsParserContext,
 } from "./eslint-config.js";
 import { buildGuardSnapshot } from "./snapshot.js";
 import { WORKFLOW_FILE, renderWorkflow } from "./workflow.js";
@@ -63,6 +65,45 @@ async function exists(abs: string): Promise<boolean> {
   }
 }
 
+const TS_FILE = /\.(?:[cm]?ts|tsx)$/;
+const SKIP_DIRS = new Set(["node_modules", ".git", ".dsmith"]);
+
+/** root 아래(exclude 밖)에 .ts/.tsx/.mts/.cts가 하나라도 있는지. 첫 파일에서 멈춘다 */
+async function hasTypeScriptFiles(root: string, exclude: readonly string[]): Promise<boolean> {
+  const excluded = exclude.length === 0 ? () => false : picomatch([...exclude], { dot: true });
+  const walk = async (dir: string, prefix: string): Promise<boolean> => {
+    let entries;
+    try {
+      entries = await fs.readdir(dir, { withFileTypes: true });
+    } catch {
+      return false;
+    }
+    for (const e of entries) {
+      const rel = `${prefix}${e.name}`;
+      if (e.isDirectory()) {
+        if (SKIP_DIRS.has(e.name) || excluded(`${rel}/x`)) continue;
+        if (await walk(path.join(dir, e.name), `${rel}/`)) return true;
+      } else if (TS_FILE.test(e.name) && !excluded(rel)) return true;
+    }
+    return false;
+  };
+  return walk(root, "");
+}
+
+async function hasTsParserDependency(root: string): Promise<boolean> {
+  const text = await readText(path.join(root, "package.json"));
+  if (text === null) return false;
+  try {
+    const pkg = JSON.parse(text) as Record<string, unknown>;
+    return ["dependencies", "devDependencies", "peerDependencies"].some((k) => {
+      const deps = pkg[k];
+      return deps !== null && typeof deps === "object" && ("typescript-eslint" in deps || "@typescript-eslint/parser" in deps);
+    });
+  } catch {
+    return false;
+  }
+}
+
 /**
  * guard.json 스냅샷, ESLint 설정 블록, (ci면) GitHub 워크플로를 만든다. 레포 파일은 전부 safeWrite(사용자가 고친 블록은 --force 없이 덮어쓰지 않음),
  * `.dsmith/guard.json`은 마지막에 — dryRun이면 아무것도 쓰지 않는다.
@@ -78,14 +119,20 @@ export async function runGuardInit(opts: GuardInitOptions): Promise<GuardInitRes
     try {
       existing = readGuardSnapshotSync(snapshotFile);
     } catch (err) {
-      notes.push(`기존 ${GUARD_FILE}을 읽을 수 없어 새로 만듭니다: ${(err as Error).message}`);
+      // 사람이 고친 policy가 들어 있을 수 있다 — --force 없이는 기본값으로 덮어쓰지 않는다
+      if (opts.force !== true) {
+        throw new Error(`기존 ${GUARD_FILE}을 읽을 수 없어 중단합니다(policy를 기본값으로 되돌리지 않으려고): ${(err as Error).message} — 파일을 고치거나 --force로 새로 만드세요`);
+      }
+      notes.push(`기존 ${GUARD_FILE}을 읽을 수 없어 --force로 새로 만듭니다(policy는 기본값): ${(err as Error).message}`);
     }
   }
   const snapshot = await buildGuardSnapshot({ root, detect: opts.detect, version: opts.version, existing });
 
   const lint = opts.detect.lint;
   const configText = lint.tool === "eslint" && lint.configFile !== undefined ? await readText(path.join(root, lint.configFile)) : null;
-  const plan = planEslintConfig(root, lint, configText);
+  const ts: TsParserContext | undefined =
+    configText === null ? undefined : { hasTsFiles: await hasTypeScriptFiles(root, snapshot.exclude), tsParserDep: await hasTsParserDependency(root) };
+  const plan = planEslintConfig(root, lint, configText, ts);
 
   const writes: PlannedWrite[] = [];
   if (plan.status === "insert" || plan.status === "present") {
@@ -115,7 +162,7 @@ export async function runGuardInit(opts: GuardInitOptions): Promise<GuardInitRes
       writes.push({
         file: path.join(root, "package.json"),
         region: { kind: "json-key", keyPath: ["devDependencies", PLUGIN] },
-        content: JSON.stringify(`^${opts.version}`),
+        content: JSON.stringify(opts.version === "0.0.0" ? "latest" : `^${opts.version}`),
       });
     }
   }
@@ -139,6 +186,9 @@ export async function runGuardInit(opts: GuardInitOptions): Promise<GuardInitRes
   // 스냅샷은 마지막에, dryRun이 아닐 때만
   if (!dryRun) await writeGuardSnapshot(root, snapshot);
 
+  if (opts.version === "0.0.0" && (plan.status === "insert" || plan.status === "present" || opts.ci === "github")) {
+    notes.push("dsmith 버전을 알 수 없어(0.0.0) 워크플로·devDependency가 latest를 가리킵니다 — 버전을 고정하세요");
+  }
   notes.push(`${GUARD_FILE}을 커밋해야 CI·ESLint가 같은 기준을 씁니다`);
   notes.push("ESLint 규칙은 JS/TS만 검사합니다. CSS·SCSS는 guard --ci가 검사합니다");
   notes.push(`${GUARD_FILE}이 없거나 깨지면 ESLint 규칙은 조용히 통과합니다`);
@@ -150,6 +200,11 @@ export async function runGuardInit(opts: GuardInitOptions): Promise<GuardInitRes
     }
   } else if (plan.status === "legacy" || plan.status === "unsupported-shape") {
     notes.push(`${plan.file}에 직접 추가하세요:\n${plan.snippet}`);
+  } else if (plan.status === "needs-ts-parser") {
+    notes.push(
+      `${plan.file}에 TypeScript 파서 설정이 없어 고치지 않았습니다 — .ts/.tsx가 있는 레포에 dsmith 규칙(JS·TS 전체 대상)을 넣으면 \`eslint .\`가 파싱 오류로 깨집니다. typescript-eslint를 먼저 설치하고 설정에 \`tseslint.configs.base\`를 추가한 뒤 \`guard init\`을 다시 실행하거나 직접 붙이세요:\n${plan.snippet}`,
+      "guard --ci는 그대로 쓸 수 있음",
+    );
   } else if (plan.status === "not-eslint") {
     notes.push("guard의 즉시 검사는 ESLint 전용 — CI 검사(guard --ci)는 그대로 쓸 수 있음");
   } else {
@@ -157,7 +212,7 @@ export async function runGuardInit(opts: GuardInitOptions): Promise<GuardInitRes
   }
 
   const eslintFile = "file" in plan ? plan.file : undefined;
-  const snippet = plan.status === "legacy" || plan.status === "unsupported-shape" ? plan.snippet : undefined;
+  const snippet = plan.status === "legacy" || plan.status === "unsupported-shape" || plan.status === "needs-ts-parser" ? plan.snippet : undefined;
   return {
     snapshot: GUARD_FILE,
     counts: {

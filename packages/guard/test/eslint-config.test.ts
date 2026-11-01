@@ -142,3 +142,81 @@ describe("planEslintConfig", () => {
     expect(read(root, "eslint.config.mjs")).not.toContain("[0]");
   });
 });
+
+describe("planEslintConfig — 마커 한 쌍만 남은 설정", () => {
+  const original = `import js from "@eslint/js";\n\nexport default [\n  js.configs.recommended,\n];\n`;
+  const cfgBlock = new RegExp(`${ESLINT_CONFIG_MARKERS.start.replace(/[/*]/g, "\\$&")}[\\s\\S]*?${ESLINT_CONFIG_MARKERS.end.replace(/[/*]/g, "\\$&")}\\n`);
+  const importBlock = new RegExp(`${ESLINT_IMPORT_MARKERS.start.replace(/[/*]/g, "\\$&")}[\\s\\S]*?${ESLINT_IMPORT_MARKERS.end.replace(/[/*]/g, "\\$&")}\\n`);
+
+  async function installed(): Promise<string> {
+    const root = makeRepo({ "eslint.config.mjs": original });
+    const plan = planEslintConfig(root, flat("eslint.config.mjs"), original);
+    if (plan.status !== "insert") throw new Error("unreachable");
+    await apply(root, "eslint.config.mjs", plan);
+    return root;
+  }
+
+  it("config 블록만 지워졌으면 insert — 배열 안에 다시 넣고 import 블록은 그대로", async () => {
+    const root = await installed();
+    const text = read(root, "eslint.config.mjs").replace(cfgBlock, "");
+    expect(text).toContain(ESLINT_IMPORT_MARKERS.start);
+    expect(text).not.toContain(ESLINT_CONFIG_MARKERS.start);
+    fs.writeFileSync(path.join(root, "eslint.config.mjs"), text);
+    const plan = planEslintConfig(root, flat("eslint.config.mjs"), text);
+    expect(plan.status).toBe("insert");
+    if (plan.status !== "insert") throw new Error("unreachable");
+    const res = await apply(root, "eslint.config.mjs", plan);
+    const after = read(root, "eslint.config.mjs");
+    expect(res.outcomes.map((o) => o.status)).toEqual(["created", "unchanged"]);
+    expect(parseErrors(after, "eslint.config.mjs")).toBe(0);
+    expect(after.match(/dsmith\.configs\.recommended/g)).toHaveLength(1);
+    expect(after.indexOf(ESLINT_CONFIG_MARKERS.start)).toBeLessThan(after.indexOf("];"));
+    expect(after.match(/dsmith:import:start/g)).toHaveLength(1);
+  });
+
+  it("import 블록만 지워졌으면 insert — import 자리에 다시 넣고 config 블록은 그대로", async () => {
+    const root = await installed();
+    const text = read(root, "eslint.config.mjs").replace(importBlock, "");
+    expect(text).not.toContain(ESLINT_IMPORT_MARKERS.start);
+    fs.writeFileSync(path.join(root, "eslint.config.mjs"), text);
+    const plan = planEslintConfig(root, flat("eslint.config.mjs"), text);
+    expect(plan.status).toBe("insert");
+    if (plan.status !== "insert") throw new Error("unreachable");
+    const res = await apply(root, "eslint.config.mjs", plan);
+    const after = read(root, "eslint.config.mjs");
+    expect(res.outcomes.map((o) => o.status)).toEqual(["unchanged", "created"]);
+    expect(parseErrors(after, "eslint.config.mjs")).toBe(0);
+    expect(after.indexOf(ESLINT_IMPORT_MARKERS.start)).toBeLessThan(after.indexOf("export default"));
+    expect(after.match(/@dsmith-dev\/eslint-plugin/g)).toHaveLength(1);
+  });
+
+  it("한 쌍만 있고 모양을 못 찾으면 unsupported-shape(파일을 건드리지 않음)", () => {
+    const text = `${ESLINT_CONFIG_MARKERS.start}\n  dsmith.configs.recommended,\n${ESLINT_CONFIG_MARKERS.end}\nexport default [js.configs.recommended];\n`;
+    expect(planEslintConfig("/r", flat("eslint.config.mjs"), text).status).toBe("unsupported-shape");
+  });
+});
+
+describe("planEslintConfig — TS 파서 감지", () => {
+  const plain = `import js from "@eslint/js";\n\nexport default [\n  js.configs.recommended,\n];\n`;
+  const tsParser = { hasTsFiles: true, tsParserDep: false };
+
+  it("TS 파일이 있는데 파서가 없으면 needs-ts-parser + snippet", () => {
+    expect(planEslintConfig("/r", flat("eslint.config.mjs"), plain, tsParser)).toEqual({ status: "needs-ts-parser", file: "eslint.config.mjs", snippet: eslintSnippet() });
+  });
+
+  it.each([
+    ["typescript-eslint", `import tseslint from "typescript-eslint";\nexport default [\n  tseslint.configs.base,\n];\n`],
+    ["@typescript-eslint/parser", `import parser from "@typescript-eslint/parser";\nexport default [\n  { languageOptions: { parser } },\n];\n`],
+    ["tseslint 식별자", `export default [\n  ...tseslint.configs.recommended,\n];\n`],
+  ])("설정 텍스트에 %s가 있으면 insert", (_label, text) => {
+    expect(planEslintConfig("/r", flat("eslint.config.mjs"), text, tsParser).status).toBe("insert");
+  });
+
+  it("루트 package.json에 typescript-eslint 의존성이 있으면 insert", () => {
+    expect(planEslintConfig("/r", flat("eslint.config.mjs"), plain, { hasTsFiles: true, tsParserDep: true }).status).toBe("insert");
+  });
+
+  it("TS 파일이 없으면 파서가 없어도 insert", () => {
+    expect(planEslintConfig("/r", flat("eslint.config.mjs"), plain, { hasTsFiles: false, tsParserDep: false }).status).toBe("insert");
+  });
+});

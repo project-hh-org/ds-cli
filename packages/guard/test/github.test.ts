@@ -64,6 +64,15 @@ describe("upsertComment", () => {
     expect(calls.every((c) => c.method === "GET")).toBe(true);
   });
 
+  it("마커를 인용만 한 사람의 코멘트는 건드리지 않고(본문 맨 앞이 마커일 때만 우리 것) 새로 POST", async () => {
+    const quoted = { id: 9, body: `이 봇은 이렇게 답해요:\n> ${COMMENT_MARKER}\n> ...` };
+    const { fetchImpl, calls } = fakeFetch((c) => (c.method === "GET" ? { status: 200, json: [quoted] } : { status: 201, json: {} }));
+    expect(await upsertComment(ctx, body, { fetchImpl, createIfClean: true })).toEqual({ status: "created" });
+    expect(calls.some((c) => c.method === "PATCH")).toBe(false);
+    const ours = fakeFetch((c) => (c.method === "GET" ? { status: 200, json: [{ id: 4, body: `\n${COMMENT_MARKER}\n옛 본문` }] } : { status: 200, json: {} }));
+    expect(await upsertComment(ctx, body, { fetchImpl: ours.fetchImpl, createIfClean: true })).toEqual({ status: "updated" });
+  });
+
   it("코멘트가 없고 신규도 없으면 skipped(요청은 GET만)", async () => {
     const { fetchImpl, calls } = fakeFetch(() => ({ status: 200, json: [] }));
     const res = await upsertComment(ctx, body, { fetchImpl, createIfClean: false });

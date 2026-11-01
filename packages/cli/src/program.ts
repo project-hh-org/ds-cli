@@ -329,8 +329,12 @@ export function buildProgram(): Command {
     .option("--ci", "PR diff 검사 실행(--base 필요). 신규 하드코딩이 임계값을 넘으면 종료 코드 1")
     .option("--base <ref>", "비교 기준 ref(예: origin/main). merge-base 이후 변경만 본다")
     .option("--comment", "GitHub PR에 결과 코멘트를 upsert(GITHUB_TOKEN 필요, 실패해도 종료 코드는 그대로)")
-    .action(async (opts: GuardCliOptions) => {
-      if (opts.ci !== true) throw new Error("guard는 `guard init` 또는 `guard --ci --base <ref>`로 실행합니다");
+    .action(async (opts: GuardCliOptions, cmd: Command) => {
+      if (opts.ci !== true) {
+        // 플래그 없이 `dsmith guard`만 쓰면 오류 대신 도움말(종료 0)
+        cmd.outputHelp();
+        return;
+      }
       const result = await runGuardCiCommand({ root: opts.root ?? process.cwd(), base: opts.base, comment: opts.comment });
       process.stdout.write(opts.json ? `${JSON.stringify(result, null, 2)}\n` : result.body);
       process.exitCode = result.exitCode;

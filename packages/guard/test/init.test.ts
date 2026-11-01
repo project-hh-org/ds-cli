@@ -101,11 +101,19 @@ describe("buildGuardSnapshot / guard.json", () => {
     expect(snap.policy.allow.files).toEqual(["legacy/**"]);
   });
 
-  it("깨진 기존 스냅샷은 무시하고 notes에 알린다", async () => {
+  it("깨진 기존 스냅샷은 --force 없이는 파일 이름을 대며 중단하고 아무것도 쓰지 않는다", async () => {
     const root = fresh();
     write(root, ".dsmith/guard.json", "{ not json");
-    const res = await runGuardInit(options(root));
-    expect(res.notes.some((n) => n.includes("읽을 수 없어"))).toBe(true);
+    const before = treeHash(root, { includeDsmith: true });
+    await expect(runGuardInit(options(root))).rejects.toThrow(/\.dsmith\/guard\.json을 읽을 수 없어 중단/);
+    expect(treeHash(root, { includeDsmith: true })).toBe(before);
+  });
+
+  it("--force면 깨진 스냅샷을 새로 만들고 notes에 알린다", async () => {
+    const root = fresh();
+    write(root, ".dsmith/guard.json", "{ not json");
+    const res = await runGuardInit({ ...options(root), force: true });
+    expect(res.notes.some((n) => n.includes("읽을 수 없어") && n.includes("--force"))).toBe(true);
     expect(() => readGuardSnapshotSync(path.join(root, ".dsmith/guard.json"))).not.toThrow();
   });
 
@@ -140,7 +148,45 @@ describe("runGuardInit", () => {
     expect(manifest.tool).toBe("guard");
   });
 
-  it("워크플로: 템플릿 그대로, 탭 없음, 버전 고정, 최소 권한", () => {
+  it("워크플로: 브리프 템플릿과 글자 그대로 같다(버전만 치환)", () => {
+    const golden = [
+      "# dsmith guard init이 생성한 파일입니다. 직접 고치면 다음 guard init이 덮어쓰지 않습니다(--force로 덮어씀).",
+      "name: dsmith guard",
+      "on:",
+      "  pull_request:",
+      "permissions:",
+      "  contents: read",
+      "  pull-requests: write",
+      "jobs:",
+      "  guard:",
+      "    runs-on: ubuntu-latest",
+      "    steps:",
+      "      - uses: actions/checkout@v4",
+      "        with:",
+      "          fetch-depth: 0",
+      "      - uses: actions/setup-node@v4",
+      "        with:",
+      "          node-version: 22",
+      '      - run: npx --yes dsmith@1.2.3 guard --ci --base "origin/${{ github.base_ref }}" --comment',
+      "        env:",
+      "          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}",
+      "",
+    ].join("\n");
+    expect(renderWorkflow("1.2.3")).toBe(golden);
+  });
+
+  it("버전을 모르면(0.0.0) dsmith@latest와 '버전을 고정하세요' 주석, devDependency는 latest", async () => {
+    const yml = renderWorkflow("0.0.0");
+    expect(yml).toContain('      # 버전을 고정하세요\n      - run: npx --yes dsmith@latest guard --ci --base "origin/${{ github.base_ref }}" --comment');
+    expect(yml).not.toContain("0.0.0");
+    const root = fresh();
+    const res = await runGuardInit({ ...options(root), version: "0.0.0", ci: "github" });
+    expect(read(root, WORKFLOW_FILE)).toBe(yml);
+    expect(JSON.parse(read(root, "package.json")).devDependencies["@dsmith-dev/eslint-plugin"]).toBe("latest");
+    expect(res.notes.some((n) => n.includes("버전을 고정하세요"))).toBe(true);
+  });
+
+  it("워크플로: 탭 없음, 버전 고정, 최소 권한", () => {
     const yml = renderWorkflow("1.2.3");
     expect(yml).not.toContain("\t");
     expect(yml).toContain('npx --yes dsmith@1.2.3 guard --ci --base "origin/${{ github.base_ref }}" --comment');
@@ -222,6 +268,64 @@ describe("runGuardInit", () => {
     expect(read(root, "eslint.config.mjs")).toBe("export default [js.configs.recommended];\n");
     expect(JSON.parse(read(root, "package.json")).devDependencies?.["@dsmith-dev/eslint-plugin"]).toBeUndefined();
     void ESLINT_CONFIG;
+  });
+});
+
+describe("runGuardInit — TS 파서", () => {
+  const PLAIN = 'import js from "@eslint/js";\n\nexport default [\n  js.configs.recommended,\n];\n';
+
+  it(".tsx가 있는데 TS 파서 설정이 없으면 설정·package.json을 건드리지 않고 needs-ts-parser", async () => {
+    const root = copyFixture("examples/legacy-demo", { "eslint.config.mjs": PLAIN });
+    const pkgBefore = read(root, "package.json");
+    const res = await runGuardInit({ root, version: "0.1.0", detect: await audit(root), ci: "github" });
+    expect(res.eslint).toBe("needs-ts-parser");
+    expect(res.eslintFile).toBe("eslint.config.mjs");
+    expect(res.snippet).toContain("dsmith.configs.recommended");
+    expect(read(root, "eslint.config.mjs")).toBe(PLAIN);
+    expect(read(root, "package.json")).toBe(pkgBefore);
+    expect(res.outcomes.map((o) => o.region)).toEqual(["file"]); // 워크플로뿐
+    const note = res.notes.join("\n");
+    expect(note).toContain("typescript-eslint");
+    expect(note).toContain("tseslint.configs.base");
+    expect(note).toContain("guard --ci는 그대로 쓸 수 있음");
+    expect(fs.existsSync(path.join(root, ".dsmith/guard.json"))).toBe(true);
+  });
+
+  it("설정 텍스트에 typescript-eslint가 있으면 그대로 insert", async () => {
+    const root = copyFixture("examples/legacy-demo", { "eslint.config.mjs": 'import tseslint from "typescript-eslint";\n\nexport default [\n  tseslint.configs.base,\n];\n' });
+    const res = await runGuardInit({ root, version: "0.1.0", detect: await audit(root) });
+    expect(res.eslint).toBe("insert");
+    expect(read(root, "eslint.config.mjs")).toContain("dsmith:start");
+  });
+
+  it("package.json에 @typescript-eslint/parser가 있으면 insert", async () => {
+    const root = copyFixture("examples/legacy-demo", { "eslint.config.mjs": PLAIN });
+    const pkg = JSON.parse(read(root, "package.json")) as { devDependencies?: Record<string, string> };
+    pkg.devDependencies = { ...pkg.devDependencies, "@typescript-eslint/parser": "^8.0.0" };
+    write(root, "package.json", `${JSON.stringify(pkg, null, 2)}\n`);
+    const res = await runGuardInit({ root, version: "0.1.0", detect: await audit(root) });
+    expect(res.eslint).toBe("insert");
+  });
+
+  it("TS 파일이 하나도 없으면 파서 없이도 insert", async () => {
+    const root = copyFixture("examples/legacy-demo", { "eslint.config.mjs": PLAIN });
+    for (const dir of ["app", "src"]) {
+      for (const f of fs.readdirSync(path.join(root, dir), { recursive: true, encoding: "utf-8" })) {
+        if (/\.(tsx?|mts|cts)$/.test(f)) fs.rmSync(path.join(root, dir, f));
+      }
+    }
+    fs.rmSync(path.join(root, "tailwind.config.ts"), { force: true });
+    fs.rmSync(path.join(root, "design-system"), { recursive: true, force: true });
+    const res = await runGuardInit({ root, version: "0.1.0", detect: await audit(root) });
+    expect(res.eslint).toBe("insert");
+  });
+
+  it("마커가 이미 두 쌍 있으면 파서 감지와 무관하게 present(갱신 경로 유지)", async () => {
+    const root = fresh();
+    await runGuardInit(options(root));
+    write(root, "eslint.config.mjs", read(root, "eslint.config.mjs").replace('import tseslint from "typescript-eslint";\n', "").replace("  tseslint.configs.base,\n", ""));
+    const again = await runGuardInit(options(root));
+    expect(again.eslint).toBe("present");
   });
 });
 

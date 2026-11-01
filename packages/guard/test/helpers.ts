@@ -27,10 +27,13 @@ export const ALL: Extractor[] = [
   muiSxExtractor,
 ];
 
+/** TS 파서(typescript-eslint)를 쓰는 설정 — legacy-demo에는 .tsx가 있어서 필요하다 */
 export const ESLINT_CONFIG = `import js from "@eslint/js";
+import tseslint from "typescript-eslint";
 
 export default [
   js.configs.recommended,
+  tseslint.configs.base,
   { rules: { "no-unused-vars": "warn" } },
 ];
 `;
@@ -137,6 +140,17 @@ export function cloneRepo(from: string): string {
   const to = tmpDir();
   fs.cpSync(from, to, { recursive: true });
   return to;
+}
+
+/** from(커밋된 저장소)의 작업 트리를 새 저장소의 apps/web 아래로 옮겨 커밋("base", main)한다. 모노레포 하위 디렉터리 root 재현용 */
+export function monoRepo(from: string): { top: string; root: string } {
+  const top = tmpDir("dsmith-guard-mono-");
+  const root = path.join(top, "apps/web");
+  fs.cpSync(from, root, { recursive: true, filter: (p) => !p.split(path.sep).includes(".git") });
+  write(top, "apps/other/README.md", "# 다른 앱\n");
+  git(top, "init", "-q", "-b", "main");
+  commitAll(top, "base");
+  return { top, root };
 }
 
 export async function detectOf(root: string): Promise<DetectResult> {
