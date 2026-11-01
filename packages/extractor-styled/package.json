@@ -1,6 +1,6 @@
 {
   "name": "@dsmith-dev/extractor-styled",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "dsmith extractor for styled-components",
   "keywords": ["design-system", "dsmith", "extractor", "styled-components", "css-in-js"],
   "license": "MIT",

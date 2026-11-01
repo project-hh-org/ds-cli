@@ -1,6 +1,6 @@
 {
   "name": "@dsmith-dev/extractor-emotion",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "dsmith extractor for Emotion (css tag, css prop, @emotion/styled)",
   "keywords": ["design-system", "dsmith", "extractor", "emotion", "css-in-js"],
   "license": "MIT",

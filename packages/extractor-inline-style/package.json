@@ -1,6 +1,6 @@
 {
   "name": "@dsmith-dev/extractor-inline-style",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "dsmith extractor for JSX inline style objects",
   "keywords": ["design-system", "dsmith", "extractor", "inline-style", "jsx"],
   "license": "MIT",

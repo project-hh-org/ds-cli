@@ -1,6 +1,6 @@
 {
   "name": "@dsmith-dev/extractor-css",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "dsmith extractor for .css and .scss files",
   "keywords": ["design-system", "dsmith", "extractor", "css", "scss"],
   "license": "MIT",

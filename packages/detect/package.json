@@ -1,6 +1,6 @@
 {
   "name": "@dsmith-dev/detect",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "Repository detection for dsmith: styling approach, design system, framework, Storybook and lint",
   "keywords": ["design-system", "dsmith", "detect", "tailwind", "css-in-js"],
   "license": "MIT",
