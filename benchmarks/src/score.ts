@@ -15,7 +15,7 @@ import {
   type GuardSnapshot,
   type StyleUsage,
 } from "@dsmith-dev/core";
-import type { FileScore, RunScore, UsageCounts } from "./model.js";
+import type { Aggregate, FileScore, RunRecord, RunScore, UsageCounts } from "./model.js";
 
 /** 하네스·에이전트 도구가 관리하는 파일 — 에이전트 산출물이 아니므로 채점하지 않는다 */
 export const IGNORED: readonly string[] = [
@@ -192,7 +192,8 @@ export function scoreRun(input: ScoreInput): RunScore {
   for (const change of [...input.changes].sort((a, b) => byCodeUnit(a.file, b.file))) {
     const { file } = change;
     if (change.status === "deleted") deleted.push(file);
-    else if (isIgnored(file)) ignored.push(file);
+    // 내용을 읽지 못한 파일(바이너리·1MB 초과 — collectChanges가 after: null로 표시)은 채점하지 않는다
+    else if (change.after === null || isIgnored(file)) ignored.push(file);
     else if (isExcluded(file)) excluded.push(file);
     else if (!SCRIPT_FILE.test(file) && !matchers.some((m) => m.matches(file))) ignored.push(file);
     else files.push(scoreFile({ ...change, status: change.status }, input));
@@ -220,4 +221,49 @@ export function scoreRun(input: ScoreInput): RunScore {
     compliance: ratio(totals.token, totals.token + totals.hardcoded),
     tokenShareAll: ratio(totals.token, totals.token + totals.hardcoded + totals.tailwindDefault),
   };
+}
+
+/**
+ * 한 조건의 실행들을 합친다. totals를 더한 뒤 비율을 다시 계산한다(실행별 비율의 평균이 아님).
+ * okRuns = status ok|replay, failedRuns = 그 밖(agent-error·timeout·missing). missingExpected = 기대 파일이 없는 실행.
+ */
+export function aggregate(runs: RunRecord[]): Aggregate {
+  const agg: Aggregate = {
+    runs: runs.length,
+    okRuns: 0,
+    failedRuns: 0,
+    missingExpected: 0,
+    harnessPathSeen: 0,
+    ...emptyCounts(),
+    nonDs: 0,
+    deprecated: 0,
+    dsComponentUses: 0,
+    parseFailed: 0,
+    files: 0,
+    compliance: null,
+    tokenShareAll: null,
+    costUsd: null,
+    turns: null,
+  };
+  for (const r of runs) {
+    if (r.status === "ok" || r.status === "replay") agg.okRuns += 1;
+    else agg.failedRuns += 1;
+    if (!r.score.expectedFile) agg.missingExpected += 1;
+    if (r.harnessPathSeen) agg.harnessPathSeen += 1;
+    const t = r.score.totals;
+    for (const k of Object.keys(emptyCounts()) as (keyof UsageCounts)[]) agg[k] += t[k];
+    agg.nonDs += t.nonDs;
+    agg.deprecated += t.deprecated;
+    agg.dsComponentUses += t.dsComponentUses;
+    agg.parseFailed += t.parseFailed;
+    agg.files += t.files;
+    const cost = r.agentMeta?.costUsd;
+    if (cost !== undefined) agg.costUsd = (agg.costUsd ?? 0) + cost;
+    const turns = r.agentMeta?.turns;
+    if (turns !== undefined) agg.turns = (agg.turns ?? 0) + turns;
+  }
+  if (agg.costUsd !== null) agg.costUsd = Math.round(agg.costUsd * 1_000_000) / 1_000_000;
+  agg.compliance = ratio(agg.token, agg.token + agg.hardcoded);
+  agg.tokenShareAll = ratio(agg.token, agg.token + agg.hardcoded + agg.tailwindDefault);
+  return agg;
 }
