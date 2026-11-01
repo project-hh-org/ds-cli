@@ -2,7 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { indexRepo, writeIndex } from "@dsmith-dev/core";
+import { indexRepo, writeIndex, type ComponentUsage, type Index } from "@dsmith-dev/core";
 import { detect, writeDetect } from "@dsmith-dev/detect";
 import { metaOf, type Extractor } from "@dsmith-dev/extractor-api";
 import { cssExtractor } from "@dsmith-dev/extractor-css";
@@ -83,4 +83,26 @@ export function json(result: { content: unknown }): any {
 export function textOf(result: { content: unknown }): string {
   const content = result.content as { type: string; text?: string }[];
   return content[0]?.text ?? "";
+}
+
+/** index.json·detect.json만 있는 합성 워크스페이스(소스 파일 없음). 예산·커서 테스트용 */
+export async function syntheticRoot(components: ComponentUsage[]): Promise<string> {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "dsmith-mcp-syn-"));
+  fs.writeFileSync(path.join(root, "package.json"), "{}\n");
+  const index: Index = {
+    root,
+    createdAt: new Date().toISOString(),
+    extractors: [],
+    files: { scanned: components.length, skipped: [] },
+    styles: [],
+    components,
+  };
+  await writeIndex(root, index);
+  await writeDetect(root, await detect(root, index));
+  return root;
+}
+
+/** 모듈 경로에서 불러 쓰는 컴포넌트 사용 한 건 */
+export function usageOf(name: string, module: string, file: string, props: string[] = []): ComponentUsage {
+  return { file, line: 1, name, importedFrom: module, module, props };
 }

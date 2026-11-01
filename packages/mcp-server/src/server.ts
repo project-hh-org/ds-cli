@@ -6,10 +6,13 @@
 import { McpServer, type CallToolResult } from "@modelcontextprotocol/server";
 import { StdioServerTransport } from "@modelcontextprotocol/server/stdio";
 import * as z from "zod/v4";
-import { DEFAULT_TOKEN_BUDGET, paginate, toText, type Page } from "./budget.js";
+import { DEFAULT_TOKEN_BUDGET, paginate, shrinkToBudget, toText, type Page } from "./budget.js";
 import type { ServerDeps } from "./index.js";
 import { componentsList, tokensList } from "./resources.js";
+import { explainDecisionTool } from "./tools/explain-decision.js";
+import { getComponent } from "./tools/get-component.js";
 import { lintSnippet } from "./tools/lint-snippet.js";
+import { listDecisionsTool } from "./tools/list-decisions.js";
 import { resolveToken } from "./tools/resolve-token.js";
 import { searchComponent } from "./tools/search-component.js";
 import { openWorkspace } from "./workspace.js";
@@ -94,6 +97,51 @@ export async function createDsmithServer(deps: ServerDeps): Promise<McpServer> {
     (args) =>
       guarded(async () =>
         paginate(searchComponent(await workspace.get(), args), args.cursor, budget, listPage("results")),
+      ),
+  );
+
+  server.registerTool(
+    "get_component",
+    {
+      description:
+        "Get a component's props (with allowed values), variants, usage count and definition file from this repo. Use before using or changing a component.",
+      inputSchema: z.object({ name: z.string().min(1), module: z.string().optional() }),
+      annotations: readOnly,
+    },
+    (args) => guarded(async () => shrinkToBudget(await getComponent(await workspace.get(), args), budget)),
+  );
+
+  server.registerTool(
+    "explain_decision",
+    {
+      description:
+        "Explain a duplicate or locally redefined component: options, differences, impact of each choice and a recommendation. Use when several components do the same job and you must pick one.",
+      inputSchema: z.object({ item: z.string().min(1), kind: z.enum(["duplicate", "local-definition"]).optional() }),
+      annotations: readOnly,
+    },
+    async (args): Promise<CallToolResult> => {
+      try {
+        const result = await explainDecisionTool(await workspace.get(), args, { git: deps.git !== false });
+        // CLI `decide --explain --json`과 같은 값: 카드 그대로, 실패는 오류 객체(isError).
+        if ("error" in result) return { isError: true, content: [{ type: "text", text: toText(result) }] };
+        return ok(shrinkToBudget(result.card, budget));
+      } catch (err) {
+        return fail(err);
+      }
+    },
+  );
+
+  server.registerTool(
+    "list_decisions",
+    {
+      description:
+        "List duplicate or locally redefined components that still need a decision, and the ones already decided. Use to see which choices are open before building UI.",
+      inputSchema: z.object({ status: z.enum(["pending", "decided"]).optional(), cursor: z.string().optional() }),
+      annotations: readOnly,
+    },
+    (args) =>
+      guarded(async () =>
+        paginate(listDecisionsTool(await workspace.get(), args), args.cursor, budget, listPage("decisions")),
       ),
   );
 
