@@ -101,3 +101,23 @@ export async function loadFiles(root: string, patterns: string[], exclude: strin
   }
   return out;
 }
+
+/** `package.json`의 dependencies, devDependencies 버전 범위(같은 이름이면 dependencies 우선). 파일이 없으면 빈 객체. */
+export async function readDependencyRanges(root: string): Promise<Record<string, string>> {
+  let text: string;
+  try {
+    text = await fs.readFile(path.join(root, "package.json"), "utf-8");
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") return {};
+    throw err;
+  }
+  const json = parseJsonFile(text, "package.json");
+  if (typeof json !== "object" || json === null) return {};
+  const { dependencies, devDependencies } = json as Record<string, unknown>;
+  const out: Record<string, string> = {};
+  for (const group of [devDependencies, dependencies]) {
+    if (typeof group !== "object" || group === null || Array.isArray(group)) continue;
+    for (const [name, range] of Object.entries(group)) if (typeof range === "string") out[name] = range;
+  }
+  return out;
+}

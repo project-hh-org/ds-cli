@@ -20,6 +20,11 @@ const BUILTIN_METHODS: ReadonlySet<string> = new Set<StylingMethodName>([
 export interface StylingDetection {
   /** 내장 방식(`StylingMethodName`) 다음에 Extractor `signals`로 감지한 방식이 온다. */
   methods: { name: StylingMethodName | (string & {}); evidence: string[]; share: number }[];
+  /**
+   * tailwind가 감지됐을 때만. package.json tailwindcss 범위의 첫 정수(^3.4.0 → 3, ~4.1 → 4; 숫자 없음·4 초과·3 미만 → 다음 근거)
+   * → `@tailwindcss/postcss`·`@tailwindcss/vite` 의존성 → `@import "tailwindcss"` 근거 → 4 → `@tailwind` 지시어·tailwind.config.* → 3 → 없음.
+   */
+  tailwindVersion?: 3 | 4;
 }
 
 const TAILWIND_CONFIGS = "**/tailwind.config.*";
@@ -80,7 +85,27 @@ function indexShare(index: Index, extractor: string): number {
   return index.styles.filter((u) => u.extractor === extractor).length / index.styles.length;
 }
 
+/** 범위 문자열의 첫 정수가 3 또는 4면 그 값. 숫자가 없거나("latest", "*") 범위 밖이면 null. */
+function majorOfRange(range: string): 3 | 4 | null {
+  const m = /\d+/.exec(range);
+  if (m === null) return null;
+  const n = Number(m[0]);
+  return n === 3 || n === 4 ? n : null;
+}
+
+function tailwindVersionOf(deps: string[], ranges: Record<string, string>, evidence: string[]): 3 | 4 | undefined {
+  const range = ranges.tailwindcss;
+  const fromRange = range === undefined ? null : majorOfRange(range);
+  if (fromRange !== null) return fromRange;
+  if (deps.includes("@tailwindcss/postcss") || deps.includes("@tailwindcss/vite")) return 4;
+  if (evidence.some((e) => e.startsWith('@import "tailwindcss"'))) return 4;
+  if (evidence.some((e) => e.startsWith("@tailwind directive") || /(?:^|\/)tailwind\.config\./.test(e))) return 3;
+  return undefined;
+}
+
 export interface StylingInput {
+  /** 의존성 이름 → 버전 범위(Tailwind 주 버전 판정용). 없으면 범위 근거를 건너뛴다. */
+  ranges?: Record<string, string>;
   deps: string[];
   sources: SourceFile[];
   /** 기본 제외에 더할 glob. 파일 목록을 새로 훑을 때 적용한다(`sources`는 이미 적용된 상태로 받는다). */
@@ -89,11 +114,13 @@ export interface StylingInput {
 
 /** 파일·의존성 근거로 스타일링 방식을 감지한다. Extractor 해석(폴백)·index 비율·모노레포 표시는 호출자가 이어서 적용한다. */
 export async function detectStyling(root: string, input: StylingInput): Promise<StylingDetection> {
-  const { deps, sources, exclude = [] } = input;
+  const { deps, sources, exclude = [], ranges = {} } = input;
   const methods: StylingDetection["methods"] = [];
+  let tailwindVersion: 3 | 4 | undefined;
 
   const twEvidence = await tailwindEvidence(root, deps, exclude);
   if (twEvidence.length > 0) {
+    tailwindVersion = tailwindVersionOf(deps, ranges, twEvidence);
     const hasTailwindDep = deps.includes("tailwindcss");
     methods.push({
       name: "tailwind",
@@ -156,7 +183,7 @@ export async function detectStyling(root: string, input: StylingInput): Promise<
     });
   }
 
-  return { methods };
+  return tailwindVersion === undefined ? { methods } : { methods, tailwindVersion };
 }
 
 /**

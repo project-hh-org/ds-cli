@@ -16,7 +16,7 @@ import {
   normalizeExtractorNames,
   type StylingDetection,
 } from "./detect-styling.js";
-import { loadSources, readDependencyNames } from "./fs-utils.js";
+import { loadSources, readDependencyNames, readDependencyRanges } from "./fs-utils.js";
 import { readDetect, writeDetect } from "./store.js";
 
 export type { DsDetection } from "./detect-ds.js";
@@ -93,7 +93,7 @@ export async function detect(rootArg: string, index?: Index, opts: DetectOptions
   const deps = await readDependencyNames(root);
   const sources = await loadSources(root, exclude);
 
-  const styling = await detectStyling(root, { deps, sources, exclude });
+  const styling = await detectStyling(root, { deps, sources, exclude, ranges: await readDependencyRanges(root) });
   // Extractor가 선언한 signals로 감지한 방식(서드파티 포함)을 내장 방식 뒤에 붙인다.
   mergeMethods(styling, await detectSignalMethods(root, { deps, sources, exclude }, opts.available));
   // 폴백이 방식 목록에 inline-style을 더할 수 있으므로 index share·모노레포 표시는 그 뒤에 적용한다.
