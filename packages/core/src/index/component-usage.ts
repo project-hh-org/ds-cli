@@ -120,14 +120,26 @@ export function extractComponentUsage(
   tsPaths: TsPaths | null = null,
   ctx: ModuleContext = {},
 ): ComponentUsage[] {
-  const imports = new Map<string, { importedFrom: string; module: string }>();
+  interface Binding {
+    importedFrom: string;
+    module: string;
+    /** named: 원래 이름, namespace: null(멤버가 곧 이름), default: undefined(로컬 이름을 그대로 쓴다) */
+    imported?: string | null;
+  }
+  const imports = new Map<string, Binding>();
   for (const stmt of ast.program.body) {
     if (stmt.type !== "ImportDeclaration") continue;
     const source = {
       importedFrom: resolveSource(file, stmt.source.value),
       module: moduleKeyOf(file, stmt.source.value, tsPaths, ctx),
     };
-    for (const spec of stmt.specifiers) imports.set(spec.local.name, source);
+    for (const spec of stmt.specifiers) {
+      if (spec.type === "ImportSpecifier") {
+        const imported = spec.imported.type === "Identifier" ? spec.imported.name : spec.imported.value;
+        imports.set(spec.local.name, { ...source, imported });
+      } else if (spec.type === "ImportNamespaceSpecifier") imports.set(spec.local.name, { ...source, imported: null });
+      else imports.set(spec.local.name, source);
+    }
   }
 
   const declared = topLevelDeclaredNames(ast);
@@ -151,6 +163,11 @@ export function extractComponentUsage(
         module: source?.module ?? "",
         props,
       };
+      if (source?.imported !== undefined) {
+        const rest = found.name.slice(found.root.length);
+        const imported = source.imported === null ? rest.slice(1) : `${source.imported}${rest}`;
+        if (imported !== "" && imported !== found.name) usage.imported = imported;
+      }
       if (source === undefined && declared.has(found.root)) usage.declaredLocally = true;
       usages.push(usage);
     },

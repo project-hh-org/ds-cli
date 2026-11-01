@@ -107,6 +107,22 @@ describe("components", () => {
     expect(run([], [comp({ name: "Modal", module: "src/old/modal" })], { preferred })).toHaveLength(1);
     expect(run([], [comp({ name: "Modal", module: "src/ui/modal" })], { preferred })).toEqual([]);
   });
+  it("별칭·namespace로 import해도 imported 이름으로 대조한다(finding.component.name은 태그 그대로)", () => {
+    const [dep, pref] = run(
+      [],
+      [
+        comp({ name: "O", imported: "Old", module: "src/components/ui/old" }),
+        comp({ line: 2, name: "LegacyBtn", imported: "Button", module: "src/legacy/Button" }),
+        comp({ line: 3, name: "UI.Old", imported: "Old", module: "src/components/ui/old" }),
+        comp({ line: 4, name: "Old", imported: "Other", module: "src/components/ui/old" }),
+      ],
+      { ds },
+    );
+    expect([dep?.rule, dep?.message, dep?.component?.name]).toEqual(["no-deprecated-component", "Old은 deprecated: 쓰지 마세요", "O"]);
+    expect([pref?.rule, pref?.message, pref?.component?.name]).toEqual(["prefer-ds-component", "Button은 DS 컴포넌트(src/components/ui/button)를 쓰세요", "LegacyBtn"]);
+    const all = run([], [comp({ line: 3, name: "UI.Old", imported: "Old", module: "src/components/ui/old" })], { ds });
+    expect(all.map((f) => f.rule)).toEqual(["no-deprecated-component"]);
+  });
   it("deprecated", () => {
     const [f] = run([], [comp({ name: "Old", module: "src/components/ui/old" })], { ds });
     expect(f?.rule).toBe("no-deprecated-component");

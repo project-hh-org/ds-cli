@@ -59,7 +59,8 @@ function styleFindings(file: string, usages: StyleUsage[], ctx: RuleContext): Fi
 function componentFindings(file: string, components: ComponentUsage[], ctx: RuleContext): Finding[] {
   const out: Finding[] = [];
   for (const c of components) {
-    const sameName = ctx.ds.components.filter((d) => d.name === c.name);
+    const dsName = c.imported ?? c.name;
+    const sameName = ctx.ds.components.filter((d) => d.name === dsName);
 
     // deprecated: 이름·module이 DS 컴포넌트와 같다
     if (c.module !== "") {
@@ -70,7 +71,7 @@ function componentFindings(file: string, components: ComponentUsage[], ctx: Rule
           file,
           line: c.line,
           column: 0,
-          message: `${c.name}은 deprecated: ${firstLine(dep.deprecated)}`,
+          message: `${dsName}은 deprecated: ${firstLine(dep.deprecated)}`,
           component: { name: c.name, module: c.module, deprecated: dep.deprecated },
         });
       }
@@ -78,7 +79,7 @@ function componentFindings(file: string, components: ComponentUsage[], ctx: Rule
 
     // prefer-ds-component
     let preferModule: string | null = null;
-    const prefs = ctx.preferred.filter((p) => p.name === c.name);
+    const prefs = ctx.preferred.filter((p) => p.name === dsName);
     // module ""(import 없음)은 이 파일에 선언한 컴포넌트일 때만 대상 — props·변수로 받은 <Icon />은 제외
     const importless = c.module === "";
     if (prefs.length > 0 && !importless && !prefs.some((p) => p.module === c.module)) {
@@ -95,7 +96,7 @@ function componentFindings(file: string, components: ComponentUsage[], ctx: Rule
         file,
         line: c.line,
         column: 0,
-        message: `${c.name}은 DS 컴포넌트(${preferModule})를 쓰세요`,
+        message: `${dsName}은 DS 컴포넌트(${preferModule})를 쓰세요`,
         component: { name: c.name, module: c.module, preferModule },
       });
     }
