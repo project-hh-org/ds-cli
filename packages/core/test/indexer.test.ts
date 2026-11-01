@@ -2,9 +2,10 @@ import fs from "node:fs";
 import fsp from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { inlineStyleExtractor } from "@dsmith/extractor-inline-style";
+import { JS_FILES } from "@dsmith-dev/extractor-api";
+import { inlineStyleExtractor } from "@dsmith-dev/extractor-inline-style";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { indexRepo } from "../src/index/indexer.js";
+import { DEFAULT_EXCLUDE, indexRepo } from "../src/index/indexer.js";
 
 let tmp: string;
 beforeEach(() => {
@@ -39,14 +40,116 @@ describe("indexRepo", () => {
     expect(index.files.scanned).toBe(2);
     expect(index.files.skipped).toHaveLength(1);
     expect(index.files.skipped[0]?.file).toBe("src/Broken.tsx");
-    expect(index.files.skipped[0]?.reason).toMatch(/^parse: /);
+    expect(index.files.skipped[0]?.reason).toMatch(/^parse\(inline-style\): /);
 
     expect(index.styles.map((s) => [s.file, s.property, s.raw]).sort()).toEqual([
       ["src/App.tsx", "padding", "8"],
       ["src/ui/Button.tsx", "color", "#ff0000"],
     ]);
     expect(index.components).toEqual([
-      { file: "src/App.tsx", line: 2, name: "Button", importedFrom: "src/ui/Button", props: ["size", "style"] },
+      {
+        file: "src/App.tsx",
+        line: 2,
+        name: "Button",
+        importedFrom: "src/ui/Button",
+        module: "src/ui/Button",
+        props: ["size", "style"],
+      },
+    ]);
+  });
+
+  it("root의 tsconfig paths를 읽어 컴포넌트 module 해석에 쓴다", async () => {
+    put("tsconfig.json", `{ "compilerOptions": { "paths": { "components/*": ["./src/components/*"] } } }`);
+    put("app/page.tsx", `import { Button } from "components/ui/button";\nexport const P = () => <Button />;`);
+    const index = await indexRepo(tmp, [inlineStyleExtractor]);
+    expect(index.components.map((c) => [c.importedFrom, c.module])).toEqual([
+      ["components/ui/button", "src/components/ui/button"],
+    ]);
+  });
+
+  it("baseUrl 전용 tsconfig: baseUrl 아래 최상위 항목으로 시작하는 bare import를 경로 module로 푼다", async () => {
+    put("tsconfig.json", `{ "compilerOptions": { "baseUrl": "src" } }`);
+    put("src/components/ui/button.tsx", `export const Button = () => <button />;`);
+    put("src/components/a/Header.tsx", `export const Header = () => <header />;`);
+    put("src/components/b/Header.tsx", `export const Header = () => <header />;`);
+    put(
+      "src/pages/home.tsx",
+      [
+        `import { Button } from "components/ui/button";`,
+        `import { Header } from "components/a/Header";`,
+        `import { Header as H2 } from "components/b/Header";`,
+        `import { Box } from "@mui/material/Box";`,
+        `export const P = () => <><Button /><Header /><H2 /><Box /></>;`,
+      ].join("\n"),
+    );
+    const index = await indexRepo(tmp, [inlineStyleExtractor]);
+    expect(index.components.map((c) => c.module)).toEqual([
+      "src/components/ui/button",
+      "src/components/a/Header",
+      "src/components/b/Header",
+      "@mui/material",
+    ]);
+  });
+
+  it("paths 전용 tsconfig(baseUrl 없음): root 디렉터리와 이름이 같은 패키지의 서브패스 import도 패키지 module이다", async () => {
+    put("package.json", JSON.stringify({ name: "app", dependencies: { convex: "^1.0.0" } }));
+    put("tsconfig.json", `{ "compilerOptions": { "paths": { "@/*": ["./src/*"] } } }`);
+    put("convex/schema.ts", `export default {};`);
+    put("src/a.tsx", `import { ConvexProvider } from "convex/react";\nexport const A = () => <ConvexProvider />;`);
+    put("src/b.tsx", `import { ConvexProvider } from "convex";\nexport const B = () => <ConvexProvider />;`);
+    const index = await indexRepo(tmp, [inlineStyleExtractor]);
+    expect(index.components.map((c) => [c.file, c.name, c.module])).toEqual([
+      ["src/a.tsx", "ConvexProvider", "convex"],
+      ["src/b.tsx", "ConvexProvider", "convex"],
+    ]);
+  });
+
+  it("paths 전용 tsconfig(baseUrl 없음): 선언되지 않은 bare import도 root 디렉터리 경로로 풀지 않는다", async () => {
+    put("tsconfig.json", `{ "compilerOptions": { "paths": { "@/*": ["./src/*"] } } }`);
+    put("lib/x.ts", `export const x = 1;`);
+    put("src/a.tsx", `import { Thing } from "lib/thing";\nexport const A = () => <Thing />;`);
+    const index = await indexRepo(tmp, [inlineStyleExtractor]);
+    expect(index.components.map((c) => c.module)).toEqual(["lib"]);
+  });
+
+  it("명시적 baseUrl이어도 선언된 의존성과 이름이 같은 최상위 디렉터리보다 패키지가 우선한다", async () => {
+    put("package.json", JSON.stringify({ name: "app", dependencies: { utils: "^1.0.0" } }));
+    put("tsconfig.json", `{ "compilerOptions": { "baseUrl": "." } }`);
+    put("utils/format.ts", `export const f = 1;`);
+    put("components/Card.tsx", `export const Card = () => <div />;`);
+    put(
+      "src/a.tsx",
+      [
+        `import { Tooltip } from "utils/tooltip";`,
+        `import { Card } from "components/Card";`,
+        `export const A = () => <><Tooltip /><Card /></>;`,
+      ].join("\n"),
+    );
+    const index = await indexRepo(tmp, [inlineStyleExtractor]);
+    expect(index.components.map((c) => [c.name, c.module])).toEqual([
+      ["Tooltip", "utils"],
+      ["Card", "components/Card"],
+    ]);
+  });
+
+  it("모노레포 앱: 의존성으로 선언한 패키지의 paths 별칭은 패키지명 module로 합친다", async () => {
+    put("package.json", JSON.stringify({ name: "web", dependencies: { "@acme/ui": "workspace:*" } }));
+    put(
+      "tsconfig.json",
+      JSON.stringify({
+        compilerOptions: {
+          paths: { "@acme/ui": ["./ui-src/index.ts"], "@acme/ui/*": ["./ui-src/*"], "@/*": ["./src/*"] },
+        },
+      }),
+    );
+    put("src/a.tsx", `import { Button } from "@acme/ui";\nexport const A = () => <Button />;`);
+    put("src/b.tsx", `import { Button } from "@acme/ui/button";\nexport const B = () => <Button />;`);
+    put("src/c.tsx", `import { Nav } from "@/nav";\nexport const C = () => <Nav />;`);
+    const index = await indexRepo(tmp, [inlineStyleExtractor]);
+    expect(index.components.map((c) => [c.name, c.module])).toEqual([
+      ["Button", "@acme/ui"],
+      ["Button", "@acme/ui"],
+      ["Nav", "src/nav"],
     ]);
   });
 
@@ -64,6 +167,8 @@ describe("indexRepo", () => {
     };
     const fake = {
       name: "fake",
+      files: JS_FILES,
+      parses: "none" as const,
       appliesTo: () => true,
       extract: () => [original],
       write: () => null,
@@ -79,6 +184,8 @@ describe("indexRepo", () => {
     let calls = 0;
     const never = {
       name: "never",
+      files: JS_FILES,
+      parses: "none" as const,
       appliesTo: () => false,
       extract: () => {
         calls += 1;
@@ -98,7 +205,7 @@ describe("indexRepo", () => {
     put("a.tsx", `const a = <p />;`);
     put("skip/b.tsx", `const b = <p />;`);
     put("node_modules/pkg/c.tsx", `const c = <p />;`);
-    const none = { name: "none", appliesTo: () => false, extract: () => [], write: () => null };
+    const none = { name: "none", files: JS_FILES, parses: "none" as const, appliesTo: () => false, extract: () => [], write: () => null };
     const index = await indexRepo(tmp, [none], { exclude: ["skip/**"] });
     expect(index.files.scanned).toBe(1);
     expect(index.files.skipped).toEqual([]);
@@ -117,6 +224,8 @@ describe("indexRepo", () => {
     const seen: string[] = [];
     const spy = {
       name: "spy",
+      files: JS_FILES,
+      parses: "none" as const,
       appliesTo: (ctx: { file: string }) => {
         seen.push(ctx.file);
         return false;
@@ -127,6 +236,52 @@ describe("indexRepo", () => {
     const index = await indexRepo(tmp, [spy], { include: ["**/*.{tsx,jsx,ts,js}"], exclude: [] });
     expect(seen).toEqual(["src/a.tsx"]);
     expect(index.files.scanned).toBe(1);
+  });
+
+  it("압축 스타일시트(*.min.css·*.min.scss)와 vendor/ 디렉터리는 기본으로 제외하고, public/은 제외하지 않는다", async () => {
+    put("src/app.css", `a { color: red; }`);
+    put("x.min.css", `a{color:red}`);
+    put("styles/y.min.scss", `a{color:red}`);
+    put("vendor/a.css", `a { color: red; }`);
+    put("public/vendor/swiper.min.css", `a{color:red}`);
+    put("src/vendor/lib.js", `const a = 1;`);
+    put("public/site.css", `a { color: red; }`);
+    const seen: string[] = [];
+    const spy = {
+      name: "spy",
+      files: ["**/*.{css,scss}"],
+      parses: "none" as const,
+      appliesTo: (ctx: { file: string }) => {
+        seen.push(ctx.file);
+        return false;
+      },
+      extract: () => [],
+      write: () => null,
+    };
+    await indexRepo(tmp, [spy]);
+    expect(seen).toEqual(["public/site.css", "src/app.css"]);
+  });
+
+  it("DEFAULT_EXCLUDE를 내보내고 exclude 옵션은 그 위에 더해진다", async () => {
+    expect(DEFAULT_EXCLUDE).toEqual(expect.arrayContaining(["**/node_modules/**", "**/*.min.css", "**/vendor/**"]));
+    expect(DEFAULT_EXCLUDE).not.toContain("**/public/**");
+    put("legacy/a.css", `a { color: red; }`);
+    put("src/b.css", `a { color: red; }`);
+    put("vendor/c.css", `a { color: red; }`);
+    const seen: string[] = [];
+    const spy = {
+      name: "spy",
+      files: ["**/*.css"],
+      parses: "none" as const,
+      appliesTo: (ctx: { file: string }) => {
+        seen.push(ctx.file);
+        return false;
+      },
+      extract: () => [],
+      write: () => null,
+    };
+    await indexRepo(tmp, [spy], { exclude: ["legacy/**"] });
+    expect(seen).toEqual(["src/b.css"]);
   });
 
   it("한 파일의 extractor 하나라도 던지면 그 파일은 skipped이고 styles·components에 아무것도 남기지 않는다", async () => {
@@ -144,12 +299,16 @@ describe("indexRepo", () => {
     });
     const first = {
       name: "first",
+      files: JS_FILES,
+      parses: "none" as const,
       appliesTo: () => true,
       extract: (ctx: { file: string }) => [usage(ctx.file)],
       write: () => null,
     };
     const second = {
       name: "second",
+      files: JS_FILES,
+      parses: "none" as const,
       appliesTo: () => true,
       extract: (ctx: { file: string }) => {
         if (ctx.file === "bad.tsx") throw new Error("boom");
@@ -159,9 +318,30 @@ describe("indexRepo", () => {
     };
     const index = await indexRepo(tmp, [first, second]);
     expect(index.files.scanned).toBe(1);
-    expect(index.files.skipped).toEqual([{ file: "bad.tsx", reason: "parse: boom" }]);
+    expect(index.files.skipped).toEqual([{ file: "bad.tsx", reason: "parse(second): boom" }]);
     expect(index.styles.map((s) => s.file)).toEqual(["good.tsx"]);
     expect(index.components.map((c) => c.file)).toEqual(["good.tsx"]);
+  });
+
+  it("NUL 바이트만 있는 파일(클라우드 동기화 플레이스홀더)은 파싱하지 않고 전용 reason으로 skipped에 기록한다", async () => {
+    const abs = path.join(tmp, "src/Placeholder.tsx");
+    fs.mkdirSync(path.dirname(abs), { recursive: true });
+    fs.writeFileSync(abs, Buffer.alloc(2048));
+    put("src/Partly.tsx", `\0\0export const A = 1;`);
+    put("src/Ok.tsx", `export const Ok = () => <div />;`);
+    const extract = vi.fn(() => []);
+    const spy = { ...inlineStyleExtractor, name: "spy", appliesTo: () => true, extract };
+
+    const index = await indexRepo(tmp, [spy]);
+
+    expect(index.files.skipped).toContainEqual({
+      file: "src/Placeholder.tsx",
+      reason: "NUL 바이트만 있는 파일 — 클라우드 동기화 플레이스홀더일 수 있음",
+    });
+    expect(extract.mock.calls.map(([ctx]) => (ctx as { file: string }).file)).not.toContain("src/Placeholder.tsx");
+    // 일부만 NUL인 파일은 기존 파싱 오류 경로를 탄다.
+    expect(index.files.skipped.find((s) => s.file === "src/Partly.tsx")?.reason).toMatch(/^parse\(components\): /);
+    expect(index.files.scanned).toBe(1);
   });
 
   it("읽기 실패는 reason이 read:로 시작하는 skipped로 기록하고 계속 진행한다", async () => {
@@ -173,12 +353,172 @@ describe("indexRepo", () => {
       return (original as (...args: unknown[]) => Promise<unknown>)(p, ...rest);
     }) as typeof fsp.readFile);
     try {
-      const none = { name: "none", appliesTo: () => false, extract: () => [], write: () => null };
+      const none = { name: "none", files: JS_FILES, parses: "none" as const, appliesTo: () => false, extract: () => [], write: () => null };
       const index = await indexRepo(tmp, [none]);
       expect(index.files.scanned).toBe(1);
       expect(index.files.skipped).toEqual([{ file: "a.tsx", reason: "read: EACCES: denied" }]);
     } finally {
       vi.restoreAllMocks();
     }
+  });
+});
+
+describe("indexRepo: Extractor 경계", () => {
+  const usage = (file: string, extractor: string) => ({
+    file,
+    line: 1,
+    column: 0,
+    property: "color" as const,
+    raw: "#fff",
+    normalized: { kind: "unknown" as const },
+    source: "hardcoded" as const,
+    extractor,
+  });
+
+  it("Extractor가 선언한 글롭 합집합으로 파일을 모으고, JS/TS가 아닌 파일은 컴포넌트 파싱 없이 처리한다", async () => {
+    put("notes.txt", `const a = <div>;`);
+    put("a.tsx", `const a = <p />;`);
+    const txt = {
+      name: "txt",
+      files: ["**/*.txt"],
+      parses: "none" as const,
+      appliesTo: () => true,
+      extract: (ctx: { file: string }) => [usage(ctx.file, "txt")],
+      write: () => null,
+    };
+    const index = await indexRepo(tmp, [txt]);
+    expect(index.files.scanned).toBe(2);
+    expect(index.files.skipped).toEqual([]);
+    expect(index.styles.map((s) => s.file)).toEqual(["notes.txt"]);
+    expect(index.components).toEqual([]);
+  });
+
+  it("prepare는 파일을 순회하기 전에 Extractor마다 정확히 1회 호출된다", async () => {
+    put("a.tsx", `const a = <p />;`);
+    put("b.tsx", `const b = <p />;`);
+    const calls: string[] = [];
+    const roots: string[] = [];
+    const ext = {
+      name: "prep",
+      files: JS_FILES,
+      parses: "none" as const,
+      prepare: (root: string) => {
+        calls.push("prepare");
+        roots.push(root);
+      },
+      appliesTo: () => true,
+      extract: () => {
+        calls.push("extract");
+        return [];
+      },
+      write: () => null,
+    };
+    await indexRepo(tmp, [ext]);
+    expect(calls[0]).toBe("prepare");
+    expect(calls.filter((c) => c === "prepare")).toHaveLength(1);
+    expect(calls.filter((c) => c === "extract")).toHaveLength(2);
+    expect(roots).toEqual([tmp]);
+  });
+
+  it("prepare가 실패하면 Extractor 이름을 붙여 indexRepo가 reject된다", async () => {
+    put("a.tsx", `const a = <p />;`);
+    const ext = {
+      name: "prep-bad",
+      files: JS_FILES,
+      parses: "none" as const,
+      prepare: () => {
+        throw new Error("config missing");
+      },
+      appliesTo: () => true,
+      extract: () => [],
+      write: () => null,
+    };
+    await expect(indexRepo(tmp, [ext])).rejects.toThrow("prepare(prep-bad): config missing");
+  });
+
+  it("각 Extractor는 자기 files 글롭에 맞는 파일에만 호출된다", async () => {
+    put("a.tsx", `const a = <p />;`);
+    put("s.css", `.a { color: red; }`);
+    const seen = { js: [] as string[], css: [] as string[] };
+    const make = (name: "js" | "css", files: string[]) => ({
+      name,
+      files,
+      parses: "none" as const,
+      appliesTo: () => true,
+      extract: (ctx: { file: string }) => {
+        seen[name].push(ctx.file);
+        return [usage(ctx.file, name)];
+      },
+      write: () => null,
+    });
+    const index = await indexRepo(tmp, [make("js", JS_FILES), make("css", ["**/*.css"])]);
+    expect(seen.js).toEqual(["a.tsx"]);
+    expect(seen.css).toEqual(["s.css"]);
+    expect(index.files.scanned).toBe(2);
+    expect(index.styles.map((s) => [s.file, s.extractor]).sort()).toEqual([
+      ["a.tsx", "js"],
+      ["s.css", "css"],
+    ]);
+  });
+
+  it("같은 .tsx에 글롭이 겹치는 Extractor는 모두 적용된다", async () => {
+    put("a.tsx", `const a = <p />;`);
+    const make = (name: string) => ({
+      name,
+      files: JS_FILES,
+      parses: "none" as const,
+      appliesTo: () => true,
+      extract: (ctx: { file: string }) => [usage(ctx.file, name)],
+      write: () => null,
+    });
+    const index = await indexRepo(tmp, [make("one"), make("two")]);
+    expect(index.styles.map((s) => s.extractor)).toEqual(["one", "two"]);
+  });
+
+  it("Extractor가 던지면 skip reason이 parse(<name>): 로 시작한다", async () => {
+    put("a.tsx", `const a = <p />;`);
+    const bad = {
+      name: "bad",
+      files: JS_FILES,
+      parses: "none" as const,
+      appliesTo: () => true,
+      extract: () => {
+        throw new Error("boom");
+      },
+      write: () => null,
+    };
+    const index = await indexRepo(tmp, [bad]);
+    expect(index.files.scanned).toBe(0);
+    expect(index.files.skipped).toEqual([{ file: "a.tsx", reason: "parse(bad): boom" }]);
+  });
+
+  it("JS/TS 파일의 컴포넌트 파싱 실패는 parse(components): 로 기록한다", async () => {
+    put("Broken.tsx", `const a = <div>;`);
+    const none = {
+      name: "none",
+      files: JS_FILES,
+      parses: "none" as const,
+      appliesTo: () => false,
+      extract: () => [],
+      write: () => null,
+    };
+    const index = await indexRepo(tmp, [none]);
+    expect(index.files.skipped).toHaveLength(1);
+    expect(index.files.skipped[0]?.reason).toMatch(/^parse\(components\): /);
+  });
+
+  it(".mjs·.cjs 파일도 기본 대상이다", async () => {
+    put("a.mjs", `export const a = 1;`);
+    put("b.cjs", `module.exports = 1;`);
+    const none = {
+      name: "none",
+      files: JS_FILES,
+      parses: "none" as const,
+      appliesTo: () => false,
+      extract: () => [],
+      write: () => null,
+    };
+    const index = await indexRepo(tmp, [none]);
+    expect(index.files.scanned).toBe(2);
   });
 });

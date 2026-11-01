@@ -1,5 +1,5 @@
-import { parseTsx } from "@dsmith/core";
-import { runConformance, type ConformanceCase } from "@dsmith/extractor-api";
+import { parseTsx } from "@dsmith-dev/core";
+import { JS_FILES, metaOf, runConformance, type ConformanceCase } from "@dsmith-dev/extractor-api";
 import { describe, expect, it } from "vitest";
 import { KNOWN_UTILITIES } from "../src/class-parser.js";
 import { RULES } from "../src/extract.js";
@@ -59,6 +59,20 @@ describe("tailwindExtractor", () => {
     const report = runConformance("tailwind", () => tailwindExtractor, cases);
     expect(report.failed).toEqual([]);
     expect(report.passed).toBe(cases.length);
+  });
+
+  it("메타는 JS_FILES를 대상으로 하고 tsx를 파싱하며, detect 신호는 의존성·설정 파일·CSS 지시어다", () => {
+    expect(metaOf(tailwindExtractor)).toMatchObject({
+      name: "tailwind",
+      files: JS_FILES,
+      parses: "tsx",
+      signals: { dependencies: ["tailwindcss"], files: ["**/tailwind.config.*"] },
+    });
+    const code = new RegExp(tailwindExtractor.signals?.code ?? "^$");
+    expect(code.test('@import "tailwindcss";')).toBe(true);
+    expect(code.test("@import url('tailwindcss/preflight');")).toBe(true);
+    expect(code.test("@tailwind utilities;")).toBe(true);
+    expect(code.test('@import "./reset.css";')).toBe(false);
   });
 
   it("name은 tailwind이고 usage의 extractor도 tailwind다", () => {

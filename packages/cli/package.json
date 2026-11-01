@@ -13,11 +13,15 @@
     "dist"
   ],
   "dependencies": {
-    "@dsmith/core": "workspace:*",
-    "@dsmith/detect": "workspace:*",
-    "@dsmith/extractor-api": "workspace:*",
-    "@dsmith/extractor-inline-style": "workspace:*",
-    "@dsmith/extractor-tailwind": "workspace:*",
+    "@dsmith-dev/core": "workspace:*",
+    "@dsmith-dev/detect": "workspace:*",
+    "@dsmith-dev/extractor-api": "workspace:*",
+    "@dsmith-dev/extractor-css": "workspace:*",
+    "@dsmith-dev/extractor-emotion": "workspace:*",
+    "@dsmith-dev/extractor-inline-style": "workspace:*",
+    "@dsmith-dev/extractor-mui-sx": "workspace:*",
+    "@dsmith-dev/extractor-styled": "workspace:*",
+    "@dsmith-dev/extractor-tailwind": "workspace:*",
     "commander": "^12.1.0"
   },
   "devDependencies": {

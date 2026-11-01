@@ -10,6 +10,10 @@
     { "path": "../detect" },
     { "path": "../extractor-api" },
     { "path": "../extractor-inline-style" },
-    { "path": "../extractor-tailwind" }
+    { "path": "../extractor-tailwind" },
+    { "path": "../extractor-css" },
+    { "path": "../extractor-styled" },
+    { "path": "../extractor-emotion" },
+    { "path": "../extractor-mui-sx" }
   ]
 }

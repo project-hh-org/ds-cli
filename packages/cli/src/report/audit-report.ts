@@ -123,7 +123,8 @@ export function renderAuditReport(r: AuditResult): string {
     lines.push(
       ...table(
         ["컴포넌트", "출처", "사용 수"],
-        shown.map((c) => [c.name, c.importedFrom ?? "(출처 없음)", String(c.count)]),
+        // 출처는 묶음 기준인 정규화된 module이다. 그룹의 importedFrom은 처음 본 표기라 서브패스·별칭이 섞여 있다.
+        shown.map((c) => [c.name, c.module !== "" ? c.module : (c.importedFrom ?? "(출처 없음)"), String(c.count)]),
       ),
       ...more(shown.length, r.components.length),
     );
@@ -133,6 +134,17 @@ export function renderAuditReport(r: AuditResult): string {
   lines.push("## 중복 컴포넌트", "");
   if (r.duplicates.length === 0) lines.push("없음");
   else for (const d of r.duplicates) lines.push(`- ${d.names.join(", ")} (${d.reason})`);
+  lines.push("");
+
+  lines.push("## 지역 재정의 컴포넌트", "");
+  if (r.localDefinitions.length === 0) lines.push("없음");
+  else {
+    lines.push(
+      "같은 이름의 컴포넌트가 여러 파일에서 import 없이 쓰였습니다 — 파일마다 따로 정의됐을 가능성이 큽니다.",
+      "",
+      ...table(["컴포넌트", "정의 파일 수"], r.localDefinitions.map((d) => [d.name, String(d.files)])),
+    );
+  }
   lines.push("");
 
   lines.push("## 파일별 하드코딩 상위", "");

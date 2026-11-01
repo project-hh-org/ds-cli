@@ -1,18 +1,10 @@
 import fs from "node:fs/promises";
 import path from "node:path";
+import { DEFAULT_EXCLUDE } from "@dsmith-dev/core";
 import fg from "fast-glob";
 
 /** core 인덱서와 같은 스캔 대상. */
 export const SOURCE_INCLUDE = ["**/*.{tsx,jsx,ts,js}"];
-/** core 인덱서의 기본 제외 목록과 동일하게 유지한다. */
-export const EXCLUDE = [
-  "**/node_modules/**",
-  "**/dist/**",
-  "**/.next/**",
-  "**/build/**",
-  "**/coverage/**",
-  "**/.dsmith/**",
-];
 
 export interface SourceFile {
   /** 루트 기준 POSIX 경로 */
@@ -37,9 +29,9 @@ export async function isDir(p: string): Promise<boolean> {
   }
 }
 
-/** 제외 목록을 적용해 root 기준 POSIX 경로를 정렬해서 돌려준다. */
-export async function listFiles(root: string, patterns: string[]): Promise<string[]> {
-  const files = await fg(patterns, { cwd: root, ignore: EXCLUDE, dot: false });
+/** core 인덱서의 기본 제외(`DEFAULT_EXCLUDE`)와 `exclude`를 적용해 root 기준 POSIX 경로를 정렬해서 돌려준다. */
+export async function listFiles(root: string, patterns: string[], exclude: string[] = []): Promise<string[]> {
+  const files = await fg(patterns, { cwd: root, ignore: [...DEFAULT_EXCLUDE, ...exclude], dot: false });
   return files.map((f) => f.split(path.sep).join("/")).sort();
 }
 
@@ -86,8 +78,13 @@ export async function isMonorepoRoot(root: string): Promise<boolean> {
 const READ_BATCH = 64;
 
 /** 인덱서와 같은 glob의 소스 파일을 텍스트로 읽는다. 읽을 수 없는 파일은 건너뛴다. */
-export async function loadSources(root: string): Promise<SourceFile[]> {
-  const files = await listFiles(root, SOURCE_INCLUDE);
+export async function loadSources(root: string, exclude: string[] = []): Promise<SourceFile[]> {
+  return loadFiles(root, SOURCE_INCLUDE, exclude);
+}
+
+/** glob에 맞는 파일을 텍스트로 읽는다(경로 정렬순). 읽을 수 없는 파일은 건너뛴다. */
+export async function loadFiles(root: string, patterns: string[], exclude: string[] = []): Promise<SourceFile[]> {
+  const files = await listFiles(root, patterns, exclude);
   const out: SourceFile[] = [];
   for (let i = 0; i < files.length; i += READ_BATCH) {
     const batch = files.slice(i, i + READ_BATCH);

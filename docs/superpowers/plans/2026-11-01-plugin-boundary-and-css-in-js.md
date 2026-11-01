@@ -12,7 +12,7 @@
 
 ## Global Constraints
 
-- 패키지 스코프 `@dsmith/*`, CLI `dsmith`; ESM only; `tsconfig.base.json` 상속(`strict`, `noUncheckedIndexedAccess`, `exactOptionalPropertyTypes`)
+- 패키지 스코프 `@dsmith-dev/*`, CLI `dsmith`; ESM only; `tsconfig.base.json` 상속(`strict`, `noUncheckedIndexedAccess`, `exactOptionalPropertyTypes`)
 - Core는 `extractor-*`를 import하지 않는다(테스트 전용 devDependency 예외). detect는 core만 import. cli만 모든 Extractor를 안다
 - Extractor 이름 = detect 방식 이름 = cli 레지스트리 키: `tailwind`, `inline-style`, `css`, `styled`, `emotion`, `mui-sx`
 - `StyleSource`는 변경하지 않는다(`hardcoded | tailwind-default | token | dynamic`). 테마 스케일 참조는 `token`
@@ -79,7 +79,7 @@ fixtures/{styled-app,emotion-app,mui-app}/
   `runConformance`는 케이스 실행 전에 메타를 검사해 실패 시 `failed`에 `{ case: -1, reason: "meta: …" }`를 넣는다: `files.length === 0`, `name`이 `/^[a-z][a-z0-9-]*$/`가 아님, `parses`가 두 값 외.
 
 - [ ] **Step 1: 실패하는 테스트** — conformance.test.ts: `files: []`인 더미 Extractor → `failed[0].case === -1`, reason에 `meta`; `name: "Bad_Name"` → 동일; 정상 메타 더미는 기존대로 통과. inline-style·tailwind 테스트에 `expect(metaOf(x)).toEqual({ name: "inline-style", files: JS_FILES, parses: "tsx" })`(tailwind는 `name: "tailwind"`)
-- [ ] **Step 2: 실패 확인** — `pnpm --filter @dsmith/extractor-api test`, 두 Extractor 테스트 — FAIL(타입/런타임)
+- [ ] **Step 2: 실패 확인** — `pnpm --filter @dsmith-dev/extractor-api test`, 두 Extractor 테스트 — FAIL(타입/런타임)
 - [ ] **Step 3: 구현** — 타입, `metaOf`, conformance 메타 검사; 두 Extractor 객체에 `files: JS_FILES, parses: "tsx"` 추가
 - [ ] **Step 4: 통과 확인** — `pnpm -r build && pnpm test && pnpm typecheck`
 - [ ] **Step 5: Commit** — `feat(extractor-api): Extractor 메타(files·parses)와 prepare 훅 추가`
@@ -102,7 +102,7 @@ fixtures/{styled-app,emotion-app,mui-app}/
   - skip reason: 읽기 실패 `read: …`, Extractor 예외 `parse(<name>): …`, 컴포넌트 파싱 예외 `parse(components): …`
 
 - [ ] **Step 1: 실패하는 테스트** — (a) 가짜 Extractor `{ name: "txt", files: ["**/*.txt"], parses: "none", appliesTo: () => true, extract: ctx => [usage(ctx.file)] , write: () => null }` + `notes.txt`, `a.tsx` → `styles`에 `notes.txt` usage 1건, `files.scanned 2`, `skipped []`(txt는 컴포넌트 파싱 안 함); (b) `prepare`가 파일 순회 전에 정확히 1회 호출(호출 순서 배열로 단언); (c) 두 Extractor가 같은 `.tsx`에 둘 다 적용되지만 `files`가 `**/*.css`인 Extractor는 `.tsx`에 호출되지 않음(spy); (d) 던지는 Extractor의 skip reason이 `parse(bad): boom`
-- [ ] **Step 2: 실패 확인 → 구현 → 통과** — `pnpm --filter @dsmith/core test`
+- [ ] **Step 2: 실패 확인 → 구현 → 통과** — `pnpm --filter @dsmith-dev/core test`
 - [ ] **Step 3: Commit** — `feat(core): 인덱서가 Extractor 글롭 합집합으로 파일을 모으고 JS/TS에서만 컴포넌트를 파싱`
 
 ---
@@ -168,7 +168,7 @@ fixtures/{styled-app,emotion-app,mui-app}/
 
 **Files:**
 - Create: `packages/extractor-styled/{package.json,tsconfig.json}`, `src/{template,extract,write,index}.ts`
-- Create: `packages/extractor-emotion/{package.json,tsconfig.json}`, `src/{extract,write,index}.ts` (depends on `@dsmith/extractor-styled` for `template.ts`)
+- Create: `packages/extractor-emotion/{package.json,tsconfig.json}`, `src/{extract,write,index}.ts` (depends on `@dsmith-dev/extractor-styled` for `template.ts`)
 - Test: 각 `test/{extract,write}.test.ts`
 
 **Interfaces:**

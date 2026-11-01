@@ -1,0 +1,31 @@
+{
+  "name": "@dsmith-dev/extractor-styled",
+  "version": "0.0.0",
+  "description": "dsmith styled-components 추출기",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "dependencies": {
+    "@babel/types": "^7.29.11",
+    "@dsmith-dev/core": "workspace:*",
+    "@dsmith-dev/extractor-api": "workspace:*"
+  },
+  "devDependencies": {
+    "vitest": "^3.0.0"
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  }
+}

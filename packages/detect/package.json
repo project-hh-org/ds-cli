@@ -1,5 +1,5 @@
 {
-  "name": "@dsmith/detect",
+  "name": "@dsmith-dev/detect",
   "version": "0.0.0",
   "description": "dsmith 레포 환경 감지(스타일링·DS·프레임워크·Storybook·lint)와 시작 상태 판정",
   "type": "module",
@@ -16,8 +16,8 @@
     "dist"
   ],
   "dependencies": {
-    "@dsmith/core": "workspace:*",
-    "@dsmith/extractor-api": "workspace:*",
+    "@dsmith-dev/core": "workspace:*",
+    "@dsmith-dev/extractor-api": "workspace:*",
     "fast-glob": "^3.3.3"
   },
   "devDependencies": {

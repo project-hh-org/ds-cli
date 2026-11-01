@@ -1,1 +1,2 @@
-export { cssPropertyToStyleProperty, inlineStyleExtractor } from "./extract.js";
+export { cssPropertyToStyleProperty } from "@dsmith-dev/core";
+export { inlineStyleExtractor } from "./extract.js";

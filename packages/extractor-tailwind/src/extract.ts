@@ -1,11 +1,12 @@
-import { normalizeColor, normalizeLength, parseTsx, traverse } from "@dsmith/core";
+import { normalizeColor, normalizeLength, parseTsx, traverse } from "@dsmith-dev/core";
+import { JS_FILES } from "@dsmith-dev/extractor-api";
 import type {
   ExtractContext,
   Extractor,
   StyleProperty,
   StyleSource,
   StyleUsage,
-} from "@dsmith/extractor-api";
+} from "@dsmith-dev/extractor-api";
 import type { Node } from "@babel/types";
 import { parseClassToken, type ParsedClass } from "./class-parser.js";
 import { defaultTheme } from "./default-theme.js";
@@ -337,6 +338,13 @@ function extract(ctx: ExtractContext): StyleUsage[] {
 
 export const tailwindExtractor: Extractor = {
   name: EXTRACTOR_NAME,
+  files: JS_FILES,
+  parses: "tsx",
+  signals: {
+    dependencies: ["tailwindcss"],
+    files: ["**/tailwind.config.*"],
+    code: "@import\\s+(?:url\\()?[\"']tailwindcss(?:/[^\"']*)?[\"']|@tailwind\\s+(?:base|components|utilities)\\b",
+  },
   appliesTo: (ctx) => /\.[cm]?[jt]sx?$/.test(ctx.file) && ctx.code.includes("className"),
   extract,
   write,

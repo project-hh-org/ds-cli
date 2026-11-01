@@ -1,171 +1,21 @@
-import { normalizeColor, normalizeLength, parseTsx, traverse } from "@dsmith/core";
-import type {
-  ExtractContext,
-  Extractor,
-  StyleProperty,
-  StyleUsage,
-} from "@dsmith/extractor-api";
-import type { Expression, NumericLiteral, ObjectProperty, PatternLike } from "@babel/types";
+import { parseTsx, traverse, usagesFromStyleObject } from "@dsmith-dev/core";
+import { JS_FILES } from "@dsmith-dev/extractor-api";
+import type { ExtractContext, Extractor, StyleUsage } from "@dsmith-dev/extractor-api";
 import { registerPatchTarget, write } from "./write.js";
 
 export const EXTRACTOR_NAME = "inline-style";
 
-const COLOR_PROPERTIES: ReadonlySet<StyleProperty> = new Set<StyleProperty>([
-  "color",
-  "background-color",
-  "border-color",
-  "fill",
-  "stroke",
+const REFERENCE_TYPES: ReadonlySet<string> = new Set([
+  "MemberExpression",
+  "OptionalMemberExpression",
+  "CallExpression",
+  "OptionalCallExpression",
 ]);
 
-function camelToKebab(name: string): string {
-  return name.replace(/[A-Z]/g, (ch) => `-${ch.toLowerCase()}`);
-}
-
-/** React style 객체 키(camelCase 또는 kebab-case)를 StyleProperty로 분류한다. 모르는 키는 "other". */
-export function cssPropertyToStyleProperty(cssProp: string): StyleProperty {
-  const name = camelToKebab(cssProp);
-  if (/^border(-(top|right|bottom|left))?-color$/.test(name)) return "border-color";
-  if (/^border(-[a-z]+)*-radius$/.test(name)) return "border-radius";
-  if (/^padding(-|$)/.test(name)) return "padding";
-  if (/^margin(-|$)/.test(name)) return "margin";
-  switch (name) {
-    case "color":
-    case "background-color":
-    case "fill":
-    case "stroke":
-    case "font-size":
-      return name;
-    case "gap":
-    case "row-gap":
-    case "column-gap":
-      return "gap";
-    case "width":
-    case "min-width":
-    case "max-width":
-      return "width";
-    case "height":
-    case "min-height":
-    case "max-height":
-      return "height";
-    default:
-      return "other";
-  }
-}
-
-/** 값이 색일 때만 색 속성으로 보는 축약 속성. 그 외 값(`1px solid red`, `url(...)`)은 "other"로 둔다. */
-const COLOR_SHORTHANDS: Readonly<Record<string, StyleProperty>> = {
-  background: "background-color",
-  border: "border-color",
-  outline: "border-color",
-};
-
-function propertyOf(key: string, value: Expression | PatternLike): StyleProperty {
-  const shorthand = COLOR_SHORTHANDS[camelToKebab(key)];
-  if (shorthand !== undefined && value.type === "StringLiteral" && normalizeColor(value.value) !== null) {
-    return shorthand;
-  }
-  return cssPropertyToStyleProperty(key);
-}
-
-function propertyKeyName(prop: ObjectProperty): string | null {
-  if (prop.computed) return null;
-  if (prop.key.type === "Identifier") return prop.key.name;
-  if (prop.key.type === "StringLiteral") return prop.key.value;
-  return null;
-}
-
-type Normalized = StyleUsage["normalized"];
-const UNKNOWN: Normalized = { kind: "unknown" };
-
-const LENGTH_PROPERTIES: ReadonlySet<StyleProperty> = new Set<StyleProperty>([
-  "padding",
-  "margin",
-  "gap",
-  "width",
-  "height",
-  "font-size",
-  "border-radius",
-]);
-
-/** 단위 없는 숫자는 길이 속성에서만 px로 본다. opacity·zIndex·fontWeight 등은 길이가 아니다. */
-function normalizeNumber(px: number, property: StyleProperty): Normalized {
-  return LENGTH_PROPERTIES.has(property) ? { kind: "length", px } : UNKNOWN;
-}
-
-/** 숫자 리터럴의 원본 소스 텍스트(`1.50` 등). */
-function numberRaw(node: NumericLiteral): string {
-  const raw = node.extra?.raw;
-  return typeof raw === "string" ? raw : String(node.value);
-}
-
-function normalizeString(raw: string, property: StyleProperty): Normalized {
-  if (COLOR_PROPERTIES.has(property)) return normalizeColor(raw) ?? UNKNOWN;
-  const px = normalizeLength(raw);
-  return px === null ? UNKNOWN : { kind: "length", px };
-}
-
-/** `var(--…)` 값은 CSS 변수(토큰) 참조다. */
-const CSS_VAR_REF = /^\s*var\(\s*--/;
-
-function buildUsage(
-  ctx: ExtractContext,
-  property: StyleProperty,
-  value: Expression | PatternLike,
-): StyleUsage | null {
-  const { start, end, loc } = value;
-  if (start == null || end == null || loc == null) return null;
-
-  const base = {
-    file: ctx.file,
-    line: loc.start.line,
-    column: loc.start.column,
-    property,
-    extractor: EXTRACTOR_NAME,
-  };
-
-  if (value.type === "StringLiteral") {
-    const tokenRef = CSS_VAR_REF.test(value.value);
-    const usage: StyleUsage = {
-      ...base,
-      raw: value.value,
-      normalized: tokenRef ? UNKNOWN : normalizeString(value.value, property),
-      source: tokenRef ? "token" : "hardcoded",
-    };
-    registerPatchTarget(usage, { start, end, file: ctx.file });
-    return usage;
-  }
-  if (value.type === "NumericLiteral") {
-    const usage: StyleUsage = {
-      ...base,
-      raw: numberRaw(value),
-      normalized: normalizeNumber(value.value, property),
-      source: "hardcoded",
-    };
-    registerPatchTarget(usage, { start, end, file: ctx.file });
-    return usage;
-  }
-  if (
-    value.type === "UnaryExpression" &&
-    (value.operator === "-" || value.operator === "+") &&
-    value.argument.type === "NumericLiteral"
-  ) {
-    const px = value.operator === "-" ? -value.argument.value : value.argument.value;
-    const usage: StyleUsage = {
-      ...base,
-      raw: `${value.operator === "-" ? "-" : ""}${numberRaw(value.argument)}`,
-      normalized: normalizeNumber(px, property),
-      source: "hardcoded",
-    };
-    registerPatchTarget(usage, { start, end, file: ctx.file });
-    return usage;
-  }
-  return {
-    ...base,
-    raw: ctx.code.slice(start, end),
-    normalized: UNKNOWN,
-    source: "dynamic",
-  };
+/** 다른 곳에 정의된 스타일을 가리키는 값(`s`, `styles.box`, `styles?.x`, `getStyle()`). `undefined`는 제외. */
+function isStyleReference(node: { type: string; name?: unknown }): boolean {
+  if (node.type === "Identifier") return node.name !== "undefined";
+  return REFERENCE_TYPES.has(node.type);
 }
 
 function extract(ctx: ExtractContext): StyleUsage[] {
@@ -178,14 +28,29 @@ function extract(ctx: ExtractContext): StyleUsage[] {
       const { name, value } = path.node;
       if (name.type !== "JSXIdentifier" || name.name !== "style") return;
       if (value?.type !== "JSXExpressionContainer") return;
+      const expr = value.expression;
+      if (isStyleReference(expr)) {
+        // `style={styles.box}`: 값을 알 수 없지만 커버리지에서 빠지지 않도록 dynamic 한 건으로 센다.
+        const { start, end, loc } = expr;
+        if (start == null || end == null || loc == null) return;
+        usages.push({
+          file: ctx.file,
+          line: loc.start.line,
+          column: loc.start.column,
+          property: "other",
+          raw: ctx.code.slice(start, end),
+          normalized: { kind: "unknown" },
+          source: "dynamic",
+          extractor: EXTRACTOR_NAME,
+        });
+        return;
+      }
       if (value.expression.type !== "ObjectExpression") return;
 
-      for (const prop of value.expression.properties) {
-        if (prop.type !== "ObjectProperty") continue;
-        const key = propertyKeyName(prop);
-        if (key === null) continue;
-        const usage = buildUsage(ctx, propertyOf(key, prop.value), prop.value);
-        if (usage !== null) usages.push(usage);
+      const objectCtx = { file: ctx.file, code: ctx.code, extractor: EXTRACTOR_NAME };
+      for (const { usage, patch } of usagesFromStyleObject(value.expression, objectCtx)) {
+        if (patch !== null) registerPatchTarget(usage, { ...patch, file: ctx.file });
+        usages.push(usage);
       }
     },
   });
@@ -194,6 +59,9 @@ function extract(ctx: ExtractContext): StyleUsage[] {
 
 export const inlineStyleExtractor: Extractor = {
   name: EXTRACTOR_NAME,
+  files: JS_FILES,
+  parses: "tsx",
+  signals: { code: "style=\\{\\{" },
   appliesTo: (ctx) => /\.[cm]?[jt]sx?$/.test(ctx.file) && ctx.code.includes("style="),
   extract,
   write,

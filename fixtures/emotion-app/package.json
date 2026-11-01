@@ -1,0 +1,10 @@
+{
+  "name": "@dsmith-fixtures/emotion-app",
+  "private": true,
+  "description": "dsmith 테스트용 fixture. 의존성은 선언만 하고 설치하지 않는다.",
+  "dependencies": {
+    "@emotion/react": "^11.13.0",
+    "@emotion/styled": "^11.13.0",
+    "react": "^18.3.0"
+  }
+}

@@ -1,5 +1,172 @@
 // Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
 
+exports[`examples/legacy-demo > Tailwind·inline·CSS가 섞인 데모 어드민: 점수 52, Button·Badge 중복, 세 Extractor가 켜진다 1`] = `
+"# DS Audit
+
+- root: <root>
+- 날짜: <date>
+- state: 1
+- provisional: false
+- 분석한 파일: 26개 (스타일 사용 213, 컴포넌트 사용 33)
+- 동적 값: 13
+
+건강 점수: 52
+
+산식: 100 × (0.5×(1−hardcodedShare) + 0.3×dsImportShare + 0.2×max(0, 1−duplicateCount/10))
+
+- hardcodedShare: 0.3422
+- dsImportShare: 0.0909
+- duplicateCount: 2
+
+## 하드코딩 색 후보
+
+| 대표 hex | 사용 수 | 제안 이름 | 변종 |
+| --- | --- | --- | --- |
+| #3b82f6 | 12 | blue-400 | #3b82f6 ×7, #2f7bee ×3, #3a81f5 ×1, #3c83f7 ×1 |
+| #111827 | 5 | blue-900 | #111827 ×5 |
+| #e53e3e | 4 | red-500 | #e53e3e ×2, #ef4444 ×1, #f04545 ×1 |
+| #f9fafb | 4 | gray-50 | #f9fafb ×2, #ffffff ×2 |
+| #6b7280 | 3 | gray-500 | #6b7280 ×3 |
+| #e5e7eb | 3 | gray-100 | #e5e7eb ×3 |
+
+## 간격 후보
+
+| px | 사용 수 | 스케일 |
+| --- | --- | --- |
+| 18 | 9 | 벗어남 |
+| 10 | 3 | 벗어남 |
+| 13 | 3 | 벗어남 |
+| 22 | 3 | 벗어남 |
+| 8 | 1 | 4px 배수 |
+| 2 | 1 | 벗어남 |
+| 3 | 1 | 벗어남 |
+| 7 | 1 | 벗어남 |
+| 11 | 1 | 벗어남 |
+
+## 컴포넌트 사용량
+
+| 컴포넌트 | 출처 | 사용 수 |
+| --- | --- | --- |
+| KpiCard | src/components/KpiCard | 4 |
+| Button | src/components/ui/button | 3 |
+| Button | src/components/Button | 3 |
+| PrimaryButton | src/legacy/PrimaryButton | 3 |
+| Table | src/components/Table | 3 |
+| Input | src/components/forms/Input | 2 |
+| Select | src/components/forms/Select | 2 |
+| Badge | src/components/Badge | 1 |
+| Badge | src/components/common/StatusBadge | 1 |
+| DialogPrimitive.Content | @radix-ui/react-dialog | 1 |
+| DialogPrimitive.Overlay | @radix-ui/react-dialog | 1 |
+| DialogPrimitive.Portal | @radix-ui/react-dialog | 1 |
+| DialogPrimitive.Title | @radix-ui/react-dialog | 1 |
+| EmptyNote | src/lib/legacy-helpers | 1 |
+| EmptyState | src/components/EmptyState | 1 |
+| Link | next | 1 |
+| Modal | src/components/Modal | 1 |
+| Sidebar | src/components/Sidebar | 1 |
+| StatusBadge | src/components/common/StatusBadge | 1 |
+| Topbar | src/components/Topbar | 1 |
+
+## 중복 컴포넌트
+
+- Button, Badge (same-name-different-source)
+
+## 지역 재정의 컴포넌트
+
+없음
+
+## 파일별 하드코딩 상위
+
+| 파일 | 하드코딩 수 |
+| --- | --- |
+| src/components/Topbar.tsx | 10 |
+| app/globals.css | 7 |
+| app/products/[id]/page.tsx | 5 |
+| src/components/common/StatusBadge.tsx | 4 |
+| src/components/KpiCard.tsx | 4 |
+| src/components/Modal.tsx | 4 |
+| app/settings/page.tsx | 3 |
+| src/components/Badge.tsx | 3 |
+| src/components/Button.tsx | 3 |
+| src/components/Sidebar.tsx | 3 |
+| src/components/Table.tsx | 3 |
+| src/legacy/PrimaryButton.tsx | 3 |
+| src/lib/legacy-helpers.js | 3 |
+| app/orders/page.tsx | 2 |
+| app/page.tsx | 2 |
+| src/components/forms/Input.tsx | 2 |
+| src/components/forms/Select.tsx | 2 |
+| app/customers/page.tsx | 1 |
+
+## 건너뜀
+
+건너뜀 0개
+"
+`;
+
+exports[`fixtures/emotion-app > emotion이 켜지고, css prop 객체의 중첩 &:hover 색까지 하드코딩 색 2종으로 센다 1`] = `
+"# DS Audit
+
+- root: <root>
+- 날짜: <date>
+- state: 0
+- provisional: false
+- 분석한 파일: 3개 (스타일 사용 9, 컴포넌트 사용 2)
+- 동적 값: 1
+
+건강 점수: 20
+
+산식: 100 × (0.5×(1−hardcodedShare) + 0.3×dsImportShare + 0.2×max(0, 1−duplicateCount/10))
+
+- hardcodedShare: 1
+- dsImportShare: 0
+- duplicateCount: 0
+
+## 하드코딩 색 후보
+
+| 대표 hex | 사용 수 | 제안 이름 | 변종 |
+| --- | --- | --- | --- |
+| #111827 | 2 | blue-900 | #111827 ×2 |
+| #ef4444 | 1 | red-400 | #ef4444 ×1 |
+
+## 간격 후보
+
+| px | 사용 수 | 스케일 |
+| --- | --- | --- |
+| 8 | 2 | 4px 배수 |
+| 4 | 1 | 4px 배수 |
+| 16 | 1 | 4px 배수 |
+
+## 컴포넌트 사용량
+
+| 컴포넌트 | 출처 | 사용 수 |
+| --- | --- | --- |
+| Badge | src/components/Badge | 1 |
+| Panel | src/components/Panel | 1 |
+
+## 중복 컴포넌트
+
+없음
+
+## 지역 재정의 컴포넌트
+
+없음
+
+## 파일별 하드코딩 상위
+
+| 파일 | 하드코딩 수 |
+| --- | --- |
+| src/pages/Orders.tsx | 4 |
+| src/components/Badge.tsx | 2 |
+| src/components/Panel.tsx | 2 |
+
+## 건너뜀
+
+건너뜀 0개
+"
+`;
+
 exports[`fixtures/inline-app > inline-style만 켜지고 동적 값 1건을 센다. background 축약형 색도 색 클러스터에 들어간다 1`] = `
 "# DS Audit
 
@@ -36,6 +203,10 @@ exports[`fixtures/inline-app > inline-style만 켜지고 동적 값 1건을 센�
 없음
 
 ## 중복 컴포넌트
+
+없음
+
+## 지역 재정의 컴포넌트
 
 없음
 
@@ -90,11 +261,139 @@ exports[`fixtures/mixed-app > 두 extractor가 켜지고, 한 파일에서 양�
 
 없음
 
+## 지역 재정의 컴포넌트
+
+없음
+
 ## 파일별 하드코딩 상위
 
 | 파일 | 하드코딩 수 |
 | --- | --- |
 | src/Banner.tsx | 2 |
+
+## 건너뜀
+
+건너뜀 0개
+"
+`;
+
+exports[`fixtures/mui-app > mui-sx가 켜지고, @mui/material이 대표 DS이며 서브패스 Button import는 중복이 아니다 1`] = `
+"# DS Audit
+
+- root: <root>
+- 날짜: <date>
+- state: 1
+- provisional: false
+- 분석한 파일: 3개 (스타일 사용 6, 컴포넌트 사용 8)
+- 동적 값: 0
+
+건강 점수: 76
+
+산식: 100 × (0.5×(1−hardcodedShare) + 0.3×dsImportShare + 0.2×max(0, 1−duplicateCount/10))
+
+- hardcodedShare: 0.3333
+- dsImportShare: 0.75
+- duplicateCount: 0
+
+## 하드코딩 색 후보
+
+| 대표 hex | 사용 수 | 제안 이름 | 변종 |
+| --- | --- | --- | --- |
+| #111111 | 1 | gray-900 | #111111 ×1 |
+
+## 간격 후보
+
+없음
+
+## 컴포넌트 사용량
+
+| 컴포넌트 | 출처 | 사용 수 |
+| --- | --- | --- |
+| Button | @mui/material | 2 |
+| AddIcon | @mui/icons-material | 1 |
+| Box | @mui/material | 1 |
+| Members | src/pages/Members | 1 |
+| Plans | src/pages/Plans | 1 |
+| Stack | @mui/material | 1 |
+| Typography | @mui/material | 1 |
+
+## 중복 컴포넌트
+
+없음
+
+## 지역 재정의 컴포넌트
+
+없음
+
+## 파일별 하드코딩 상위
+
+| 파일 | 하드코딩 수 |
+| --- | --- |
+| src/pages/Members.tsx | 2 |
+
+## 건너뜀
+
+건너뜀 0개
+"
+`;
+
+exports[`fixtures/styled-app > styled만 켜지고, 템플릿 리터럴의 근접한 파랑이 한 클러스터로 합쳐지며 지역 Header는 중복이 아니다 1`] = `
+"# DS Audit
+
+- root: <root>
+- 날짜: <date>
+- state: 0
+- provisional: false
+- 분석한 파일: 4개 (스타일 사용 5, 컴포넌트 사용 6)
+- 동적 값: 1
+
+건강 점수: 20
+
+산식: 100 × (0.5×(1−hardcodedShare) + 0.3×dsImportShare + 0.2×max(0, 1−duplicateCount/10))
+
+- hardcodedShare: 1
+- dsImportShare: 0
+- duplicateCount: 0
+
+## 하드코딩 색 후보
+
+| 대표 hex | 사용 수 | 제안 이름 | 변종 |
+| --- | --- | --- | --- |
+| #3b82f6 | 2 | blue-400 | #3b82f6 ×1, #3c83f7 ×1 |
+
+## 간격 후보
+
+| px | 사용 수 | 스케일 |
+| --- | --- | --- |
+| 16 | 1 | 4px 배수 |
+| 13 | 1 | 벗어남 |
+
+## 컴포넌트 사용량
+
+| 컴포넌트 | 출처 | 사용 수 |
+| --- | --- | --- |
+| Button | src/components/Button | 2 |
+| Card | src/components/Card | 2 |
+| Header | (출처 없음) | 2 |
+
+## 중복 컴포넌트
+
+없음
+
+## 지역 재정의 컴포넌트
+
+같은 이름의 컴포넌트가 여러 파일에서 import 없이 쓰였습니다 — 파일마다 따로 정의됐을 가능성이 큽니다.
+
+| 컴포넌트 | 정의 파일 수 |
+| --- | --- |
+| Header | 2 |
+
+## 파일별 하드코딩 상위
+
+| 파일 | 하드코딩 수 |
+| --- | --- |
+| src/components/Button.tsx | 2 |
+| src/components/Card.tsx | 2 |
 
 ## 건너뜀
 
@@ -140,6 +439,10 @@ exports[`fixtures/tailwind-app > Tailwind만 켜지고, 근접한 파랑 두 개
 | PricingCard | app/components/PricingCard | 1 |
 
 ## 중복 컴포넌트
+
+없음
+
+## 지역 재정의 컴포넌트
 
 없음
 
@@ -194,6 +497,10 @@ exports[`fixtures/with-ds-app > radix + 로컬 components/ui는 로컬 DS이고,
 ## 중복 컴포넌트
 
 - Button (same-name-different-source)
+
+## 지역 재정의 컴포넌트
+
+없음
 
 ## 파일별 하드코딩 상위
 

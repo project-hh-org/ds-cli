@@ -1,4 +1,4 @@
-import { isRatedUsage, type Index } from "@dsmith/core";
+import { isRatedUsage, type Index } from "@dsmith-dev/core";
 import { isDsSpecifier, type DsDetection } from "./detect-ds.js";
 import type { SourceFile } from "./fs-utils.js";
 
@@ -36,10 +36,15 @@ export function sharesFromIndex(index: Index, ds: DsDetection): IndexShares {
   const ratedUsages = index.styles.filter((u) => u.source !== "dynamic" && isRatedUsage(u));
   const hardcoded = ratedUsages.filter((u) => u.source === "hardcoded").length;
   const rated = ratedUsages.length;
+  // module이 우선이고, importedFrom은 안전망이다(module 해석이 어긋난 이전 index.json이나 예상 못한 별칭 모양).
   const fromDs =
     ds.kind === "none"
       ? 0
-      : index.components.filter((c) => c.importedFrom !== null && isDsSpecifier(c.importedFrom, ds)).length;
+      : index.components.filter(
+          (c) =>
+            (c.module !== "" && isDsSpecifier(c.module, ds)) ||
+            (c.importedFrom !== null && isDsSpecifier(c.importedFrom, ds)),
+        ).length;
   return {
     hardcodedShare: ratio(hardcoded, rated),
     dsImportShare: ratio(fromDs, index.components.length),

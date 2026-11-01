@@ -3,7 +3,7 @@
 작성일: 2026-10-31
 상태: 승인 (2026-10-31, 셀프 리뷰 반영: install/ai 경계, 건강 점수 정의)
 
-> 도구 이름: dsmith (DS + smith — 디자인 시스템을 만들고 다듬는 도구). npm: `dsmith`, 스코프 `@dsmith/*`.
+> 도구 이름: dsmith (DS + smith — 디자인 시스템을 만들고 다듬는 도구). npm: `dsmith`, 스코프 `@dsmith-dev/*`.
 
 ## 1. 목적
 
@@ -208,9 +208,9 @@ npm 공개. 사용자가 설치하는 단위와 레포 안 패키지 단위를 �
 | --- | --- | --- |
 | CLI | `dsmith` | core + detect + 기본 Extractor 번들 — `npx` 한 번에 동작 |
 | lint | `eslint-plugin-dsmith` | ESLint 표준 네이밍 |
-| MCP | `@dsmith/mcp` (또는 `npx dsmith mcp`) | 단독 바이너리 |
-| 추가 Extractor | `@dsmith/extractor-*` | detect가 감지했는데 미설치면 설치 안내 |
-| 플러그인 계약 | `@dsmith/extractor-api`, `@dsmith/ds-source-api` | 제3자 Extractor 제작용 |
+| MCP | `@dsmith-dev/mcp` (또는 `npx dsmith mcp`) | 단독 바이너리 |
+| 추가 Extractor | `@dsmith-dev/extractor-*` | detect가 감지했는데 미설치면 설치 안내 |
+| 플러그인 계약 | `@dsmith-dev/extractor-api`, `@dsmith-dev/ds-source-api` | 제3자 Extractor 제작용 |
 
 - 스킬·슬래시 명령·AGENTS.md는 `install`이 내려쓰므로 별도 배포 없음. Claude Code 전역 설치용 플러그인 레포만 따로
 - 버전 관리 changesets, GitHub Actions에서 `npm publish --provenance`, 0.x로 시작, MIT, 처음부터 public

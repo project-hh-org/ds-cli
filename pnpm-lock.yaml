@@ -20,19 +20,31 @@ importers:
 
   packages/cli:
     dependencies:
-      '@dsmith/core':
+      '@dsmith-dev/core':
         specifier: workspace:*
         version: link:../core
-      '@dsmith/detect':
+      '@dsmith-dev/detect':
         specifier: workspace:*
         version: link:../detect
-      '@dsmith/extractor-api':
+      '@dsmith-dev/extractor-api':
         specifier: workspace:*
         version: link:../extractor-api
-      '@dsmith/extractor-inline-style':
+      '@dsmith-dev/extractor-css':
+        specifier: workspace:*
+        version: link:../extractor-css
+      '@dsmith-dev/extractor-emotion':
+        specifier: workspace:*
+        version: link:../extractor-emotion
+      '@dsmith-dev/extractor-inline-style':
         specifier: workspace:*
         version: link:../extractor-inline-style
-      '@dsmith/extractor-tailwind':
+      '@dsmith-dev/extractor-mui-sx':
+        specifier: workspace:*
+        version: link:../extractor-mui-sx
+      '@dsmith-dev/extractor-styled':
+        specifier: workspace:*
+        version: link:../extractor-styled
+      '@dsmith-dev/extractor-tailwind':
         specifier: workspace:*
         version: link:../extractor-tailwind
       commander:
@@ -54,7 +66,7 @@ importers:
       '@babel/types':
         specifier: ^7.29.11
         version: 7.29.11
-      '@dsmith/extractor-api':
+      '@dsmith-dev/extractor-api':
         specifier: workspace:*
         version: link:../extractor-api
       culori:
@@ -63,8 +75,11 @@ importers:
       fast-glob:
         specifier: ^3.3.3
         version: 3.3.3
+      picomatch:
+        specifier: ^4.0.7
+        version: 4.0.7
     devDependencies:
-      '@dsmith/extractor-inline-style':
+      '@dsmith-dev/extractor-inline-style':
         specifier: workspace:*
         version: link:../extractor-inline-style
       '@types/babel__traverse':
@@ -73,16 +88,19 @@ importers:
       '@types/culori':
         specifier: ^2.1.1
         version: 2.1.1
+      '@types/picomatch':
+        specifier: ^4.0.3
+        version: 4.0.3
       vitest:
         specifier: ^3.0.0
         version: 3.2.7(@types/node@22.20.5)
 
   packages/detect:
     dependencies:
-      '@dsmith/core':
+      '@dsmith-dev/core':
         specifier: workspace:*
         version: link:../core
-      '@dsmith/extractor-api':
+      '@dsmith-dev/extractor-api':
         specifier: workspace:*
         version: link:../extractor-api
       fast-glob:
@@ -99,28 +117,83 @@ importers:
         specifier: ^3.0.0
         version: 3.2.7(@types/node@22.20.5)
 
-  packages/extractor-inline-style:
+  packages/extractor-css:
     dependencies:
-      '@dsmith/core':
+      '@dsmith-dev/core':
         specifier: workspace:*
         version: link:../core
-      '@dsmith/extractor-api':
+      '@dsmith-dev/extractor-api':
         specifier: workspace:*
         version: link:../extractor-api
     devDependencies:
+      vitest:
+        specifier: ^3.0.0
+        version: 3.2.7(@types/node@22.20.5)
+
+  packages/extractor-emotion:
+    dependencies:
+      '@dsmith-dev/extractor-api':
+        specifier: workspace:*
+        version: link:../extractor-api
+      '@dsmith-dev/extractor-styled':
+        specifier: workspace:*
+        version: link:../extractor-styled
+    devDependencies:
+      vitest:
+        specifier: ^3.0.0
+        version: 3.2.7(@types/node@22.20.5)
+
+  packages/extractor-inline-style:
+    dependencies:
+      '@dsmith-dev/core':
+        specifier: workspace:*
+        version: link:../core
+      '@dsmith-dev/extractor-api':
+        specifier: workspace:*
+        version: link:../extractor-api
+    devDependencies:
+      vitest:
+        specifier: ^3.0.0
+        version: 3.2.7(@types/node@22.20.5)
+
+  packages/extractor-mui-sx:
+    dependencies:
       '@babel/types':
         specifier: ^7.29.11
         version: 7.29.11
+      '@dsmith-dev/core':
+        specifier: workspace:*
+        version: link:../core
+      '@dsmith-dev/extractor-api':
+        specifier: workspace:*
+        version: link:../extractor-api
+    devDependencies:
+      vitest:
+        specifier: ^3.0.0
+        version: 3.2.7(@types/node@22.20.5)
+
+  packages/extractor-styled:
+    dependencies:
+      '@babel/types':
+        specifier: ^7.29.11
+        version: 7.29.11
+      '@dsmith-dev/core':
+        specifier: workspace:*
+        version: link:../core
+      '@dsmith-dev/extractor-api':
+        specifier: workspace:*
+        version: link:../extractor-api
+    devDependencies:
       vitest:
         specifier: ^3.0.0
         version: 3.2.7(@types/node@22.20.5)
 
   packages/extractor-tailwind:
     dependencies:
-      '@dsmith/core':
+      '@dsmith-dev/core':
         specifier: workspace:*
         version: link:../core
-      '@dsmith/extractor-api':
+      '@dsmith-dev/extractor-api':
         specifier: workspace:*
         version: link:../extractor-api
     devDependencies:
@@ -504,6 +577,9 @@ packages:
 
   '@types/node@22.20.5':
     resolution: {integrity: sha512-U2+DNr+wSjpsTS/wZGYHq7GcwfuSmKiKvoPvK22zwTlRhU91yOniN4qRR5KhIjvif7ysw/dz/hKmfDH0Ris4aA==}
+
+  '@types/picomatch@4.0.3':
+    resolution: {integrity: sha512-iG0T6+nYJ9FAPmx9SsUlnwcq1ZVRuCXcVEvWnntoPlrOpwtSTKNDC9uVAxTsC3PUvJ+99n4RpAcNgBbHX3JSnQ==}
 
   '@vitest/expect@3.2.7':
     resolution: {integrity: sha512-E8eBXaKibuvH2pSZErOjdVb5vF4PbKYcrnluBTYxEk1l/VhhwZg1kZQsdtjq+CsF5CFydf2Rdkz7jDHKSisi3w==}
@@ -1081,6 +1157,8 @@ snapshots:
   '@types/node@22.20.5':
     dependencies:
       undici-types: 6.21.0
+
+  '@types/picomatch@4.0.3': {}
 
   '@vitest/expect@3.2.7':
     dependencies:

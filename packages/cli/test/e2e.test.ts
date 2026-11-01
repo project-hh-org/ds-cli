@@ -5,7 +5,9 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { runAudit } from "../src/commands/audit.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-const fixture = (name: string): string => path.resolve(here, "../../../fixtures", name);
+/** `fixtures/<name>` 또는 `examples/<name>`(base 지정) 절대 경로. */
+const fixture = (name: string, base: "fixtures" | "examples" = "fixtures"): string =>
+  path.resolve(here, "../../..", base, name);
 
 /** 실행 시각·체크아웃 위치에 따라 바뀌는 값(날짜, ISO 타임스탬프, 절대 경로)을 가린다. */
 function mask(markdown: string, root: string): string {
@@ -29,8 +31,8 @@ beforeEach(() => {
 });
 afterEach(clean);
 
-async function audit(name: string) {
-  root = fixture(name);
+async function audit(name: string, base: "fixtures" | "examples" = "fixtures") {
+  root = fixture(name, base);
   clean();
   const { result, reportPath } = await runAudit(root);
   return { result, report: mask(fs.readFileSync(reportPath, "utf-8"), root) };
@@ -99,6 +101,89 @@ describe("fixtures/with-ds-app", () => {
     expect(result.components.find((c) => c.importedFrom === "src/legacy/Button")?.count).toBe(2);
     expect(result.health.dsImportShare).toBeGreaterThan(0);
     expect(result.health.duplicateCount).toBe(1);
+    expect(report).toMatchSnapshot();
+  });
+});
+
+describe("fixtures/styled-app", () => {
+  it("styled만 켜지고, 템플릿 리터럴의 근접한 파랑이 한 클러스터로 합쳐지며 지역 Header는 중복이 아니다", async () => {
+    const { result, report } = await audit("styled-app");
+    expect(result.detect.state).toBe(0);
+    expect(result.detect.ds.kind).toBe("none");
+    expect(result.detect.activeExtractors).toEqual(["styled"]);
+
+    expect(result.hardcoded.colors).toHaveLength(1);
+    expect(result.hardcoded.colors[0]?.members.map((m) => m.hex).sort()).toEqual(["#3b82f6", "#3c83f7"]);
+    expect(result.dynamicCount).toBe(1);
+    expect(result.hardcoded.spacing).toContainEqual(expect.objectContaining({ px: 13, onScale: false }));
+
+    expect(result.localDefinitions).toEqual([{ name: "Header", files: 2 }]);
+    expect(result.duplicates).toEqual([]);
+    expect(report).toMatchSnapshot();
+  });
+});
+
+describe("fixtures/emotion-app", () => {
+  it("emotion이 켜지고, css prop 객체의 중첩 &:hover 색까지 하드코딩 색 2종으로 센다", async () => {
+    const { result, report } = await audit("emotion-app");
+    expect(result.detect.activeExtractors).toEqual(["emotion"]);
+
+    expect(result.hardcoded.colors).toHaveLength(2);
+    expect(result.hardcoded.colors.flatMap((c) => c.members.map((m) => m.hex)).sort()).toEqual(["#111827", "#ef4444"]);
+    // #EF4444는 Orders.tsx의 `"&:hover": { color }` 안에만 있다.
+    const index = readJson(root, "index.json");
+    const hover = index.styles.filter(
+      (u: { file: string; normalized: { hex?: string } }) => u.file === "src/pages/Orders.tsx" && u.normalized.hex === "#ef4444",
+    );
+    expect(hover).toHaveLength(1);
+    expect(hover[0]).toMatchObject({ extractor: "emotion", source: "hardcoded", property: "color" });
+    // Panel.tsx의 `css={panel}` 참조는 dynamic other 한 건이다(점수 대상 아님, 점수 불변).
+    expect(result.dynamicCount).toBe(1);
+    expect(index.styles).toContainEqual(
+      expect.objectContaining({ file: "src/components/Panel.tsx", raw: "panel", property: "other", source: "dynamic" }),
+    );
+    expect(result.health.score).toBe(20);
+    expect(report).toMatchSnapshot();
+  });
+});
+
+describe("fixtures/mui-app", () => {
+  it("mui-sx가 켜지고, @mui/material이 대표 DS이며 서브패스 Button import는 중복이 아니다", async () => {
+    const { result, report } = await audit("mui-app");
+    expect(result.detect.activeExtractors).toContain("mui-sx");
+    expect(result.detect.ds.kind).toBe("npm");
+    expect(result.detect.ds.packageName).toBe("@mui/material");
+    expect(result.duplicates).toEqual([]);
+
+    const index = readJson(root, "index.json");
+    // 서브패스 병합: 루트 import와 서브패스 import의 Button이 같은 module로 정규화된다.
+    const buttons = index.components.filter((c: { name: string }) => c.name === "Button");
+    expect(buttons.length).toBeGreaterThanOrEqual(2);
+    expect(new Set(buttons.map((c: { importedFrom: string }) => c.importedFrom))).toEqual(
+      new Set(["@mui/material", "@mui/material/Button"]),
+    );
+    expect(new Set(buttons.map((c: { module: string }) => c.module))).toEqual(new Set(["@mui/material"]));
+
+    const tokens = index.styles.filter((u: { source: string }) => u.source === "token");
+    expect(tokens.length).toBe(4);
+    // paddingTop(장문 spacing 키)도 token으로 센다.
+    expect(tokens).toContainEqual(expect.objectContaining({ file: "src/pages/Plans.tsx", property: "padding", extractor: "mui-sx" }));
+    expect(result.hardcoded.colors.flatMap((c) => c.members.map((m) => m.hex))).toContain("#111111");
+    expect(report).toMatchSnapshot();
+  });
+});
+
+describe("examples/legacy-demo", () => {
+  it("Tailwind·inline·CSS가 섞인 데모 어드민: 점수 52, Button·Badge 중복, 세 Extractor가 켜진다", async () => {
+    const { result, report } = await audit("legacy-demo", "examples");
+    expect(result.detect.activeExtractors).toEqual(["tailwind", "inline-style", "css"]);
+    expect(result.detect.ds).toMatchObject({ kind: "local", dir: "src/components/ui" });
+    expect(result.detect.state).toBe(1);
+    expect(result.duplicates).toEqual([{ names: ["Button", "Badge"], reason: "same-name-different-source" }]);
+    expect(result.index.files).toEqual({ scanned: 26, skipped: [] });
+    // css 추출기가 app/globals.css의 하드코딩 값 7건을 평가에 더해 53 → 52가 됐다.
+    expect(result.hardcoded.byFile).toContainEqual({ file: "app/globals.css", count: 7 });
+    expect(result.health).toMatchObject({ score: 52, rated: 187, hardcodedShare: 0.3422, dsImportShare: 0.0909, duplicateCount: 2 });
     expect(report).toMatchSnapshot();
   });
 });

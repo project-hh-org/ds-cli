@@ -1,5 +1,5 @@
-import { runConformance, type ConformanceCase } from "@dsmith/extractor-api";
-import { parseTsx } from "@dsmith/core";
+import { JS_FILES, metaOf, runConformance, type ConformanceCase } from "@dsmith-dev/extractor-api";
+import { parseTsx } from "@dsmith-dev/core";
 import { describe, expect, it } from "vitest";
 import { cssPropertyToStyleProperty, inlineStyleExtractor } from "../src/index.js";
 
@@ -65,7 +65,8 @@ const cases: ConformanceCase[] = [
     file: "h.tsx",
     code: `export const H = () => <div style={{ border: "1px solid #ef4444", background: theme.bg }} />;`,
     expect: [
-      { property: "other", source: "hardcoded", normalized: { kind: "unknown" } },
+      // 축약 값의 색 토큰만 border-color로 본다(CSS 텍스트 선언과 같은 규칙).
+      { property: "border-color", raw: "#ef4444", source: "hardcoded", normalized: { kind: "color", hex: "#ef4444" } },
       { property: "other", source: "dynamic", normalized: { kind: "unknown" } },
     ],
   },
@@ -98,8 +99,29 @@ describe("inlineStyleExtractor", () => {
     expect(inlineStyleExtractor.name).toBe("inline-style");
   });
 
-  it("style={styles.box}는 usage를 만들지 않는다", () => {
-    const code = `export const D = () => <div style={styles.box} />;`;
+  it("메타는 JS_FILES를 대상으로 하고 tsx를 파싱하며, detect 신호는 소스의 style={{ 다", () => {
+    expect(metaOf(inlineStyleExtractor)).toEqual({
+      name: "inline-style",
+      files: JS_FILES,
+      parses: "tsx",
+      signals: { code: "style=\\{\\{" },
+    });
+  });
+
+  it("style 참조(식별자·멤버·호출)는 dynamic other 한 건으로 센다", () => {
+    const code = `export const D = () => (\n  <>\n    <div style={styles.box} />\n    <div style={s} />\n    <div style={getStyle(1)} />\n    <div style={styles?.x} />\n  </>\n);`;
+    const usages = inlineStyleExtractor.extract({ root: "/", file: "d.tsx", code });
+    expect(usages.map((u) => [u.property, u.raw, u.source, u.normalized.kind, u.line, u.column])).toEqual([
+      ["other", "styles.box", "dynamic", "unknown", 3, 16],
+      ["other", "s", "dynamic", "unknown", 4, 16],
+      ["other", "getStyle(1)", "dynamic", "unknown", 5, 16],
+      ["other", "styles?.x", "dynamic", "unknown", 6, 16],
+    ]);
+    expect(usages.every((u) => u.extractor === "inline-style" && inlineStyleExtractor.write(u, "x") === null)).toBe(true);
+  });
+
+  it("style={undefined}·문자열 style은 usage를 만들지 않는다", () => {
+    const code = `export const D = () => <><div style={undefined} /><div style="color: red" /></>;`;
     expect(inlineStyleExtractor.extract({ root: "/", file: "d.tsx", code })).toEqual([]);
   });
 
@@ -114,10 +136,11 @@ describe("inlineStyleExtractor", () => {
     expect(inlineStyleExtractor.appliesTo(ctx("a.tsx", `<div className="x" />`))).toBe(false);
   });
 
-  it("line은 1-based, column은 0-based로 값 노드 위치를 가리킨다", () => {
-    const code = `const x = (\n  <div style={{ color: "#fff" }} />\n);`;
-    const [usage] = inlineStyleExtractor.extract({ root: "/", file: "e.tsx", code });
-    expect(usage).toMatchObject({ file: "e.tsx", line: 2, column: 23, extractor: "inline-style" });
+  it("line은 1-based, column은 0-based로 값(문자열은 따옴표 안 값) 위치를 가리킨다", () => {
+    const code = `const x = (\n  <div style={{ color: "#fff", padding: 4 }} />\n);`;
+    const [color, padding] = inlineStyleExtractor.extract({ root: "/", file: "e.tsx", code });
+    expect(color).toMatchObject({ file: "e.tsx", line: 2, column: 24, extractor: "inline-style" });
+    expect(padding).toMatchObject({ line: 2, column: 40 });
   });
 
   it("문자열 키, spread, computed 키를 처리한다", () => {
@@ -172,11 +195,11 @@ describe("inlineStyleExtractor", () => {
     ]);
   });
 
-  it("비길이 숫자 리터럴도 치환 패치는 만든다", () => {
+  it("비길이 숫자 리터럴(opacity)은 점수 대상이 아니라 치환 패치를 만들지 않는다", () => {
     const code = "const x = <div style={{ opacity: 0.5 }} />;";
     const [usage] = inlineStyleExtractor.extract({ root: "/", file: "m.tsx", code });
-    const patch = inlineStyleExtractor.write(usage!, "var(--opacity-half)")!;
-    expect(code.slice(patch.start, patch.end)).toBe("0.5");
+    expect(usage).toMatchObject({ property: "other", raw: "0.5", source: "hardcoded" });
+    expect(inlineStyleExtractor.write(usage!, "var(--opacity-half)")).toBeNull();
   });
 
   it("복구 불가능한 문법 오류는 parseTsx와 마찬가지로 예외를 던진다", () => {

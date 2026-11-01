@@ -40,10 +40,14 @@ function fixture(): AuditResult {
     },
     dynamicCount: 3,
     components: [
-      { name: "Button", importedFrom: "src/ui/Button", count: 71 },
-      { name: "Card", importedFrom: null, count: 2 },
+      { name: "Button", importedFrom: "src/ui/Button", module: "src/ui/Button", count: 71 },
+      { name: "Card", importedFrom: null, module: "", count: 2 },
     ],
     duplicates: [{ names: ["Button"], reason: "same-name-different-source" }],
+    localDefinitions: [
+      { name: "Header", files: 3 },
+      { name: "Card", files: 2 },
+    ],
     health: { score: 62, hardcodedShare: 0.25, dsImportShare: 0.4, duplicateCount: 1, rated: 32, formula: FORMULA },
   };
 }
@@ -89,6 +93,40 @@ describe("renderAuditReport", () => {
     expect(md).toContain("| Card | (출처 없음) | 2 |");
     expect(md).toContain("## 중복 컴포넌트");
     expect(md).toContain("Button");
+  });
+
+  it("컴포넌트 사용량의 출처는 묶음 기준인 정규화된 module이다(서브패스·별칭 importedFrom이 아니라)", () => {
+    const base = fixture();
+    const out = renderAuditReport({
+      ...base,
+      components: [
+        { name: "Stack", importedFrom: "@mui/material/Stack", module: "@mui/material", count: 5 },
+        { name: "Card", importedFrom: "@src/components/Card", module: "src/components/Card", count: 3 },
+        { name: "Header", importedFrom: null, module: "", count: 1 },
+      ],
+    });
+    expect(out).toContain("| Stack | @mui/material | 5 |");
+    expect(out).toContain("| Card | src/components/Card | 3 |");
+    expect(out).toContain("| Header | (출처 없음) | 1 |");
+    expect(out).not.toContain("@mui/material/Stack");
+  });
+
+  it("중복 컴포넌트 다음에 지역 재정의 컴포넌트 표와 설명을 그린다", () => {
+    const section = md.slice(md.indexOf("## 지역 재정의 컴포넌트"), md.indexOf("## 파일별 하드코딩 상위"));
+    expect(md.indexOf("## 중복 컴포넌트")).toBeLessThan(md.indexOf("## 지역 재정의 컴포넌트"));
+    expect(section).toContain("| 컴포넌트 | 정의 파일 수 |");
+    expect(section).toContain("| Header | 3 |\n| Card | 2 |");
+    expect(section).toContain(
+      "같은 이름의 컴포넌트가 여러 파일에서 import 없이 쓰였습니다 — 파일마다 따로 정의됐을 가능성이 큽니다.",
+    );
+  });
+
+  it("지역 재정의가 없으면 없음으로 표기한다", () => {
+    const none = fixture();
+    none.localDefinitions = [];
+    const out = renderAuditReport(none);
+    const section = out.slice(out.indexOf("## 지역 재정의 컴포넌트"), out.indexOf("## 파일별 하드코딩 상위"));
+    expect(section).toBe("## 지역 재정의 컴포넌트\n\n없음\n\n");
   });
 
   it("파일별 하드코딩 상위와 건너뜀을 그린다", () => {

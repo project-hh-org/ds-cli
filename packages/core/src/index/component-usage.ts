@@ -1,10 +1,17 @@
 import { posix } from "node:path";
-import type { File, JSXMemberExpression, JSXOpeningElement } from "@babel/types";
+import type { Declaration, File, JSXMemberExpression, JSXOpeningElement, Statement } from "@babel/types";
 import type { ComponentUsage } from "../model/component-usage.js";
 import { traverse } from "../parse/tsx.js";
-import { normalizeSpecifier } from "./specifier.js";
+import {
+  isBareSpecifier,
+  normalizePackageSpecifier,
+  normalizeSpecifier,
+  resolveWithPaths,
+  SOURCE_EXTENSION,
+  stripModulePath,
+  type TsPaths,
+} from "./specifier.js";
 
-const SOURCE_EXTENSION = /\.(?:[cm]?[jt]sx?)$/;
 const PATH_ALIAS = /^[@~]\//;
 
 /**
@@ -19,6 +26,45 @@ function resolveSource(file: string, specifier: string): string {
     return `${base}${normalizeSpecifier(specifier)}`.replace(SOURCE_EXTENSION, "");
   }
   return specifier;
+}
+
+/** module 해석에 쓰는 레포 단위 정보. indexRepo가 레포마다 한 번 모은다. */
+export interface ModuleContext {
+  /** `<root>/<baseUrl>` 바로 아래 항목 이름(디렉터리, 확장자를 뗀 소스 파일). bare import가 baseUrl 기준 경로인지 가린다. */
+  baseUrlEntries?: ReadonlySet<string>;
+  /** root package.json의 dependencies·devDependencies·peerDependencies 이름. */
+  dependencies?: ReadonlySet<string>;
+}
+
+/**
+ * 같은 모듈이면 같은 값이 되는 비교 키.
+ * 상대 경로 → root 상대 경로, tsconfig paths 별칭 → paths로 푼 root 상대 경로(단, 패키지 모양 specifier가
+ * root 밖을 가리키거나 의존성으로 선언된 패키지면 패키지명), 그 밖의 `@/`·`~/` → resolveSource 규칙,
+ * baseUrl 아래 항목으로 시작하는 bare specifier → baseUrl 기준 경로(의존성으로 선언된 패키지명이면 제외),
+ * 패키지 → 서브패스를 뗀 패키지명.
+ * 경로는 확장자와 끝의 `/`·`/index`를 뗀다.
+ */
+function moduleOf(file: string, specifier: string, tsPaths: TsPaths | null, ctx: ModuleContext): string {
+  if (specifier.startsWith(".")) return stripModulePath(resolveSource(file, specifier));
+  const viaPaths = resolveWithPaths(specifier, file, tsPaths);
+  if (viaPaths !== null) {
+    // 모노레포 앱이 workspace 패키지를 소스로 매핑한 별칭: 루트·서브패스 import가 한 패키지로 모여야 한다.
+    if (isBareSpecifier(specifier)) {
+      const pkg = normalizePackageSpecifier(specifier);
+      if (viaPaths.startsWith("../") || ctx.dependencies?.has(pkg) === true) return pkg;
+    }
+    return viaPaths;
+  }
+  if (PATH_ALIAS.test(specifier)) return stripModulePath(resolveSource(file, specifier));
+  // 선언된 의존성은 baseUrl 아래 같은 이름의 항목보다 우선한다(node_modules 패키지로 본다).
+  const declaredDependency = ctx.dependencies?.has(normalizePackageSpecifier(specifier)) === true;
+  if (tsPaths !== null && isBareSpecifier(specifier) && !declaredDependency) {
+    const first = specifier.split("/")[0] ?? "";
+    if (ctx.baseUrlEntries?.has(first) === true) {
+      return stripModulePath(posix.join(tsPaths.baseUrl === "" ? "." : tsPaths.baseUrl, specifier));
+    }
+  }
+  return normalizePackageSpecifier(specifier);
 }
 
 function memberRoot(name: JSXMemberExpression): string | null {
@@ -45,14 +91,46 @@ function componentName(node: JSXOpeningElement): { name: string; root: string } 
   return null;
 }
 
-export function extractComponentUsage(file: string, ast: File): ComponentUsage[] {
-  const imports = new Map<string, string>();
+/**
+ * 파일 최상위에 선언한 이름: `function X`, `const/let/var X =`(구조 분해 제외), `class X`,
+ * 그리고 이것들의 `export`·`export default` 형태.
+ */
+function topLevelDeclaredNames(ast: File): Set<string> {
+  const names = new Set<string>();
+  const add = (decl: Statement | Declaration | null | undefined): void => {
+    if (decl === null || decl === undefined) return;
+    if ((decl.type === "FunctionDeclaration" || decl.type === "ClassDeclaration") && decl.id) names.add(decl.id.name);
+    if (decl.type === "VariableDeclaration") {
+      for (const d of decl.declarations) if (d.id.type === "Identifier") names.add(d.id.name);
+    }
+  };
+  for (const stmt of ast.program.body) {
+    if (stmt.type === "ExportNamedDeclaration") add(stmt.declaration);
+    else if (stmt.type === "ExportDefaultDeclaration") {
+      const d = stmt.declaration;
+      if (d.type === "FunctionDeclaration" || d.type === "ClassDeclaration") add(d);
+    } else add(stmt);
+  }
+  return names;
+}
+
+export function extractComponentUsage(
+  file: string,
+  ast: File,
+  tsPaths: TsPaths | null = null,
+  ctx: ModuleContext = {},
+): ComponentUsage[] {
+  const imports = new Map<string, { importedFrom: string; module: string }>();
   for (const stmt of ast.program.body) {
     if (stmt.type !== "ImportDeclaration") continue;
-    const source = resolveSource(file, stmt.source.value);
+    const source = {
+      importedFrom: resolveSource(file, stmt.source.value),
+      module: moduleOf(file, stmt.source.value, tsPaths, ctx),
+    };
     for (const spec of stmt.specifiers) imports.set(spec.local.name, source);
   }
 
+  const declared = topLevelDeclaredNames(ast);
   const usages: ComponentUsage[] = [];
   traverse(ast, {
     JSXOpeningElement(path) {
@@ -64,13 +142,17 @@ export function extractComponentUsage(file: string, ast: File): ComponentUsage[]
         if (attr.type !== "JSXAttribute") continue;
         props.push(attr.name.type === "JSXIdentifier" ? attr.name.name : `${attr.name.namespace.name}:${attr.name.name.name}`);
       }
-      usages.push({
+      const source = imports.get(found.root);
+      const usage: ComponentUsage = {
         file,
         line,
         name: found.name,
-        importedFrom: imports.get(found.root) ?? null,
+        importedFrom: source?.importedFrom ?? null,
+        module: source?.module ?? "",
         props,
-      });
+      };
+      if (source === undefined && declared.has(found.root)) usage.declaredLocally = true;
+      usages.push(usage);
     },
   });
   return usages;
