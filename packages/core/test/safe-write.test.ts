@@ -28,6 +28,7 @@ function opts(extra: Partial<SafeWriteOptions> = {}): SafeWriteOptions {
   return {
     manifestFile: p(".dsmith", "install.json"),
     displayRoot: root,
+    confineTo: root,
     tool: "install",
     version: "0.1.0",
     ...extra,
@@ -76,18 +77,26 @@ const jsonWrite = (rel: string, keyPath: string[], value: unknown): PlannedWrite
 
 describe("regionKey", () => {
   it("파일은 상대 경로, 블록·JSON 키는 접미사가 붙는다", () => {
-    expect(regionKey(fileWrite(".claude/skills/ds/SKILL.md", "x"), root)).toBe(".claude/skills/ds/SKILL.md");
-    expect(regionKey(blockWrite("AGENTS.md", "x"), root)).toBe("AGENTS.md#block:<!-- dsmith:start -->");
-    expect(regionKey(jsonWrite(".mcp.json", ["mcpServers", "dsmith"], {}), root)).toBe(
-      ".mcp.json#json:mcpServers.dsmith",
+    const mf = p(".dsmith", "install.json");
+    expect(regionKey(fileWrite(".claude/skills/ds/SKILL.md", "x"), mf)).toBe(".claude/skills/ds/SKILL.md");
+    expect(regionKey(blockWrite("AGENTS.md", "x"), mf)).toBe("AGENTS.md#block:<!-- dsmith:start -->");
+    expect(regionKey(jsonWrite(".mcp.json", ["mcpServers", "dsmith"], {}), mf)).toBe(
+      `.mcp.json#json:${JSON.stringify(["mcpServers", "dsmith"])}`,
     );
+  });
+
+  it("기준은 매니페스트의 ../.. 이고, 기준 밖 파일은 절대 경로, keyPath 'a.b'와 'a','b'는 다른 키", () => {
+    const mf = p("home", ".dsmith", "install.json");
+    expect(regionKey(fileWrite("home/.codex/prompts/ds.md", "x"), mf)).toBe(".codex/prompts/ds.md");
+    expect(regionKey(fileWrite("elsewhere/x.md", "x"), mf)).toBe(p("elsewhere", "x.md").split(path.sep).join("/"));
+    expect(regionKey(jsonWrite("home/s.json", ["a.b"], 1), mf)).not.toBe(regionKey(jsonWrite("home/s.json", ["a", "b"], 1), mf));
   });
 });
 
 describe("safeWrite — file 영역", () => {
   it("없는 파일은 created, 매니페스트에 해시가 기록된다", async () => {
     const res = await safeWrite([fileWrite("a/SKILL.md", "hello")], opts());
-    expect(res.outcomes).toEqual([{ file: "a/SKILL.md", region: "file", status: "created" }]);
+    expect(res.outcomes).toEqual([{ file: "a/SKILL.md", key: "a/SKILL.md", region: "file", status: "created" }]);
     expect(res.applied).toBe(true);
     expect(res.manifestChanged).toBe(true);
     expect(read("a/SKILL.md")).toBe("hello\n");
@@ -390,7 +399,7 @@ describe("safeWrite — dryRun", () => {
   it("unchanged는 diff가 없고 manifestChanged도 false", async () => {
     await safeWrite([fileWrite("a.md", "x")], opts());
     const res = await safeWrite([fileWrite("a.md", "x")], opts({ dryRun: true }));
-    expect(res.outcomes[0]).toEqual({ file: "a.md", region: "file", status: "unchanged" });
+    expect(res.outcomes[0]).toEqual({ file: "a.md", key: "a.md", region: "file", status: "unchanged" });
     expect(res.manifestChanged).toBe(false);
   });
 });
@@ -407,7 +416,7 @@ describe("safeWrite — 표시 경로", () => {
             { file: path.join(other, "z.md"), region: { kind: "file" }, content: "y" },
             fileWrite("inside.md", "z"),
           ],
-          opts({ home }),
+          opts({ home, confineTo: os.tmpdir() }),
         );
         expect(res.outcomes.map((o) => o.file)).toEqual([
           "~/.codex/prompts/ds.md",
@@ -420,5 +429,199 @@ describe("safeWrite — 표시 경로", () => {
     } finally {
       fs.rmSync(home, { recursive: true, force: true });
     }
+  });
+});
+
+describe("safeWrite — confineTo(경로 격리)", () => {
+  let outside: string;
+  beforeEach(() => {
+    outside = fs.mkdtempSync(path.join(os.tmpdir(), "dsmith-outside-"));
+  });
+  afterEach(() => {
+    fs.rmSync(outside, { recursive: true, force: true });
+  });
+
+  it("매니페스트가 밖을 가리키는 심볼릭 링크면 던지고 밖의 파일은 그대로", async () => {
+    fs.mkdirSync(p(".dsmith"));
+    fs.writeFileSync(path.join(outside, "victim.json"), "원본");
+    fs.symlinkSync(path.join(outside, "victim.json"), p(".dsmith", "install.json"));
+    await expect(safeWrite([fileWrite("a.md", "x")], opts())).rejects.toThrow(/매니페스트/);
+    expect(fs.readFileSync(path.join(outside, "victim.json"), "utf-8")).toBe("원본");
+    expect(fs.existsSync(p("a.md"))).toBe(false);
+  });
+
+  it("안쪽을 가리키는 매니페스트 심볼릭 링크도 거부한다", async () => {
+    fs.mkdirSync(p(".dsmith"));
+    fs.writeFileSync(p("real-manifest.json"), "{}");
+    fs.symlinkSync(p("real-manifest.json"), p(".dsmith", "install.json"));
+    await expect(safeWrite([fileWrite("a.md", "x")], opts())).rejects.toThrow(/심볼릭/);
+  });
+
+  it(".dsmith 디렉터리가 밖으로의 링크면 던진다", async () => {
+    fs.symlinkSync(outside, p(".dsmith"));
+    await expect(safeWrite([fileWrite("a.md", "x")], opts())).rejects.toThrow(/매니페스트/);
+    expect(fs.readdirSync(outside)).toEqual([]);
+  });
+
+  it("AGENTS.md가 밖으로의 링크면 skipped-invalid, 밖의 파일은 그대로(force여도)", async () => {
+    fs.writeFileSync(path.join(outside, "AGENTS.md"), "밖의 본문\n");
+    fs.symlinkSync(path.join(outside, "AGENTS.md"), p("AGENTS.md"));
+    for (const force of [false, true]) {
+      const res = await safeWrite([blockWrite("AGENTS.md", "x")], opts({ force }));
+      expect(res.outcomes[0]?.status).toBe("skipped-invalid");
+      expect(res.outcomes[0]?.reason).toContain("심볼릭");
+    }
+    expect(fs.readFileSync(path.join(outside, "AGENTS.md"), "utf-8")).toBe("밖의 본문\n");
+    expect(fs.lstatSync(p("AGENTS.md")).isSymbolicLink()).toBe(true);
+  });
+
+  it(".mcp.json이 밖으로의 링크면 skipped-invalid, 키를 주입하지 않는다", async () => {
+    fs.writeFileSync(path.join(outside, "mcp.json"), '{"mcpServers":{}}');
+    fs.symlinkSync(path.join(outside, "mcp.json"), p(".mcp.json"));
+    const res = await safeWrite([jsonWrite(".mcp.json", ["mcpServers", "dsmith"], { command: "x" })], opts());
+    expect(res.outcomes[0]?.status).toBe("skipped-invalid");
+    expect(fs.readFileSync(path.join(outside, "mcp.json"), "utf-8")).toBe('{"mcpServers":{}}');
+    expect(fs.existsSync(p(".dsmith/install.json"))).toBe(false);
+  });
+
+  it("끊어진 심볼릭 링크와 밖으로의 상위 디렉터리 링크도 거부(밖에 아무것도 만들지 않음)", async () => {
+    fs.symlinkSync(path.join(outside, "nope.md"), p("dangling.md"));
+    fs.symlinkSync(outside, p(".claude"));
+    const res = await safeWrite([fileWrite("dangling.md", "x"), fileWrite(".claude/skills/ds/SKILL.md", "y")], opts());
+    expect(res.outcomes.map((o) => o.status)).toEqual(["skipped-invalid", "skipped-invalid"]);
+    expect(fs.readdirSync(outside)).toEqual([]);
+  });
+
+  it("레포 안을 가리키는 심볼릭 링크는 따라가서 쓰고 링크는 유지한다", async () => {
+    fs.mkdirSync(p("docs"));
+    fs.writeFileSync(p("docs", "agents-real.md"), "# 본문\n");
+    fs.symlinkSync(p("docs", "agents-real.md"), p("AGENTS.md"));
+    const res = await safeWrite([blockWrite("AGENTS.md", "규칙")], opts());
+    expect(res.outcomes[0]?.status).toBe("created");
+    expect(fs.lstatSync(p("AGENTS.md")).isSymbolicLink()).toBe(true);
+    expect(read("docs/agents-real.md")).toContain("규칙");
+    const again = await safeWrite([blockWrite("AGENTS.md", "규칙")], opts());
+    expect(again.outcomes[0]?.status).toBe("unchanged");
+  });
+
+  it("stow 스타일: confineTo(홈) 안에서 홈 안쪽으로 향하는 디렉터리 링크는 허용", async () => {
+    fs.mkdirSync(p("dotfiles", "claude"), { recursive: true });
+    fs.symlinkSync(p("dotfiles", "claude"), p(".claude"));
+    const res = await safeWrite([fileWrite(".claude/commands/ds.md", "x")], opts());
+    expect(res.outcomes[0]?.status).toBe("created");
+    expect(read("dotfiles/claude/commands/ds.md")).toBe("x\n");
+  });
+
+  it("confineTo 자체가 심볼릭 링크 경로여도 realpath로 비교한다", async () => {
+    const alias = path.join(outside, "alias");
+    fs.symlinkSync(root, alias);
+    const res = await safeWrite([fileWrite("a.md", "x")], opts({ confineTo: alias }));
+    expect(res.outcomes[0]?.status).toBe("created");
+  });
+
+  it("상대 경로 file·manifestFile·confineTo는 던진다", async () => {
+    await expect(safeWrite([{ file: "a.md", region: { kind: "file" }, content: "x" }], opts())).rejects.toThrow(/절대/);
+    await expect(safeWrite([fileWrite("a.md", "x")], opts({ confineTo: "rel" }))).rejects.toThrow(/절대/);
+    await expect(safeWrite([fileWrite("a.md", "x")], opts({ manifestFile: "m.json" }))).rejects.toThrow(/절대/);
+  });
+});
+
+describe("safeWrite — 매니페스트 키 기준", () => {
+  it("글로벌 스코프를 서로 다른 displayRoot(cwd)에서 써도 키가 같아 두 번째는 unchanged", async () => {
+    const home = p("home");
+    fs.mkdirSync(home);
+    const global = (displayRoot: string): SafeWriteOptions =>
+      opts({ manifestFile: path.join(home, ".dsmith", "install.json"), confineTo: home, displayRoot, home });
+    const writes: PlannedWrite[] = [
+      { file: path.join(home, ".codex", "prompts", "ds.md"), region: { kind: "file" }, content: "x" },
+    ];
+    const first = await safeWrite(writes, global(p("repo-a")));
+    expect(first.outcomes[0]?.status).toBe("created");
+    const second = await safeWrite(writes, global(home));
+    expect(second.outcomes[0]?.status).toBe("unchanged");
+    expect(second.manifestChanged).toBe(false);
+    const keys = Object.keys(JSON.parse(fs.readFileSync(path.join(home, ".dsmith", "install.json"), "utf-8")).entries);
+    expect(keys).toEqual([".codex/prompts/ds.md"]);
+    expect(first.outcomes[0]?.key).toBe(".codex/prompts/ds.md");
+  });
+});
+
+describe("safeWrite — 안전성 보강", () => {
+  it("`__proto__`라는 이름의 파일도 매니페스트 키로 안전하게 왕복한다", async () => {
+    await safeWrite([fileWrite("__proto__", "x")], opts());
+    expect(Object.hasOwn(JSON.parse(read(".dsmith/install.json")).entries, "__proto__")).toBe(true);
+    const again = await safeWrite([fileWrite("__proto__", "x")], opts());
+    expect(again.outcomes[0]?.status).toBe("unchanged");
+    expect(({} as Record<string, unknown>).sha256).toBeUndefined();
+    const next = await safeWrite([fileWrite("__proto__", "y")], opts());
+    expect(next.outcomes[0]?.status).toBe("updated");
+  });
+
+  it("keyPath에 __proto__가 있거나 비어 있으면 skipped-invalid, 오염·쓰기 없음", async () => {
+    const res = await safeWrite(
+      [jsonWrite("s.json", ["__proto__", "polluted"], true), jsonWrite("s.json", [], 1)],
+      opts({ force: true }),
+    );
+    expect(res.outcomes.map((o) => o.status)).toEqual(["skipped-invalid", "skipped-invalid"]);
+    expect(({} as Record<string, unknown>).polluted).toBeUndefined();
+    expect(fs.existsSync(p("s.json"))).toBe(false);
+  });
+
+  it("블록 마커 오용(시작=끝, 내용에 마커 줄, 빈 마커)은 던진다", async () => {
+    const region = (start: string, end: string): PlannedWrite["region"] => ({ kind: "block", start, end });
+    const w = (r: PlannedWrite["region"], content: string): PlannedWrite => ({ file: p("A.md"), region: r, content });
+    await expect(safeWrite([w(region("<!-- m -->", "<!-- m -->"), "x")], opts())).rejects.toThrow(/마커/);
+    await expect(safeWrite([w(region("<!-- s -->", "<!-- e -->"), "a\n<!-- e -->\nb")], opts())).rejects.toThrow(/마커/);
+    await expect(safeWrite([w(region("", "<!-- e -->"), "a")], opts())).rejects.toThrow(/마커/);
+    expect(fs.existsSync(p("A.md"))).toBe(false);
+  });
+
+  it("JSON 재작성은 CRLF·BOM을 유지하고 들여쓰기는 키 줄에서 잡는다", async () => {
+    const original = '﻿{"list": [\r\n      1,\r\n      2\r\n    ],\r\n  "other": true}\r\n';
+    fs.writeFileSync(p("s.json"), original);
+    await safeWrite([jsonWrite("s.json", ["added"], 1)], opts());
+    const text = fs.readFileSync(p("s.json"), "utf-8");
+    expect(text.startsWith("﻿{")).toBe(true);
+    expect(text.replace(/\r\n/g, "").includes("\n")).toBe(false);
+    expect(text.endsWith("}\r\n")).toBe(true);
+    expect(text).toContain('\r\n  "other": true');
+    expect(JSON.parse(text.slice(1))).toEqual({ list: [1, 2], other: true, added: 1 });
+    const again = await safeWrite([jsonWrite("s.json", ["added"], 1)], opts());
+    expect(again.outcomes[0]?.status).toBe("unchanged");
+  });
+
+  it("BOM이 있는 file 영역은 BOM을 비교에서 제외하고 갱신 시 유지한다", async () => {
+    fs.writeFileSync(p("a.md"), "﻿same\n");
+    const res = await safeWrite([fileWrite("a.md", "same")], opts());
+    expect(res.outcomes[0]?.status).toBe("unchanged");
+    const next = await safeWrite([fileWrite("a.md", "next")], opts());
+    expect(next.outcomes[0]?.status).toBe("updated");
+    expect(read("a.md")).toBe("﻿next\n");
+  });
+
+  it("JSONC(주석·후행 쉼표)는 일반 파싱 실패와 다른 사유로 skipped-invalid", async () => {
+    fs.writeFileSync(p("c.json"), '{\n  // 주석\n  "a": 1,\n}\n');
+    fs.writeFileSync(p("bad.json"), "{");
+    const res = await safeWrite(
+      [jsonWrite("c.json", ["b"], 1), jsonWrite("bad.json", ["b"], 1)],
+      opts({ force: true }),
+    );
+    expect(res.outcomes.map((o) => o.status)).toEqual(["skipped-invalid", "skipped-invalid"]);
+    expect(res.outcomes[0]?.reason).toContain("JSONC");
+    expect(res.outcomes[1]?.reason).not.toContain("JSONC");
+    expect(read("c.json")).toBe('{\n  // 주석\n  "a": 1,\n}\n');
+  });
+
+  it("임시 파일(.tmp-*)을 남기지 않는다", async () => {
+    await safeWrite([fileWrite("a/b.md", "x"), jsonWrite("s.json", ["k"], 1)], opts());
+    const all = fs.readdirSync(root, { recursive: true }).map(String);
+    expect(all.filter((f) => f.includes(".tmp-"))).toEqual([]);
+  });
+
+  it("기존 파일의 권한을 유지한다", async () => {
+    await safeWrite([fileWrite("run.sh", "v1")], opts());
+    fs.chmodSync(p("run.sh"), 0o755);
+    await safeWrite([fileWrite("run.sh", "v2")], opts());
+    expect(fs.statSync(p("run.sh")).mode & 0o777).toBe(0o755);
   });
 });
