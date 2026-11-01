@@ -93,3 +93,12 @@ export { chooseDecision } from "./decisions/choose.js";
 export type { ComponentDoc } from "./component/props.js";
 export { readComponentDoc, readTypeProps } from "./component/props.js";
 export { moduleOfFile } from "./component/definition.js";
+export type {
+  Catalog,
+  CatalogComponent,
+  CatalogOrigin,
+  CatalogProp,
+  CatalogSource,
+  CatalogToken,
+} from "./catalog/model.js";
+export { CATALOG_FILE, readCatalog, writeCatalog } from "./catalog/store.js";

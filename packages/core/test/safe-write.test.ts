@@ -624,4 +624,39 @@ describe("safeWrite — 안전성 보강", () => {
     await safeWrite([fileWrite("run.sh", "v2")], opts());
     expect(fs.statSync(p("run.sh")).mode & 0o777).toBe(0o755);
   });
+
+  describe("create-only", () => {
+    const co = (rel: string, content: string): PlannedWrite => ({ ...fileWrite(rel, content), mode: "create-only" });
+
+    it("없으면 created(매니페스트 기록), 같은 내용이면 unchanged", async () => {
+      const r1 = await safeWrite([co("src/Button.tsx", "v1")], opts());
+      expect(r1.outcomes[0]?.status).toBe("created");
+      expect(read("src/Button.tsx")).toBe("v1\n");
+      expect(Object.keys(manifest().entries)).toContain("src/Button.tsx");
+      const r2 = await safeWrite([co("src/Button.tsx", "v1")], opts());
+      expect(r2.outcomes[0]?.status).toBe("unchanged");
+    });
+
+    it("다른 내용이면 force여도 skipped-exists, 파일 불변, diff 없음", async () => {
+      fs.mkdirSync(p("src"), { recursive: true });
+      fs.writeFileSync(p("src/Button.tsx"), "mine\n");
+      for (const force of [false, true]) {
+        const r = await safeWrite([co("src/Button.tsx", "v1")], opts({ force }));
+        expect(r.outcomes[0]).toMatchObject({ status: "skipped-exists", reason: "기존 파일 — 스캐폴드는 새 파일만 씀" });
+        expect(r.outcomes[0]?.diff).toBeUndefined();
+        expect(read("src/Button.tsx")).toBe("mine\n");
+      }
+    });
+
+    it("dryRun이면 created도 쓰지 않는다", async () => {
+      const r = await safeWrite([co("src/Button.tsx", "v1")], opts({ dryRun: true }));
+      expect(r.outcomes[0]?.status).toBe("created");
+      expect(fs.existsSync(p("src/Button.tsx"))).toBe(false);
+    });
+
+    it("file이 아닌 영역과 같이 쓰면 호출자 버그로 던진다", async () => {
+      const bad: PlannedWrite = { ...blockWrite("AGENTS.md", "x"), mode: "create-only" };
+      await expect(safeWrite([bad], opts())).rejects.toThrow("create-only");
+    });
+  });
 });
