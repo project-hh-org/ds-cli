@@ -67,3 +67,22 @@ export { readCssVariableTokens } from "./tokens/css-variables.js";
 export { proposalTokens } from "./tokens/proposal.js";
 export type { LoadedTokens, TokenSourceKind } from "./tokens/load.js";
 export { loadTokens, tokenCategoryOf } from "./tokens/load.js";
+export type {
+  Confidence,
+  DecisionCard,
+  DecisionKind,
+  DecisionListItem,
+  DecisionOption,
+  DecisionRecord,
+  DecisionsFile,
+  DifferenceAspect,
+  GitHistory,
+} from "./decisions/model.js";
+export { readDecisions, recordDecision, writeDecisions } from "./decisions/store.js";
+export type { DecisionCandidate } from "./decisions/candidates.js";
+export { decisionCandidates, listDecisions } from "./decisions/candidates.js";
+export { readGitHistory } from "./decisions/git-history.js";
+export type { CardInput } from "./decisions/card.js";
+export { buildDecisionCard } from "./decisions/card.js";
+export type { ExplainOptions, ExplainResult } from "./decisions/explain.js";
+export { explainDecision } from "./decisions/explain.js";
