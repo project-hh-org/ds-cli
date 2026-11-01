@@ -12,6 +12,9 @@
     "test": "pnpm -r --filter './packages/*' --filter ./benchmarks test",
     "typecheck": "pnpm -r --filter './packages/*' --filter ./benchmarks typecheck",
     "lint": "pnpm -r --filter './packages/*' lint",
+    "bench": "pnpm --filter dsmith-benchmarks run bench --",
+    "bench:replay": "pnpm --filter dsmith-benchmarks run bench:replay",
+    "bench:report": "pnpm --filter dsmith-benchmarks run bench:report --",
     "changeset": "changeset",
     "version": "changeset version && pnpm install --lockfile-only",
     "release": "pnpm build && pnpm publish -r --access public --no-git-checks && changeset tag"

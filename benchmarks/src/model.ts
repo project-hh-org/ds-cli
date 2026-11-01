@@ -49,3 +49,61 @@ export interface RunScore {
   /** token / (token + hardcoded + tailwindDefault) */
   tokenShareAll: number | null;
 }
+
+export interface AgentMeta {
+  costUsd?: number;
+  turns?: number;
+  subtype?: string;
+  models?: string[];
+  permissionDenials?: number;
+  isError?: boolean;
+}
+
+export interface RunRecord {
+  prompt: string;
+  condition: Condition;
+  rep: number;
+  status: "ok" | "agent-error" | "timeout" | "replay" | "missing";
+  exitCode: number | null;
+  durationMs: number | null;
+  agentMeta: AgentMeta | null;
+  harnessPathSeen: boolean;
+  score: RunScore;
+}
+
+export interface Aggregate extends UsageCounts {
+  runs: number;
+  okRuns: number;
+  failedRuns: number;
+  missingExpected: number;
+  harnessPathSeen: number;
+  nonDs: number;
+  deprecated: number;
+  dsComponentUses: number;
+  parseFailed: number;
+  files: number;
+  compliance: number | null;
+  tokenShareAll: number | null;
+  /** agentMeta.costUsd 합(하나도 없으면 null) */
+  costUsd: number | null;
+  turns: number | null;
+}
+
+export interface BenchResult {
+  version: 1;
+  /** YYYY-MM-DD */
+  date: string;
+  /** ISO, replay면 null */
+  startedAt: string | null;
+  repo: "legacy-demo" | "with-ds-app";
+  mode: "agent" | "replay";
+  agent: { command: string | null; version: string | null; installTool: string | null; models: string[] };
+  dsmith: { version: string; commit: string | null };
+  base: { tokens: number; dsComponents: number; snapshotSha256: string };
+  prompts: { id: string; file: string; sha256: string }[];
+  conditions: Condition[];
+  repeat: number;
+  timeoutSec: number | null;
+  runs: RunRecord[];
+  aggregate: Partial<Record<Condition, Aggregate>>;
+}

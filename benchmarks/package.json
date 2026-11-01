@@ -29,6 +29,8 @@
     "build": "tsc -b",
     "test": "vitest run",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "bench": "node dist/run.js"
+    "bench": "node dist/run.js",
+    "bench:replay": "node dist/run.js --repo legacy-demo --replay replay/legacy-demo --prompts 01-form,06-badge,12-pagination --date 2026-11-01",
+    "bench:report": "node dist/report.js"
   }
 }

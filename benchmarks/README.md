@@ -23,3 +23,31 @@
   - 토큰 사용률 = `token / (token + hardcoded + tailwindDefault)`
   - `knownToken`: 베이스의 토큰 이름·프리셋 키를 실제로 가리키는 token 사용
   - `nonDs`(prefer-ds-component), `deprecated`, `dsComponentUses`, `parseFailed`
+- `src/report.ts` — 결과 JSON(`BenchResult`)을 결정적 마크다운(`renderReport`)과 README 한 줄(`readmeLine`)로 바꾼다. 숫자는 결과 JSON 값만 쓴다.
+
+## 사용법
+
+저장소 루트에서 실행한다(`pnpm -r build` 먼저).
+
+```
+pnpm bench -- --repo legacy-demo --agent "<에이전트 명령>"    # 실측: 프롬프트 × 조건 × 반복을 순차 실행
+pnpm bench:replay                                             # 산출물 재채점(합성 세트, 네트워크 없음)
+pnpm bench:report -- --in results/<날짜>-legacy-demo.json     # 보고서 .md를 쓰고 README 줄을 출력
+```
+
+- `bench:report`는 `--in`과 같은 이름의 `.md`를 쓴다(`--out`으로 바꿀 수 있다). README 줄은 stdout으로 나오고, 진행 메시지는 stderr로 나온다. `--in`은 패키지 디렉터리(`benchmarks/`) 기준 상대 경로다.
+- README 줄은 baseline·dsmith 두 조건이 다 있는 `agent` 실행 결과에서만 만든다. `replay` 결과나 조건이 하나뿐인 결과는 보고서만 쓰고 줄을 만들지 않는다.
+- 에이전트는 stdin으로 프롬프트를 받는 명령이면 된다. 두 조건에 같은 명령을 쓴다.
+
+## 결과 폴더 구조
+
+```
+results/
+  <날짜>-<레포>.json            결과(BenchResult): 설정, 실행별 점수, 조건별 집계
+  <날짜>-<레포>.md              bench:report가 쓴 보고서
+  <날짜>-<레포>/outputs/        에이전트가 바꾼 파일 전체(replay와 같은 배치) — 커밋해서 재채점에 쓴다
+    <조건>/<프롬프트 id>/<반복>/files/…, run.json
+  <날짜>-<레포>/transcripts/    에이전트 출력 기록(gitignore)
+```
+
+`outputs/`를 `--replay`로 다시 채점하면 커밋된 JSON과 같은 숫자가 나와야 한다. 보고서의 숫자는 JSON에 없는 값을 쓰지 않는다. `replay/`의 산출물은 손으로 쓴 합성이고 README 숫자에 쓰지 않는다.

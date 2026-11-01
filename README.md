@@ -114,6 +114,43 @@ npx dsmith guard --ci --base origin/main     # PR이 새로 들인 것만 검사
 
 `migrate`가 후보를 고르는 규칙, ESLint 플러그인이 보고하는 규칙, `guard --ci`가 세는 규칙, MCP `lint_snippet`의 답은 모두 `@dsmith-dev/core`의 같은 함수(`evaluateFile`·`bestReplacement`)에서 나온다. 그래서 migrate가 바꾼 것은 guard가 신규로 세지 않고, ESLint가 보고한 것은 guard가 같은 위치에서 같은 값으로 센다. `packages/cli/test/e2e-migrate-guard.test.ts`가 `examples/legacy-demo`에서 `init → migrate → guard`를 끝까지 돌려 이를 고정한다.
 
+## 벤치마크
+
+`benchmarks/`(비공개 워크스페이스, 배포 안 함)는 같은 UI 생성 프롬프트 12개를 같은 에이전트에 두 조건으로 돌리고, 만들어진 파일을 위 "같은 규칙 엔진"(`evaluateFile`)으로 채점한다.
+
+<!-- bench:line -->
+아직 실측 결과를 기록하지 않았다.
+
+- `baseline`: dsmith 연결 없음. `audit → init --all`을 거친 같은 베이스에서 `.dsmith/`·AGENTS.md DS 섹션·MCP·슬래시 명령만 뺀 복사본
+- `dsmith`: 같은 베이스에 `install` + `ai`를 끝낸 복사본
+- 두 조건은 같은 베이스·같은 채점 기준(토큰·DS 컴포넌트·정책 스냅샷)·같은 에이전트 명령·같은 환경 변수로 돈다. 프롬프트는 stdin으로 넘기므로 `codex exec`처럼 stdin으로 프롬프트를 받는 명령이면 다른 에이전트로도 돌릴 수 있다(실측은 `claude -p`만 했다).
+
+### 실행
+
+```
+pnpm -r build
+pnpm bench -- --repo legacy-demo --agent "claude -p --output-format stream-json --verbose --model sonnet --max-turns 20 --max-budget-usd 0.5 --permission-mode acceptEdits --allowedTools mcp__dsmith --setting-sources project --no-session-persistence"
+pnpm bench:replay                                                # 미리 받은 산출물을 채점만(네트워크·에이전트 없음)
+pnpm bench:report -- --in results/<날짜>-legacy-demo.json        # 결과 JSON → 마크다운 보고서 + README 줄
+```
+
+실행은 레포 원본이 아니라 `os.tmpdir()` 아래 임시 복사본에서 하고, 채점 코드(`benchmarks/`)는 복사본에 넣지 않는다. 에이전트에는 `CLAUDE*` 환경 변수를 넘기지 않는 정리된 환경을 준다. 에이전트 출력에 채점 코드 경로가 보이면 그 실행에 `harnessPathSeen`을 표시하고 보고서에 경고를 쓴다. 결과 JSON·보고서·산출물은 `benchmarks/results/`에 남고, 산출물을 `bench:replay`와 같은 방식으로 다시 채점하면 같은 숫자가 나온다. 자세한 옵션과 폴더 구조는 [benchmarks/README.md](benchmarks/README.md).
+
+### 지표
+
+- 토큰 준수율 = `token / (token + hardcoded)` — 에이전트가 새로 쓴 스타일 값 중 토큰을 가리킨 비율. Tailwind 기본 스케일 클래스(`p-4`, `bg-blue-100`)는 분모에서 빼고 별도 행으로 센다
+- 토큰 사용률 = `token / (token + hardcoded + tailwind 기본 스케일)`
+- `knownToken` — token 중 베이스의 토큰 이름·프리셋 키를 실제로 가리킨 것(지어낸 변수 `var(--made-up)`는 제외)
+- DS 외 컴포넌트 — `prefer-ds-component` finding 수. 이 밖에 DS 컴포넌트 사용, deprecated, 파싱 실패, 기대 파일 없음을 센다
+- 바뀐 파일에서 새로 생긴 사용만 센다(수정 파일은 원래 있던 값을 빼고 비교 — `guard --ci`와 같은 방식)
+
+### 주장하지 않는 것
+
+- 프롬프트 수와 반복 횟수가 작은 단일 측정이다. 에이전트 출력은 비결정적이고 유의성 검정을 하지 않았으므로 "이번 실행에서 이렇게 나왔다"까지만 말한다.
+- 채점은 dsmith 자신의 규칙 엔진이고, `dsmith` 조건의 에이전트는 같은 엔진(`lint_snippet`)을 쓸 수 있다. 같은 기준에 맞추도록 돕는 효과를 잰 것이지 독립 평가가 아니다.
+- 렌더링·타입 검사는 하지 않았다. 코드가 화면에서 맞게 보이는지, `tokens.css`를 불러오는지는 측정 밖이다.
+- `bench:replay`가 쓰는 산출물은 합성이다. 그 숫자는 채점 파이프라인 검증용이며 성능 근거가 아니다.
+
 ## 지원하는 스타일링 방식
 
 `detect`가 레포에서 감지한 방식 중 이름이 같은 Extractor만 `activeExtractors`로 켜지고, `audit`은 켜진 Extractor로만 스타일 값을 추출한다. 감지된 방식과 겹치는 Extractor가 하나도 없으면 `inline-style`이 대신 켜진다(`fallback`). 레지스트리는 `packages/cli/src/registry.ts`에 있다.
