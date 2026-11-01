@@ -3,7 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { abandonBranch, checkBranch, commitFiles, commitMessage, createBranch } from "../src/git.js";
+import { abandonBranch, checkBranch, commitFiles, commitMessage, createBranch, parseGitVersion } from "../src/git.js";
 
 const KEYS = ["HOME", "GIT_CONFIG_NOSYSTEM", "GIT_CONFIG_GLOBAL", "EMAIL", "GIT_AUTHOR_NAME", "GIT_AUTHOR_EMAIL", "GIT_COMMITTER_NAME", "GIT_COMMITTER_EMAIL", "XDG_CONFIG_HOME"];
 const saved: Record<string, string | undefined> = {};
@@ -135,5 +135,64 @@ describe("checkBranch / createBranch / commitFiles", () => {
     await abandonBranch(root, "main", "ds/gone");
     expect(git(root, "branch", "--show-current").trim()).toBe("main");
     expect(git(root, "branch", "--list", "ds/gone")).toBe("");
+  });
+
+  it("git 2.23 미만이면 쓰기 전에 'git 2.23 이상 필요' 오류", async () => {
+    const root = repo(true);
+    const bin = fs.mkdtempSync(path.join(os.tmpdir(), "dsmith-fakegit-"));
+    dirs.push(bin);
+    const real = execFileSync("which", ["git"], { encoding: "utf-8" }).trim();
+    fs.writeFileSync(path.join(bin, "git"), `#!/bin/sh\nif [ "$1" = "--version" ]; then echo "git version 2.20.1"; exit 0; fi\nexec ${real} "$@"\n`, { mode: 0o755 });
+    const savedPath = process.env.PATH;
+    process.env.PATH = `${bin}${path.delimiter}${savedPath ?? ""}`;
+    try {
+      const check = await checkBranch(root, "ds/x", ["a.ts"]);
+      expect(check.ok).toBe(false);
+      expect(!check.ok && check.reason).toContain("git 2.23 이상 필요");
+    } finally {
+      process.env.PATH = savedPath;
+    }
+  });
+
+  it("버전 문자열 해석", () => {
+    expect(parseGitVersion("git version 2.39.2\n")).toEqual([2, 39]);
+    expect(parseGitVersion("git version 2.37.1 (Apple Git-137.1)")).toEqual([2, 37]);
+    expect(parseGitVersion("???")).toBeNull();
+  });
+
+  it(".gitignore에 걸리는 대상 파일은 쓰기 전에 오류, 추적 중인 파일은 허용", async () => {
+    const root = repo(true);
+    fs.writeFileSync(path.join(root, ".gitignore"), "gen/\nb.ts\n");
+    fs.mkdirSync(path.join(root, "gen"));
+    fs.writeFileSync(path.join(root, "gen", "c.ts"), "export const c = 1;\n");
+    git(root, "add", ".gitignore");
+    git(root, "commit", "-q", "-m", "ignore");
+    const ignored = await checkBranch(root, "ds/x", ["a.ts", "gen/c.ts"]);
+    expect(ignored.ok).toBe(false);
+    expect(!ignored.ok && ignored.reason).toContain("gen/c.ts");
+    expect(!ignored.ok && ignored.reason).toContain(".gitignore");
+    // b.ts는 이미 추적 중이라 무시 규칙에 걸려도 add·commit 된다
+    expect((await checkBranch(root, "ds/x", ["a.ts", "b.ts"])).ok).toBe(true);
+  });
+
+  it("환경에 GIT_DIR·GIT_WORK_TREE가 있어도 root의 레포에서 일한다", async () => {
+    const root = repo(true);
+    const other = repo(true);
+    fs.writeFileSync(path.join(other, "other.ts"), "x\n");
+    git(other, "add", "other.ts");
+    git(other, "commit", "-q", "-m", "other");
+    const rootSha = git(root, "rev-parse", "HEAD").trim();
+    expect(git(other, "rev-parse", "HEAD").trim()).not.toBe(rootSha);
+    process.env.GIT_DIR = path.join(other, ".git");
+    process.env.GIT_WORK_TREE = other;
+    try {
+      expect(await checkBranch(root, "ds/amb", ["a.ts"])).toEqual({ ok: true, base: "main", baseSha: rootSha });
+      await createBranch(root, "ds/amb");
+    } finally {
+      delete process.env.GIT_DIR;
+      delete process.env.GIT_WORK_TREE;
+    }
+    expect(git(root, "branch", "--show-current").trim()).toBe("ds/amb");
+    expect(git(other, "branch", "--list", "ds/amb")).toBe("");
   });
 });

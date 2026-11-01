@@ -3,7 +3,7 @@ import path from "node:path";
 import { chooseDecision, readIndex } from "@dsmith-dev/core";
 import { describe, expect, it } from "vitest";
 import { applyMigration, planMigration, revertMigration, type MigratePlan } from "../src/index.js";
-import { TOKENS_CSS, auditFixture, loadState, makeRepo, read } from "./helpers.js";
+import { SHADCN_BUTTON, TOKENS_CSS, auditFixture, loadState, makeRepo, read } from "./helpers.js";
 
 const OLD = "src/components/Button.tsx";
 const DS = "src/components/ui/button.tsx";
@@ -200,3 +200,96 @@ function expectInvariants(p: MigratePlan): void {
   const skipped = Object.values(p.skipped).reduce((n, v) => n + (v ?? 0), 0);
   expect(p.planned + skipped + p.scope.outOfRange).toBe(p.scope.candidates);
 }
+
+describe("planMigration: shadcn/cva 스타일 대상 (Imp2)", () => {
+  const legacy = `import type { ButtonHTMLAttributes } from "react";
+
+type Props = ButtonHTMLAttributes<HTMLButtonElement> & { variant?: string; size?: string };
+
+export function Button(props: Props) {
+  return <button {...props} />;
+}
+`;
+  const page = (attrs: string) => `import { Button } from "../src/components/Button";\n\nexport const P = () => <Button ${attrs}>a</Button>;\n`;
+  const shadcnRepo = (attrs: string, ds = SHADCN_BUTTON, extra: Record<string, string> = {}) =>
+    repo({ [OLD]: legacy, [DS]: ds, "app/page.tsx": page(attrs), "app/ok.tsx": `import { Button } from "@/components/ui/button";\nexport const Q = () => <Button variant="outline" />;\n`, ...extra });
+
+  it("VariantProps<typeof buttonVariants>를 같은 파일의 cva variants 키로 풀어 mapping 없이 통과시킨다", async () => {
+    const root = shadcnRepo('variant="outline" size="sm" onClick={f} asChild');
+    const { plan, state } = await setup(root);
+    expect(plan.componentHeld).toEqual([]);
+    expect(plan.components).toMatchObject({ imports: 1, props: 0, held: {} });
+    await applyMigration(root, plan, { extractors: state.extractors, version: "t" });
+    expect(read(root, "app/page.tsx")).toContain('import { Button } from "@/components/ui/button";');
+    await auditFixture(root);
+    const index = (await readIndex(root))!;
+    expect([...new Set(index.components.filter((c) => c.name === "Button").map((c) => c.module))]).toEqual(["src/components/ui/button"]);
+  });
+
+  it("cva 키에 없는 값은 허용 값 검사로 보류하고 따옴표 키 값은 허용한다", async () => {
+    const bad = await setup(shadcnRepo('variant="secondary"'));
+    expect(bad.plan.componentHeld[0]).toMatchObject({ reason: "mapping-missing" });
+    expect(bad.plan.componentHeld[0]?.detail).toContain('variant="secondary"');
+    const quoted = await setup(shadcnRepo('variant="ghost-soft"'));
+    expect(quoted.plan.componentHeld).toEqual([]);
+    const expr = await setup(shadcnRepo('variant={d ? "outline" : "nope"}'));
+    expect(expr.plan.componentHeld[0]?.detail).toContain('variant="nope"');
+  });
+
+  it("cva 정의를 찾을 수 없으면 한 번 보류하고, 항등 mapping(--map variant:variant)으로 풀린다", async () => {
+    const unresolved = SHADCN_BUTTON.replace(/const buttonVariants = cva[\s\S]*?\n\}\);\n/, 'import { buttonVariants } from "./variants";\n');
+    expect(unresolved).not.toBe(SHADCN_BUTTON);
+    const held = await setup(shadcnRepo('variant="outline" size="sm"', unresolved));
+    expect(held.plan.files).toEqual([]);
+    expect(held.plan.componentHeld).toHaveLength(1);
+    expect(held.plan.componentHeld[0]).toMatchObject({ reason: "mapping-missing" });
+    expect(held.plan.componentHeld[0]?.detail).toContain("상속 타입 확인 불가: VariantProps<typeof buttonVariants>");
+
+    const root = shadcnRepo('variant="outline" size="sm"', unresolved);
+    const cleared = await setup(root, { variant: "variant", size: "size" });
+    expect(cleared.plan.componentHeld).toEqual([]);
+    expect(cleared.plan.components).toMatchObject({ imports: 1, props: 0 });
+    await applyMigration(root, cleared.plan, { extractors: cleared.state.extractors, version: "t" });
+    expect(read(root, "app/page.tsx")).toBe(`import { Button } from "@/components/ui/button";\n\nexport const P = () => <Button variant="outline" size="sm">a</Button>;\n`);
+  });
+
+  it("교차 타입(ComponentProps<\"button\"> & VariantProps<…>) 파라미터도 푼다", async () => {
+    const intersection = SHADCN_BUTTON.replace(/export interface ButtonProps[\s\S]*?\n\}\n\n/, "").replace(
+      "}: ButtonProps)",
+      '}: React.ComponentProps<"button"> & VariantProps<typeof buttonVariants> & { asChild?: boolean })',
+    );
+    expect(intersection).toContain("& VariantProps<typeof buttonVariants>");
+    const { plan } = await setup(shadcnRepo('variant="destructive" size="lg"', intersection));
+    expect(plan.componentHeld).toEqual([]);
+    expect(plan.components.imports).toBe(1);
+  });
+});
+
+describe("planMigration: 멤버 태그만 쓰는 파일 (Imp4)", () => {
+  it("<Button.Group>만 쓰는 파일도 non-jsx-use로 보류하고 import는 그대로 둔다", async () => {
+    const root = repo({
+      "app/group.tsx": `import { Button } from "../src/components/Button";\n\nexport const G = () => <Button.Group variant="zzz" />;\n`,
+    });
+    const { plan } = await setup(root, MAP);
+    expect(plan.componentHeld.find((h) => h.file === "app/group.tsx")).toMatchObject({ reason: "non-jsx-use", line: 3 });
+    expect(plan.files.map((f) => f.file)).toEqual(["app/page.tsx"]);
+  });
+});
+
+describe("planMigration: 별칭 import (M2)", () => {
+  it("import { Button as LegacyButton } 파일도 계획·적용하고 별칭을 유지한다", async () => {
+    // 결정 항목(Button)은 별칭 없이 쓰는 app/page.tsx 덕에 생기고, 별칭 파일도 같은 항목으로 계획된다
+    const root = repo({
+      "app/alias.tsx": `import { Button as LegacyButton } from "../src/components/Button";\n\nexport const P = () => <LegacyButton kind="primary">a</LegacyButton>;\n`,
+    });
+    const { plan, state } = await setup(root, MAP);
+    expect(plan.files.map((f) => f.file).sort()).toEqual(["app/alias.tsx", "app/page.tsx"]);
+    await applyMigration(root, plan, { extractors: state.extractors, version: "t" });
+    expect(read(root, "app/alias.tsx")).toContain('import { Button as LegacyButton } from "@/components/ui/button";');
+    expect(read(root, "app/alias.tsx")).toContain('<LegacyButton variant="default">a</LegacyButton>');
+    await auditFixture(root);
+    const index = (await readIndex(root))!;
+    const modules = index.components.filter((c) => (c.imported ?? c.name) === "Button").map((c) => c.module);
+    expect(new Set(modules)).toEqual(new Set(["src/components/ui/button"]));
+  });
+});

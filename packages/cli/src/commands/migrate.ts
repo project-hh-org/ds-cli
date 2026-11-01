@@ -127,6 +127,18 @@ function formatRevert(r: RevertResult): string {
 
 /** `dsmith migrate`: 계획(기본, 아무것도 쓰지 않음) · `--apply` · `--revert <id>` · `--list` */
 export async function runMigrateCommand(opts: MigrateCommandOptions): Promise<MigrateOutput> {
+  // --branch로 브랜치를 만든 뒤(아직 없어지지 않았을 때) 어디서 실패하든 오류에 그 브랜치 이름을 붙인다
+  const live: { branch: { name: string; base: string } | null } = { branch: null };
+  try {
+    return await runMigrate(opts, live);
+  } catch (err) {
+    if (live.branch === null) throw err;
+    const message = err instanceof Error ? err.message : String(err);
+    throw new Error(`${message}\n브랜치 ${live.branch.name}가 만들어져 체크아웃된 상태로 남아 있음(base: ${live.branch.base}) — 변경을 확인한 뒤 직접 정리하세요`);
+  }
+}
+
+async function runMigrate(opts: MigrateCommandOptions, live: { branch: { name: string; base: string } | null }): Promise<MigrateOutput> {
   const root = path.resolve(opts.root);
   const category = oneOf("--category", opts.category, CATEGORIES);
   const only = oneOf("--only", opts.only, ["tokens", "components"] as const);
@@ -195,6 +207,7 @@ export async function runMigrateCommand(opts: MigrateCommandOptions): Promise<Mi
     );
     if (!check.ok) throw new Error(`--branch를 쓸 수 없음: ${check.reason}`);
     await createBranch(root, opts.branch);
+    live.branch = { name: opts.branch, base: check.base };
     branch = { name: opts.branch, base: check.base, baseSha: check.baseSha, commit: null };
   }
 
@@ -206,7 +219,17 @@ export async function runMigrateCommand(opts: MigrateCommandOptions): Promise<Mi
   if (branch !== undefined) {
     if (appliedPaths.length === 0) {
       await abandonBranch(root, branch.base, branch.name);
-      branchLines.push(`적용된 파일이 없어 브랜치 ${branch.name}를 만들지 않음(${branch.base}로 복귀)`);
+      live.branch = null;
+      // 기록이 없앤 브랜치를 가리키지 않게 한다
+      const note = `적용된 파일이 없어 브랜치 ${branch.name}를 만들지 않음(${branch.base}로 복귀)`;
+      const record = await readMigration(root, applied.id);
+      if (record !== null) {
+        record.branch = null;
+        record.branchNote = note;
+        await writeMigration(root, record);
+      }
+      branchLines.push(note);
+      branch = undefined;
     } else if (failedFiles > 0) {
       // 부분 실패는 커밋하지 않는다: 브랜치와 적용된 변경을 그대로 남기고 사람이 확인한다
       branchLines.push(

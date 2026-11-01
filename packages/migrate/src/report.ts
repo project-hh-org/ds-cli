@@ -47,12 +47,14 @@ export const pct = (share: number): string => `${(share * 100).toFixed(1)}%`;
 const HELD_EXPLAIN: Record<ComponentSkipReason, string> = {
   "decision-pending": "결정이 끝나지 않은 항목 — `dsmith decide`로 결정하면 대상이 됨",
   "mapping-missing": "대상 컴포넌트에 없는 prop(또는 허용하지 않는 값) — `decide --map <from>:<to>`로 대응을 주면 대상이 됨",
+  "mapping-conflict": "이름을 바꾸면 같은 요소에 같은 속성이 둘이 됨 — `decide --map`을 고쳐야 대상이 됨",
+  "non-jsx-use": "JSX 태그가 아닌 곳(<Name.Sub>·styled(Name)·as={Name}·createElement·값 전달)에서 쓰여 prop 대응을 확인할 수 없음",
   "spread-props": "{...props} 스프레드가 있어 prop 대응을 확인할 수 없음",
   "export-unknown": "대상의 내보내기 방식(named·default)을 알 수 없음",
   overlap: "토큰 치환과 소스 구간이 겹쳐 보류",
   "rolled-back": "치환 뒤 재검증(재파싱·컴포넌트 재추출)에 실패해 무변경",
 };
-const HELD_ORDER: ComponentSkipReason[] = ["decision-pending", "mapping-missing", "spread-props", "export-unknown", "overlap", "rolled-back"];
+const HELD_ORDER: ComponentSkipReason[] = ["decision-pending", "mapping-missing", "mapping-conflict", "non-jsx-use", "spread-props", "export-unknown", "overlap", "rolled-back"];
 
 function heldSummary(held: ComponentPlanSummary["held"]): string {
   return HELD_ORDER.filter((r) => (held[r] ?? 0) > 0)

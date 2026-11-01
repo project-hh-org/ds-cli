@@ -29,11 +29,13 @@ export interface GitResult {
 export function runGit(
   root: string,
   args: string[],
-  opts: { timeoutMs?: number; input?: string } = {},
+  opts: { timeoutMs?: number; input?: string; /** 자식 프로세스 환경에서 지울 변수(예: GIT_DIR) */ unsetEnv?: readonly string[] } = {},
 ): Promise<GitResult> {
   return new Promise((resolve) => {
     const fail = (error: GitError): void => resolve({ ok: false, code: null, stdout: "", stderr: "", error });
     try {
+      const env: NodeJS.ProcessEnv = { ...process.env, GIT_TERMINAL_PROMPT: "0", GIT_EDITOR: "true", LC_ALL: "C" };
+      for (const name of opts.unsetEnv ?? []) delete env[name];
       const child = execFile(
         "git",
         args,
@@ -42,7 +44,7 @@ export function runGit(
           timeout: opts.timeoutMs ?? DEFAULT_TIMEOUT_MS,
           maxBuffer: MAX_BUFFER,
           encoding: "utf-8",
-          env: { ...process.env, GIT_TERMINAL_PROMPT: "0", GIT_EDITOR: "true", LC_ALL: "C" },
+          env,
         },
         (err, stdout, stderr) => {
           if (err === null) {

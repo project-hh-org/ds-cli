@@ -71,11 +71,14 @@ export async function runDecideChoose(
   opts: { kind?: DecisionKind; mapping?: Record<string, string> } = {},
 ): Promise<DecisionRecord> {
   const { root, index } = await loadAudited(rootArg);
-  return chooseDecision(root, index, item, optionId, {
+  const record = await chooseDecision(root, index, item, optionId, {
     ...(note === undefined ? {} : { note }),
     ...(opts.kind === undefined ? {} : { kind: opts.kind }),
     ...(opts.mapping === undefined ? {} : { mapping: opts.mapping }),
   });
+  // --map 없이 다시 고르면 기존 대응을 유지한다: 조용히 남기지 않고 알린다(stdout은 --json 출력용이라 stderr)
+  if (opts.mapping === undefined && record.mapping !== undefined) process.stderr.write("기존 mapping 유지 (--map으로 바꿀 수 있음)\n");
+  return record;
 }
 
 /**

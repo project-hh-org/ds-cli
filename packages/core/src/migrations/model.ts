@@ -28,6 +28,8 @@ export interface MigrationRecord {
   summary: { tokens: number; components: number; files: number };
   /** `--close`로 close(근사) 매칭을 포함해 계획했는지. 없으면(이전 기록) 포함하지 않음 */
   close?: boolean;
-  branch?: { name: string; base: string; /** 브랜치를 만들기 직전 HEAD */ baseSha?: string; commit: string | null };
+  /** `--apply --branch`로 만든 브랜치. 적용이 0건이라 브랜치를 없앴으면 null(이유는 branchNote) */
+  branch?: { name: string; base: string; /** 브랜치를 만들기 직전 HEAD */ baseSha?: string; commit: string | null } | null;
+  branchNote?: string;
   files: MigrationFile[];
 }

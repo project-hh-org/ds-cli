@@ -83,7 +83,7 @@ export async function listMigrations(
     try {
       const rec = await readMigration(root, id);
       if (rec === null) continue;
-      out.push({ id, status: rec.status, summary: rec.summary, ...(rec.branch === undefined ? {} : { branch: rec.branch.name }) });
+      out.push({ id, status: rec.status, summary: rec.summary, ...(rec.branch === undefined || rec.branch === null ? {} : { branch: rec.branch.name }) });
     } catch {
       // 깨진 기록은 목록에서 뺀다
     }

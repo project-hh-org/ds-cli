@@ -16,7 +16,9 @@ export function checkComponents(file: string, after: string, checks: { item: str
   }
   for (const { item, module } of checks) {
     for (const u of usages) {
-      if (u.name !== item || u.declaredLocally === true || u.module === "") continue;
+      // 가져온 원래 이름으로 맞춘다(별칭 `Button as Btn`의 사용은 name이 Btn, imported가 Button)
+      if ((u.imported ?? u.name) !== item || u.declaredLocally === true) continue;
+      if (u.module === "") return `컴포넌트 재추출 검증 실패: ${item}(${u.line}줄)의 import를 찾을 수 없음(기대 ${module})`;
       if (u.module !== module) return `컴포넌트 재추출 검증 실패: ${item}(${u.line}줄)이 ${u.module}에서 옴(기대 ${module})`;
     }
   }

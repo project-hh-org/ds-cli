@@ -101,7 +101,39 @@ export function read(root: string, file: string): string {
   return fs.readFileSync(path.join(root, file), "utf-8");
 }
 
-export const TOKENS_CSS = ":root { --color-brand: #3b82f6; --space-4: 16px; --space-2: 8px; --radius-sm: 4px; --font-size-md: 14px; }\n";
+/** shadcn/ui 스타일 Button: cva variants + `VariantProps<typeof buttonVariants>` 상속 */
+export const SHADCN_BUTTON = `import * as React from "react";
+import { cva, type VariantProps } from "class-variance-authority";
+
+const buttonVariants = cva("inline-flex items-center", {
+  variants: {
+    variant: {
+      default: "bg-primary text-primary-foreground",
+      destructive: "bg-destructive text-white",
+      outline: "border bg-background",
+      "ghost-soft": "hover:bg-accent",
+    },
+    size: {
+      default: "h-9 px-4",
+      sm: "h-8 px-3",
+      lg: "h-10 px-6",
+    },
+  },
+  defaultVariants: { variant: "default", size: "default" },
+});
+
+export interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement>, VariantProps<typeof buttonVariants> {
+  asChild?: boolean;
+}
+
+export function Button({ className, variant, size, asChild = false, ...props }: ButtonProps) {
+  return <button className={buttonVariants({ variant, size, className })} {...props} />;
+}
+
+export { buttonVariants };
+`;
+
+export const TOKENS_CSS =":root { --color-brand: #3b82f6; --space-4: 16px; --space-2: 8px; --radius-sm: 4px; --font-size-md: 14px; }\n";
 
 /** css·inline·tailwind 파일과 토큰 파일이 있는 합성 레포 */
 export function syntheticRepo(extra: Record<string, string> = {}): string {

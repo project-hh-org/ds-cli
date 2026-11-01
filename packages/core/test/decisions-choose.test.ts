@@ -115,8 +115,26 @@ describe("chooseDecision: mapping", () => {
     await chooseDecision(tmp, index, "Solo", "a/Solo", { mapping: MAP });
     await chooseDecision(tmp, index, "Solo", "a/Solo", { mapping: { kind: "tone" } });
     expect((await readDecisions(tmp)).items[0]?.mapping).toEqual({ kind: "tone" });
-    await chooseDecision(tmp, index, "Solo", "a/Solo");
+    await chooseDecision(tmp, index, "Solo", "a/Solo", { mapping: {} });
     expect((await readDecisions(tmp)).items[0]).not.toHaveProperty("mapping");
+  });
+
+  it("mapping 없이 다시 고르면(메모만 고칠 때) 기존 mapping을 유지한다", async () => {
+    await chooseDecision(tmp, index, "Solo", "a/Solo", { mapping: MAP });
+    const rec = await chooseDecision(tmp, index, "Solo", "a/Solo", { note: "메모" });
+    expect(rec.mapping).toEqual(MAP);
+    expect(rec.note).toBe("메모");
+    expect((await readDecisions(tmp)).items[0]?.mapping).toEqual(MAP);
+  });
+
+  it.each(["on click", "1abc", "a.b", "a=b c"])("prop 이름 %j 는 JSX 속성 이름이 아니라 Error", async (bad) => {
+    await expect(chooseDecision(tmp, index, "Solo", "a/Solo", { mapping: { [bad]: "x" } })).rejects.toThrow(/JSX 속성 이름|prop=value/);
+    await expect(chooseDecision(tmp, index, "Solo", "a/Solo", { mapping: { kind: bad } })).rejects.toThrow(/JSX 속성 이름|prop=value/);
+  });
+
+  it("data-*·aria-*·$·_ 이름은 허용한다", async () => {
+    const rec = await chooseDecision(tmp, index, "Solo", "a/Solo", { mapping: { "data-kind": "aria-label", _x: "$y" } });
+    expect(rec.mapping).toEqual({ "data-kind": "aria-label", _x: "$y" });
   });
 
   it.each([

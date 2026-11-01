@@ -321,7 +321,10 @@ export async function analyzeMigration(opts: MigrateOptions): Promise<{ plan: Mi
     for (const t of chosen) {
       const users = new Set<string>();
       for (const c of index.components) {
-        if (c.name !== t.item) continue;
+        // duplicate는 가져온 원래 이름(별칭 `Button as Btn`의 Button)으로, 지역 정의는 로컬 이름으로 고른다
+        // (`Button.Group` 같은 멤버 태그만 쓰는 파일도 골라야 non-jsx-use로 보류하고 알릴 수 있다)
+        const usedAs = t.kind === "duplicate" ? (c.imported ?? c.name) : c.name;
+        if (usedAs !== t.item && !(t.kind === "duplicate" && usedAs.startsWith(`${t.item}.`))) continue;
         if (t.kind === "duplicate") {
           if (t.options.includes(c.module) && c.module !== t.module) users.add(c.file);
         } else if (c.declaredLocally === true && t.options.includes(c.file) && c.file !== t.file) {
@@ -583,7 +586,14 @@ export async function analyzeMigration(opts: MigrateOptions): Promise<{ plan: Mi
   if (opts.maxFiles !== undefined && files.length > opts.maxFiles) {
     const dropped = files.slice(opts.maxFiles);
     scope.outOfRange += dropped.reduce((n, f) => n + f.replacements.length, 0);
-    notes.push(`범위 제한으로 ${dropped.length}개 파일 제외`);
+    // 컴포넌트 편집만 있는 파일도 한도에 센다. 빠진 파일의 컴포넌트 편집은 건수를 알린다
+    const droppedComponents = countComponentEdits(dropped.flatMap((f) => f.components));
+    const droppedParts = [
+      droppedComponents.imports > 0 ? `컴포넌트 import ${droppedComponents.imports}` : "",
+      droppedComponents.props > 0 ? `prop ${droppedComponents.props}` : "",
+      droppedComponents.annotations > 0 ? `주석 ${droppedComponents.annotations}` : "",
+    ].filter((p) => p !== "");
+    notes.push(`범위 제한으로 ${dropped.length}개 파일 제외${droppedParts.length > 0 ? ` (${droppedParts.join(" · ")} 포함)` : ""}`);
     files = files.slice(0, opts.maxFiles);
   }
 

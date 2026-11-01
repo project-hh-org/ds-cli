@@ -235,7 +235,7 @@ describe("planComponentEdits: props", () => {
   });
 
   it("import만 있고 JSX가 없어도 import는 바뀐다", () => {
-    const code = 'import { Button } from "../src/components/Button";\nexport const B = Button;\n';
+    const code = 'import { Button } from "../src/components/Button";\nexport const B = 1;\n';
     expect(run(code, [target()]).after).toContain('"@/components/ui/button"');
   });
 });
@@ -284,5 +284,161 @@ describe("planComponentEdits: local-definition", () => {
     const t = local({ module: "@acme/ds", file: null, exportKind: "named" });
     const { after } = run("function Badge() { return <i />; }\n", [t], "src/pages/Orders.tsx");
     expect(after).toContain('(import { Badge } from "@acme/ds")');
+  });
+});
+
+const BUTTON_IMPORT = 'import { Button } from "../src/components/Button";\n';
+const allowed = { propValues: { variant: ["default", "outline", "destructive"] } };
+
+describe("planComponentEdits: 표현식 안의 문자열 값 (Imp1)", () => {
+  const held = (jsx: string, t: Partial<ChosenTarget> = {}) => run(`${BUTTON_IMPORT}export const A = (c: boolean, d: string) => ${jsx};\n`, [target({ ...allowed, ...t })]);
+
+  it("variant={\"secondary\"}·무치환 템플릿 리터럴도 허용 값 검사를 받는다", () => {
+    for (const jsx of ['<Button variant={"secondary"} />', "<Button variant={`secondary`} />"]) {
+      const r = held(jsx);
+      expect(r.edits, jsx).toEqual([]);
+      expect(r.held[0], jsx).toMatchObject({ reason: "mapping-missing" });
+      expect(r.held[0]?.detail, jsx).toContain('variant="secondary"');
+    }
+  });
+
+  it("허용되는 값의 표현식 리터럴은 통과한다", () => {
+    for (const jsx of ['<Button variant={"outline"} />', "<Button variant={`outline`} />", '<Button variant={c ? "default" : "outline"} />']) {
+      expect(held(jsx).held, jsx).toEqual([]);
+    }
+  });
+
+  it("조건·논리 표현식은 리터럴 잎마다 검사한다", () => {
+    const cond = held('<Button variant={c ? "default" : "secondary"} />');
+    expect(cond.held[0]?.detail).toContain('variant="secondary"');
+    expect(cond.held[0]?.detail).not.toContain('variant="default"');
+    const logical = held('<Button variant={d || "danger"} />');
+    expect(logical.held[0]?.reason).toBe("mapping-missing");
+    const nested = held('<Button variant={c ? (d ? "outline" : "ghost") : "default"} />');
+    expect(nested.held[0]?.detail).toContain('variant="ghost"');
+  });
+
+  it("검증할 수 없는 표현식은 동적 값으로 보류한다(허용 값이 정해진 prop만)", () => {
+    for (const jsx of ["<Button variant={d} />", '<Button variant={c ? d : "default"} />', "<Button variant={getVariant()} />"]) {
+      const r = held(jsx);
+      expect(r.held[0], jsx).toMatchObject({ reason: "mapping-missing" });
+      expect(r.held[0]?.detail, jsx).toContain("동적 값: variant");
+    }
+    // 허용 값이 없는 prop·네이티브 prop은 표현식이어도 통과
+    expect(held("<Button size={d} onClick={d} />", { inherits: ["ButtonHTMLAttributes<HTMLButtonElement>"] }).held).toEqual([]);
+  });
+
+  it("이름을 바꾼 뒤의 prop에도 같은 검사를 적용한다", () => {
+    const r = held('<Button kind={"danger"} />', { mapping: { kind: "variant" }, props: ["variant", "kind"] });
+    expect(r.held[0]?.detail).toContain('variant="danger"');
+  });
+});
+
+describe("planComponentEdits: 속성 이름 충돌 (Imp3)", () => {
+  it("이름을 바꾸면 같은 요소에 같은 속성이 둘이 될 때 mapping-conflict로 보류한다", () => {
+    const code = `${BUTTON_IMPORT}export const A = () => <Button kind="x" variant="default" />;\n`;
+    const r = run(code, [target({ mapping: { kind: "variant" } })]);
+    expect(r.edits).toEqual([]);
+    expect(r.held).toHaveLength(1);
+    expect(r.held[0]).toMatchObject({ reason: "mapping-conflict", item: "Button" });
+    expect(r.held[0]?.detail).toContain("kind");
+    expect(r.held[0]?.detail).toContain("variant");
+  });
+
+  it("충돌하는 쪽도 함께 다른 이름으로 바뀌면 충돌이 아니다", () => {
+    const code = `${BUTTON_IMPORT}export const A = () => <Button kind="x" variant="default" />;\n`;
+    const r = run(code, [target({ mapping: { kind: "variant", variant: "tone" }, props: ["variant", "tone"] })]);
+    expect(r.held).toEqual([]);
+    expect(r.after).toContain('<Button variant="x" tone="default" />');
+  });
+
+  it("원래부터 중복인 속성은 이름을 바꾸지 않으면 충돌로 보지 않는다", () => {
+    const code = `${BUTTON_IMPORT}export const A = () => <Button size="sm" size="md" />;\n`;
+    expect(run(code, [target()]).held).toEqual([]);
+  });
+});
+
+describe("planComponentEdits: JSX 태그가 아닌 사용 (Imp4)", () => {
+  const nonJsx = (extra: string, imports = "") => {
+    const code = `${BUTTON_IMPORT}${imports}${extra}\n`;
+    return run(code, [target()]);
+  };
+
+  it.each([
+    ["멤버 태그", "export const A = () => <Button.Group variant=\"zzz\" />;"],
+    ["styled(Button)", "export const S = styled(Button)``;"],
+    ["as={Button}", "export const A = () => <Box as={Button} variant=\"secondary\" />;"],
+    ["createElement", "export const A = () => React.createElement(Button, { variant: \"secondary\" });"],
+    ["값으로 전달", "export const map = { primary: Button };\nexport const b = Button;"],
+    ["속성 값 표현식", "export const A = () => <Slot component={Button} />;"],
+    ["typeof 참조", "export type P = React.ComponentProps<typeof Button>;"],
+  ])("%s: non-jsx-use로 보류하고 줄 번호를 알린다", (_name, extra) => {
+    const r = nonJsx(extra);
+    expect(r.edits).toEqual([]);
+    expect(r.held).toHaveLength(1);
+    expect(r.held[0]).toMatchObject({ reason: "non-jsx-use", item: "Button", line: 2 });
+    expect(r.held[0]?.detail).toContain("2줄");
+  });
+
+  it("일반 JSX 태그(여닫는 태그·속성 이름이 Button인 경우)는 그대로 바꾼다", () => {
+    const r = nonJsx('export const A = () => <div data-Button="x"><Button size="sm">a</Button>{ {Button: 1}.Button }</div>;');
+    expect(r.held).toEqual([]);
+    expect(r.edits.length).toBeGreaterThan(0);
+  });
+
+  it("별칭으로 가져온 이름의 비태그 사용도 잡는다", () => {
+    const code = 'import { Button as Btn } from "../src/components/Button";\nexport const S = styled(Btn)``;\nexport const A = () => <Btn />;\n';
+    expect(run(code, [target()]).held[0]).toMatchObject({ reason: "non-jsx-use", line: 2 });
+  });
+});
+
+describe("planComponentEdits: 별칭 import (M2)", () => {
+  it("import { Button as Btn }를 계획하고 별칭을 유지한다", () => {
+    const code = 'import { Button as Btn } from "../src/components/Button";\nexport const A = () => <Btn kind="primary" />;\n';
+    const r = run(code, [target({ mapping: { kind: "variant" } })]);
+    expect(r.after).toBe('import { Button as Btn } from "@/components/ui/button";\nexport const A = () => <Btn variant="primary" />;\n');
+  });
+});
+
+describe("planComponentEdits: 접두사로 중복 주석 판단 (M3)", () => {
+  it("specifier가 바뀌어도 같은 대상 파일의 주석이 있으면 다시 달지 않는다", () => {
+    const local = target({ kind: "local-definition", module: "src/components/Badge", file: "src/components/Badge.tsx", options: ["src/components/Badge.tsx", "src/pages/Orders.tsx"], item: "Badge" });
+    const code = '// dsmith: src/components/Badge.tsx로 통합됨 — 삭제 검토 (import { Badge } from "../components/Badge")\nfunction Badge() { return <i />; }\n';
+    const r = run(code, [local], "src/pages/Orders.tsx");
+    expect(r.edits).toEqual([]);
+  });
+});
+
+describe("planComponentEdits: 상속 타입을 확인할 수 없는 대상 (Imp2)", () => {
+  const cvaTarget = (p: Partial<ChosenTarget> = {}) =>
+    target({ props: ["asChild"], inherits: ["React.ButtonHTMLAttributes<HTMLButtonElement>", "VariantProps<typeof buttonVariants>"], unknownInherits: ["VariantProps<typeof buttonVariants>"], ...p });
+
+  it("확인할 수 없는 상속이 있으면 없는 prop은 한 번만 보류한다(상속 타입 확인 불가)", () => {
+    const code = `${BUTTON_IMPORT}export const A = () => <><Button variant="outline" size="sm" /><Button variant="ghost" size="lg" /></>;\n`;
+    const r = run(code, [cvaTarget()]);
+    expect(r.edits).toEqual([]);
+    expect(r.held).toHaveLength(1);
+    expect(r.held[0]).toMatchObject({ reason: "mapping-missing" });
+    expect(r.held[0]?.detail).toContain("상속 타입 확인 불가: VariantProps<typeof buttonVariants>");
+    expect(r.held[0]?.detail.match(/상속 타입 확인 불가/g)).toHaveLength(1);
+    expect(r.held[0]?.detail).toContain("variant");
+    expect(r.held[0]?.detail).toContain("size");
+  });
+
+  it("mapping에 나온 prop(항등 포함)은 사용자가 확인한 것으로 보고 통과시킨다", () => {
+    const code = `${BUTTON_IMPORT}export const A = () => <Button variant="outline" size="sm" onClick={f} />;\n`;
+    expect(run(code, [cvaTarget({ mapping: { variant: "variant" } })]).held[0]?.detail).toContain("size");
+    const both = run(code, [cvaTarget({ mapping: { variant: "variant", size: "size" } })]);
+    expect(both.held).toEqual([]);
+    expect(both.edits.some((e) => e.kind === "import")).toBe(true);
+    // 값 매핑의 이름 부분도 확인으로 본다
+    const byValue = run(code, [cvaTarget({ mapping: { "variant=outline": "variant=outline", size: "size" } })]);
+    expect(byValue.held).toEqual([]);
+  });
+
+  it("상속을 모두 아는 대상에서는 mapping이 없는 prop을 통과시키지 않는다", () => {
+    const code = `${BUTTON_IMPORT}export const A = () => <Button kind="x" />;\n`;
+    const r = run(code, [target({ mapping: { kind: "tone" } })]);
+    expect(r.held[0]?.detail).toContain("kind→tone");
   });
 });

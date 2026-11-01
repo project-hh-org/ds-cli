@@ -17,9 +17,18 @@ import {
   type TextPatch,
   type TsPaths,
 } from "@dsmith-dev/core";
+import { readCvaVariants } from "./cva.js";
 import { specifierForModule } from "./specifier.js";
 
-export type ComponentSkipReason = "decision-pending" | "mapping-missing" | "spread-props" | "export-unknown" | "overlap" | "rolled-back";
+export type ComponentSkipReason =
+  | "decision-pending"
+  | "mapping-missing"
+  | "mapping-conflict"
+  | "non-jsx-use"
+  | "spread-props"
+  | "export-unknown"
+  | "overlap"
+  | "rolled-back";
 
 export interface ChosenTarget {
   item: string;
@@ -37,6 +46,8 @@ export interface ChosenTarget {
   options: string[];
   /** 대상이 상속하는 타입(예: ButtonHTMLAttributes). 비어 있지 않으면 네이티브 속성(onClick·disabled…)은 props에 없어도 통과시킨다 */
   inherits?: string[];
+  /** inherits 중 DOM 속성 타입이 아니고 같은 파일에서 풀지도 못한 것(예: 정의를 찾지 못한 `VariantProps<typeof x>`). 있으면 props에 없는 prop은 확인할 수 없으니 mapping에 나온 것만 통과 */
+  unknownInherits?: string[];
   /** prop → 허용하는 문자열 리터럴 값(유니온을 읽었을 때만) */
   propValues?: Record<string, string[]>;
 }
@@ -153,9 +164,21 @@ interface ImportDecl extends Base {
   source: StrLit;
   importKind?: string | null;
 }
+/** 속성 값·표현식을 읽는 데 필요한 필드만 모은 느슨한 모양 */
+interface Expr extends Base {
+  value?: string | number | boolean;
+  name?: string;
+  expression?: Expr;
+  expressions?: Expr[];
+  quasis?: { value: { cooked?: string | null; raw: string } }[];
+  consequent?: Expr;
+  alternate?: Expr;
+  left?: Expr;
+  right?: Expr;
+}
 interface Attr extends Base {
   name?: Base & { name?: string | Id; namespace?: Id };
-  value?: (Base & { value?: string }) | null;
+  value?: Expr | null;
 }
 interface Opening extends Base {
   name: Base & { name?: string };
@@ -214,13 +237,16 @@ export function exportKindOf(code: string, file: string, name: string): "named" 
 function filesUsing(index: Index, item: string, kind: DecisionKind, options: string[]): number {
   const files = new Set<string>();
   for (const c of index.components) {
-    if (c.name !== item) continue;
+    if (kind === "duplicate" ? (c.imported ?? c.name) !== item : c.name !== item) continue;
     if (kind === "duplicate" ? options.includes(c.module) : c.declaredLocally === true && options.includes(c.file)) files.add(c.file);
   }
   return files.size;
 }
 
-const isPackageModule = (module: string, deps: Set<string>): boolean =>
+/** 네이티브 속성을 물려주는 것이 분명한 타입(`ButtonHTMLAttributes<…>`, `ComponentProps<"button">` …) */
+const DOM_INHERIT = /(?:^|[.\s])(?:\w*HTMLAttributes|DOMAttributes|AriaAttributes|HTMLProps)\b|ComponentProps(?:WithoutRef|WithRef)?\s*<\s*["']/;
+
+const isPackageModule =(module: string, deps: Set<string>): boolean =>
   (module.startsWith("@") && !module.startsWith("@/")) || deps.has(normalizePackageSpecifier(module)) || !module.includes("/");
 
 /**
@@ -291,6 +317,24 @@ export async function resolveChosenTargets(
       }
     }
 
+    // 상속한 타입 중 DOM 속성 타입이 아닌 것: 같은 파일의 cva variants로 풀 수 있으면 props·허용 값에 더하고, 못 풀면 unknownInherits
+    const unknownInherits: string[] = [];
+    if (props !== null) {
+      for (const text of inherits) {
+        if (DOM_INHERIT.test(text)) continue;
+        const variantProps = /^VariantProps\s*<\s*typeof\s+([A-Za-z_$][\w$]*)\s*>$/.exec(text.trim());
+        const variants = variantProps !== null && code !== null && file !== null ? readCvaVariants(code, file, variantProps[1]!) : null;
+        if (variants === null) {
+          unknownInherits.push(text);
+          continue;
+        }
+        for (const [name, values] of Object.entries(variants)) {
+          if (!props.includes(name)) props.push(name);
+          propValues[name] = values;
+        }
+      }
+    }
+
     targets.push({
       item,
       kind: listed.kind,
@@ -301,6 +345,7 @@ export async function resolveChosenTargets(
       mapping,
       options,
       ...(inherits.length > 0 ? { inherits } : {}),
+      ...(unknownInherits.length > 0 ? { unknownInherits } : {}),
       ...(Object.keys(propValues).length > 0 ? { propValues } : {}),
     });
   }
@@ -362,14 +407,73 @@ function attrName(a: Attr): string | null {
   return null;
 }
 
-/** 한 요소의 속성을 검사하고 mapping으로 바꿀 패치를 만든다. 문제가 있으면 missing·spread */
-function checkAttributes(
-  ctx: FileCtx,
-  t: ChosenTarget,
-  el: Opening,
-  out: { patches: { patch: TextPatch; detail: string }[]; missing: string[]; spread: boolean },
-): void {
+interface AttrOut {
+  patches: { patch: TextPatch; detail: string }[];
+  missing: string[];
+  /** 상속 타입을 확인할 수 없어 props에서 찾지 못한 prop */
+  unverifiable: string[];
+  /** 이름을 바꾸면 같은 요소에 같은 속성이 둘이 되는 경우 */
+  conflicts: string[];
+  spread: boolean;
+}
+
+/**
+ * 속성 값이 가질 수 있는 문자열 잎: 문자열·무치환 템플릿·숫자·불리언 리터럴, 조건·논리식의 양쪽 가지.
+ * `null`·`undefined`는 값이 없는 가지로 건너뛰고, 그 밖의 표현식이 하나라도 있으면 null(동적 — 검증 불가)
+ */
+function valueLeaves(node: Expr | undefined): string[] | null {
+  if (node === undefined) return null;
+  switch (node.type) {
+    case "StringLiteral":
+    case "NumericLiteral":
+    case "BooleanLiteral":
+      return [String(node.value)];
+    case "NullLiteral":
+      return [];
+    case "Identifier":
+      return node.name === "undefined" ? [] : null;
+    case "TemplateLiteral": {
+      const only = node.quasis?.[0];
+      return (node.expressions?.length ?? 0) === 0 && node.quasis?.length === 1 && only !== undefined ? [only.value.cooked ?? only.value.raw] : null;
+    }
+    case "ConditionalExpression": {
+      const a = valueLeaves(node.consequent);
+      const b = valueLeaves(node.alternate);
+      return a === null || b === null ? null : [...a, ...b];
+    }
+    case "LogicalExpression": {
+      const a = valueLeaves(node.left);
+      const b = valueLeaves(node.right);
+      return a === null || b === null ? null : [...a, ...b];
+    }
+    case "ParenthesizedExpression":
+    case "TSAsExpression":
+    case "TSSatisfiesExpression":
+    case "TSNonNullExpression":
+      return valueLeaves(node.expression);
+    default:
+      return null;
+  }
+}
+
+/** 속성 값의 잎: 값 없음(`<B disabled />`) → undefined, 문자열 리터럴 → [값], 표현식 → valueLeaves */
+function attrLeaves(value: Expr | null): string[] | null | undefined {
+  if (value === null) return undefined;
+  if (value.type === "StringLiteral") return [value.value as string];
+  if (value.type === "JSXExpressionContainer") return valueLeaves(value.expression);
+  return null;
+}
+
+const nameOfSide = (side: string): string => (side.includes("=") ? side.slice(0, side.indexOf("=")) : side);
+
+/** 한 요소의 속성을 검사하고 mapping으로 바꿀 패치를 만든다. 문제가 있으면 missing·spread·conflicts */
+function checkAttributes(ctx: FileCtx, t: ChosenTarget, el: Opening, out: AttrOut): void {
   const valueKeys = new Set(Object.keys(t.mapping).filter((k) => k.includes("=")).map((k) => k.slice(0, k.indexOf("="))));
+  // 상속 타입을 모르는 대상: mapping에 이름이 나온 prop(항등 포함)은 사용자가 확인한 것으로 본다
+  const unknownInherits = t.unknownInherits ?? [];
+  const asserted = new Set<string>();
+  if (unknownInherits.length > 0) for (const [from, to] of Object.entries(t.mapping)) asserted.add(nameOfSide(from)).add(nameOfSide(to));
+  const finals: { from: string; to: string }[] = [];
   for (const attr of el.attributes) {
     if (attr.type === "JSXSpreadAttribute") {
       out.spread = true;
@@ -379,6 +483,7 @@ function checkAttributes(
     if (name === null) continue;
     const valueNode = attr.value ?? null;
     const literal = valueNode !== null && valueNode.type === "StringLiteral" ? (valueNode.value as string) : undefined;
+    const leaves = attrLeaves(valueNode);
 
     let finalName = name;
     let finalValue = literal;
@@ -396,17 +501,29 @@ function checkAttributes(
       continue;
     }
 
+    finals.push({ from: name, to: finalName });
+
     if (!PASSTHROUGH.test(finalName) && t.props !== null) {
       const known = t.props.includes(finalName) || ((t.inherits?.length ?? 0) > 0 && isNativeAttr(finalName));
-      if (!known) {
-        out.missing.push(finalName === name ? name : `${name}→${finalName}`);
+      if (!known && !(unknownInherits.length > 0 && asserted.has(finalName))) {
+        const label = finalName === name ? name : `${name}→${finalName}`;
+        if (unknownInherits.length > 0) out.unverifiable.push(label);
+        else out.missing.push(label);
         continue;
       }
     }
     const allowed = t.propValues?.[finalName];
-    if (allowed !== undefined && finalValue !== undefined && !allowed.includes(finalValue)) {
-      out.missing.push(`${finalName}="${finalValue}"`);
-      continue;
+    if (allowed !== undefined) {
+      const values = mappedValue ? (finalValue === undefined ? undefined : [finalValue]) : leaves;
+      if (values === null) {
+        out.missing.push(`동적 값: ${finalName}`);
+        continue;
+      }
+      const bad = (values ?? []).filter((v) => !allowed.includes(v));
+      if (bad.length > 0) {
+        for (const v of new Set(bad)) out.missing.push(`${finalName}="${v}"`);
+        continue;
+      }
     }
 
     if (finalName === name && !mappedValue) continue;
@@ -430,6 +547,58 @@ function checkAttributes(
       });
     }
   }
+  // 이름을 바꾼 속성이 같은 요소의 다른 속성과 같은 이름이 되면 속성이 중복된다
+  const byFinal = new Map<string, { from: string; to: string }[]>();
+  for (const f of finals) byFinal.set(f.to, [...(byFinal.get(f.to) ?? []), f]);
+  for (const [to, list] of byFinal) {
+    const renamed = list.filter((f) => f.from !== f.to);
+    if (list.length > 1 && renamed.length > 0) out.conflicts.push(`${list.map((f) => f.from).join(", ")}이(가) 모두 ${to}가 되어 속성이 중복됨(이름을 바꾸는 쪽: ${renamed.map((f) => `${f.from}→${f.to}`).join(", ")})`);
+  }
+}
+
+/** 이름을 가리키지 않는 Identifier 자리: 멤버 접근의 속성, 객체·클래스·타입 멤버의 키, 정규화된 타입 이름의 오른쪽 */
+function isNonReference(parent: Base | null, key: string): boolean {
+  if (parent === null) return false;
+  const computed = (parent as Base & { computed?: boolean }).computed === true;
+  if ((parent.type === "MemberExpression" || parent.type === "OptionalMemberExpression") && key === "property") return !computed;
+  if (key === "key" && /^(?:ObjectProperty|ObjectMethod|ClassProperty|ClassMethod|ClassPrivateProperty|ClassAccessorProperty|TSPropertySignature|TSMethodSignature)$/.test(parent.type)) return !computed;
+  return parent.type === "TSQualifiedName" && key === "right";
+}
+
+/**
+ * import를 뺀 코드에서 `locals` 이름이 JSX 여는·닫는 태그(`<Name …>`) 말고 쓰인 첫 곳.
+ * `<Name.Group>`(멤버 태그의 뿌리), 호출 인자, 속성 값, 대입·export, `typeof Name` 등을 모두 센다(범위는 따지지 않아 보수적)
+ */
+function findNonTagUse(body: Base[], locals: Set<string>): { name: string; node: Base } | null {
+  let found: { name: string; node: Base } | null = null;
+  const record = (name: string, node: Base): void => {
+    if (found === null || node.start < found.node.start) found = { name, node };
+  };
+  const visit = (node: unknown, parent: Base | null, key: string): void => {
+    if (Array.isArray(node)) {
+      for (const child of node) visit(child, parent, key);
+      return;
+    }
+    if (typeof node !== "object" || node === null) return;
+    const n = node as Base & Record<string, unknown>;
+    if (typeof n.type !== "string" || n.type === "ImportDeclaration") return;
+    if (n.type === "Identifier") {
+      if (locals.has(n.name as string) && !isNonReference(parent, key)) record(n.name as string, n);
+      return;
+    }
+    if (n.type === "JSXMemberExpression") {
+      let root = n as Base & { object?: Base & Record<string, unknown>; name?: string };
+      while (root.type === "JSXMemberExpression" && root.object !== undefined) root = root.object as typeof root;
+      if (root.type === "JSXIdentifier" && locals.has(root.name as string)) record(root.name as string, root);
+      return;
+    }
+    for (const [k, value] of Object.entries(n)) {
+      if (k === "loc" || k === "leadingComments" || k === "trailingComments" || k === "innerComments") continue;
+      if (typeof value === "object" && value !== null) visit(value, n, k);
+    }
+  };
+  visit(body, null, "");
+  return found;
 }
 
 function planItem(ctx: FileCtx, t: ChosenTarget, held: HeldComponentEdit[]): ItemPlan | null {
@@ -459,7 +628,12 @@ function planItem(ctx: FileCtx, t: ChosenTarget, held: HeldComponentEdit[]): Ite
   if (t.exportKind === null) return hold("export-unknown", `${t.file ?? t.module}에서 ${t.item}의 내보내기 방식을 알 수 없음`);
 
   const locals = new Set(moves.map((m) => m.local));
-  const out = { patches: [] as { patch: TextPatch; detail: string }[], missing: [] as string[], spread: false };
+  // JSX 여는 태그가 아닌 곳(멤버 태그 `<Button.Group>`, styled(Button), as={Button}, createElement(Button, …), 값 전달)에서 쓰이면 prop을 확인할 수 없다
+  const nonTag = findNonTagUse(ctx.body, locals);
+  if (nonTag !== null) {
+    return hold("non-jsx-use", `${nonTag.name}을(를) JSX 태그가 아닌 곳에서 사용(${lineOf(nonTag.node)}줄) — prop 대응을 확인할 수 없음`, nonTag.node);
+  }
+  const out: AttrOut = { patches: [], missing: [], unverifiable: [], conflicts: [], spread: false };
   let firstSpread: Opening | null = null;
   for (const el of openingsOf(ctx)) {
     if (el.name.type !== "JSXIdentifier" || !locals.has(el.name.name as string)) continue;
@@ -468,9 +642,20 @@ function planItem(ctx: FileCtx, t: ChosenTarget, held: HeldComponentEdit[]): Ite
     if (!before && out.spread) firstSpread = el;
   }
   if (out.spread) return hold("spread-props", `{...props} 스프레드가 있어 prop 대응을 확인할 수 없음`, firstSpread ?? first);
-  if (out.missing.length > 0) {
-    return hold("mapping-missing", `대상 ${t.file ?? t.module}에 없는 prop: ${[...new Set(out.missing)].join(", ")} — decide --map으로 대응을 주세요`);
+  if (out.missing.length > 0 || out.unverifiable.length > 0) {
+    const dynamic = [...new Set(out.missing.filter((m) => m.startsWith("동적 값:")))];
+    const missing = [...new Set(out.missing.filter((m) => !m.startsWith("동적 값:")))];
+    const unverifiable = [...new Set(out.unverifiable)];
+    const parts: string[] = [];
+    if (missing.length > 0) parts.push(`대상 ${t.file ?? t.module}에 없는 prop: ${missing.join(", ")}`);
+    if (dynamic.length > 0) parts.push(`${dynamic.join(", ")} (표현식이라 허용 값을 확인할 수 없음)`);
+    if (unverifiable.length > 0) {
+      const sample = unverifiable[0]!.split("→")[0]!;
+      parts.push(`상속 타입 확인 불가: ${(t.unknownInherits ?? []).join(", ")} — ${unverifiable.join(", ")} (직접 확인했다면 decide --map ${sample}:${sample}처럼 같은 이름으로 대응)`);
+    }
+    return hold("mapping-missing", `${parts.join("; ")} — decide --map으로 대응을 주세요`);
   }
+  if (out.conflicts.length > 0) return hold("mapping-conflict", `속성 이름 충돌: ${[...new Set(out.conflicts)].join("; ")}`);
   return {
     target: t,
     moves,
@@ -697,8 +882,10 @@ function planAnnotation(ctx: FileCtx, t: ChosenTarget): PlannedComponentEdit | n
   if (stmt === null) return null;
   const spec = specifierForModule(ctx.file, t.module, ctx.tsPaths, t.file !== null ? true : undefined);
   const importText = t.exportKind === "default" ? `import ${t.item} from "${spec}"` : `import { ${t.item} } from "${spec}"`;
-  const comment = `// dsmith: ${t.file ?? t.module}로 통합됨 — 삭제 검토 (${importText})`;
-  if (ctx.code.includes(comment)) return null;
+  const prefix = `// dsmith: ${t.file ?? t.module}로 통합됨`;
+  const comment = `${prefix} — 삭제 검토 (${importText})`;
+  // specifier(tsconfig paths)가 바뀌어도 같은 대상 파일의 주석이 이미 있으면 다시 달지 않는다
+  if (ctx.code.includes(prefix)) return null;
   const lineStart = ctx.code.lastIndexOf("\n", stmt.start - 1) + 1;
   const indent = ctx.code.slice(lineStart, stmt.start);
   if (indent.trim() !== "") return null;
