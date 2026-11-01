@@ -1,5 +1,32 @@
 import { describe, expect, it } from "vitest";
-import { normalizeColor } from "../src/normalize/color.js";
+import { isTranslucentColor, normalizeColor } from "../src/normalize/color.js";
+
+describe("isTranslucentColor", () => {
+  it.each([
+    "rgba(17,24,39,0.5)",
+    "rgba(17, 24, 39, .5)",
+    "rgb(17 24 39 / 50%)",
+    "#11182780",
+    "#fff8",
+    "#FFF8",
+    "hsl(221 39% 11% / 0.5)",
+    "hsla(221, 39%, 11%, 0.5)",
+    "rgba(0,0,0,0)",
+    "#0000",
+    "transparent",
+    "#00000000",
+    "rgb(0 0 0 / 0%)",
+  ])("%s는 반투명이다", (raw) => {
+    expect(isTranslucentColor(raw)).toBe(true);
+  });
+
+  it.each(["#111827", "#fff", "#111827ff", "#ffff", "rgb(17, 24, 39)", "rgba(17,24,39,1)", "rgb(17 24 39 / 100%)", "blue", "not-a-color", ""])(
+    "%j는 반투명이 아니다",
+    (raw) => {
+      expect(isTranslucentColor(raw)).toBe(false);
+    },
+  );
+});
 
 describe("normalizeColor", () => {
   it("hex를 소문자 hex와 oklch로 정규화한다", () => {

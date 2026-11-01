@@ -10,13 +10,13 @@ export type { NormalizedColor } from "./model/style-usage.js";
 export { isRatedUsage } from "./model/style-usage.js";
 export type { ComponentUsage } from "./model/component-usage.js";
 export type { Token, TokenSet } from "./model/token.js";
-export { normalizeColor } from "./normalize/color.js";
+export { isTranslucentColor, normalizeColor } from "./normalize/color.js";
 export { normalizeLength } from "./normalize/length.js";
 export { parseTsx, traverse } from "./parse/tsx.js";
 export type { Index, IndexOptions } from "./index/indexer.js";
 export type { ExtractorMatcher, FileStyles } from "./index/extract-file.js";
 export { extractFileStyles, extractorMatchers } from "./index/extract-file.js";
-export { DEFAULT_EXCLUDE, collectModuleContext, indexRepo } from "./index/indexer.js";
+export { DEFAULT_EXCLUDE, collectModuleContext, indexRepo, listIndexableFiles } from "./index/indexer.js";
 export type { ModuleContext } from "./index/component-usage.js";
 export { extractComponentUsage, moduleKeyOf } from "./index/component-usage.js";
 export type { TsPaths } from "./index/specifier.js";
@@ -40,6 +40,7 @@ export {
   cssPropertyToStyleProperty,
   isColorProperty,
   isLengthProperty,
+  shorthandColorProperty,
   splitShorthandColor,
 } from "./model/css-property.js";
 export type { CssDecl } from "./parse/css-text.js";

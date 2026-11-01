@@ -103,13 +103,10 @@ export async function collectModuleContext(root: string, tsPaths: TsPaths | null
   };
 }
 
-export async function indexRepo(
-  root: string,
-  extractors: Extractor[],
-  opts: IndexOptions = {},
-): Promise<Index> {
+/** `indexRepo`가 훑는 파일(root 상대 POSIX, 정렬)을 파일을 읽지 않고 나열한다. migrate가 audit 뒤에 생긴 파일을 찾는 데 쓴다. */
+export async function listIndexableFiles(root: string, extractors: Extractor[], opts: IndexOptions = {}): Promise<string[]> {
   const include = opts.include ?? [...new Set([...extractors.flatMap((e) => e.files), ...JS_FILES])];
-  const files = (
+  return (
     await fg(include, {
       cwd: root,
       ignore: [...DEFAULT_EXCLUDE, ...(opts.exclude ?? [])],
@@ -119,6 +116,14 @@ export async function indexRepo(
   )
     .map((f) => f.split(path.sep).join("/"))
     .sort();
+}
+
+export async function indexRepo(
+  root: string,
+  extractors: Extractor[],
+  opts: IndexOptions = {},
+): Promise<Index> {
+  const files = await listIndexableFiles(root, extractors, opts);
 
   // 준비 단계(설정 파일 로드 등)는 파일을 읽기 전에 Extractor마다 한 번만 실행한다.
   for (const extractor of extractors) {
