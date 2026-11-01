@@ -2,7 +2,7 @@
 name: ds-guard
 description: 하드코딩 스타일이 다시 늘지 않게 ESLint 규칙과 PR 검사(guard --ci) 설정을 레포에 만든다. "하드코딩 막아줘", "린트 규칙 추가", "PR에서 DS 검사", "guard" 같은 요청에 쓴다.
 args: "[--ci github]"
-uses: ["cli:guard init"]
+uses: ["cli:guard init --dry-run"]
 ---
 
 `.dsmith/guard.json` 스냅샷과 ESLint 설정을 만든다. 이 레포에 토큰이 없으면 먼저 `/ds-init`을 안내하고 멈춘다.

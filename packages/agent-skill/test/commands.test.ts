@@ -63,14 +63,25 @@ describe("loadCommands — 실제 명령 소스", () => {
     expect(c?.body).toContain("/ds-init");
     expect(c?.body).toContain("/ds-decide");
     expect(c?.body).toContain("`--close`");
-    expect(c?.body).toContain("`plan.stale`");
+    expect(c?.body).toContain("`plan.stale.changed > 0 || plan.stale.added > 0`");
+    expect(c?.body).not.toContain("`plan.stale`이 있으면");
+    // M5: JSON 값이 아닌 숫자(파일 수)는 말하지 않는다. 이름은 JSON 필드와 정확히 같아야 한다
+    expect(c?.body).toContain("`plan.files.length`");
+    expect(c?.body).not.toContain("파일 수 `files`");
+    // I1: 토큰 스타일시트 안내
+    expect(c?.body).toContain("`plan.tokens.loaded.css`");
+    expect(c?.body).toContain("--with-tokens");
+    // M5: 보류 사유를 전부 풀어 쓴다
+    for (const reason of ["decision-pending", "mapping-missing", "mapping-conflict", "non-jsx-use", "spread-props", "export-unknown", "overlap", "rolled-back"]) {
+      expect(c?.body, reason).toContain(`\`${reason}\``);
+    }
     expect(c?.body).toContain("JSON에 없는 숫자는 말하지 않는다");
     expect(c?.body.match(/\{\{args\}\}/g)).toHaveLength(1);
   });
 
   it("ds-guard는 dry-run 미리보기를 먼저 부르고 확인 뒤 같은 인자로 실행한다", async () => {
     const c = (await loadCommands()).find((x) => x.name === "ds-guard");
-    expect(c?.uses).toEqual(["cli:guard init"]);
+    expect(c?.uses).toEqual(["cli:guard init --dry-run"]); // 폴백도 미리보기(쓰지 않음)여야 한다 (I4)
     expect(c?.args).toBe("[--ci github]");
     expect(c?.body).toContain("npx dsmith guard init --dry-run --json {{args}}");
     expect(c?.body).toContain("npx dsmith guard init --json");
@@ -95,7 +106,8 @@ describe("loadCommands — 실제 명령 소스", () => {
     expect(init?.body).toContain("npx dsmith init --dry-run --json {{args}}");
     expect(init?.body).toContain("npx dsmith init --json");
     expect(init?.body).toContain("skipped-exists");
-    expect(init?.body).toContain("migrate가 바꿀 수 있는 예상치");
+    expect(init?.body).toContain("`coverage.byConfidence`");
+    expect(init?.body).not.toContain("migrate가 바꿀 수 있는 예상치");
     const ai = commands.find((c) => c.name === "ds-ai");
     expect(ai?.uses).toEqual(["cli:ai --dry-run"]);
     expect(ai?.body).toContain("npx dsmith ai --dry-run --json {{args}}");
@@ -117,7 +129,7 @@ describe("loadCommands — 실제 명령 소스", () => {
     expect(byName["ds-decide"]).toEqual(["cli:decide --list", "mcp:list_decisions", "mcp:explain_decision"]);
     expect(byName["ds-check"]).toEqual(["mcp:lint_snippet", "mcp:resolve_token"]);
     expect(byName["ds-migrate"]).toEqual(["cli:migrate"]);
-    expect(byName["ds-guard"]).toEqual(["cli:guard init"]);
+    expect(byName["ds-guard"]).toEqual(["cli:guard init --dry-run"]);
   });
 
   it("/ds는 detect.state 순서(0·1·2)와 사람 확인을 본문에 담는다", async () => {

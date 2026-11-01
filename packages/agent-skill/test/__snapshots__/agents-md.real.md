@@ -10,7 +10,7 @@
 | `/ds-check` | 파일의 하드코딩 스타일 값을 찾아 디자인 토큰으로 바꿀 수정안을 제안한다 | MCP 서버 필요 |
 | `/ds-decide` | 중복 컴포넌트·지역 재정의 중 무엇을 표준으로 삼을지 결정 카드로 비교하고, 사람이 고른 결과를 기록한다 | `npx dsmith decide --list --json` |
 | `/ds-detect` | 이 레포의 스타일링 방식, 디자인 시스템, 프레임워크, 시작 상태 감지 결과를 설명한다 | `npx dsmith detect --json` |
-| `/ds-guard` | 하드코딩 스타일이 다시 늘지 않게 ESLint 규칙과 PR 검사(guard --ci) 설정을 레포에 만든다 | `npx dsmith guard init --json` |
+| `/ds-guard` | 하드코딩 스타일이 다시 늘지 않게 ESLint 규칙과 PR 검사(guard --ci) 설정을 레포에 만든다 | `npx dsmith guard init --dry-run --json` |
 | `/ds-init` | audit 결과로 디자인 시스템 초안(W3C 토큰 파일·CSS 변수·TS 상수, 컴포넌트 골격)을 레포에 만들고 커버리지를 보고한다 | `npx dsmith init --dry-run --json` |
 | `/ds-migrate` | 하드코딩 스타일 값을 토큰 참조로, 결정된 중복 컴포넌트를 DS 컴포넌트로 바꾸는 마이그레이션을 계획하고, 사람이 확인하면 새 브랜치에 적용·커밋한다 | `npx dsmith migrate --json` |
 

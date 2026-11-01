@@ -541,11 +541,15 @@ describe("슬래시 명령 본문 ↔ 실제 CLI 정합", () => {
 
     const commands = await loadCommands();
     const body = (name: string): string => commands.find((c) => c.name === name)?.body ?? "";
-    const migrateFields = ["plan.planned", "plan.files", "plan.byCategory", "plan.skipped", "plan.skippedItems", "plan.close", "plan.stale", "plan.components", "plan.componentHeld", "plan.notes", "projected.before", "projected.after", "applied", "actual"];
+    const migrateFields = ["plan.planned", "plan.files", "plan.byCategory", "plan.skipped", "plan.skippedItems", "plan.close", "plan.stale", "plan.components", "plan.componentHeld", "plan.notes", "plan.tokens.loaded", "projected.before", "projected.after", "applied", "actual"];
+    const migrateSpans = spansOf(body("ds-migrate"));
     for (const field of migrateFields) {
       expect(migrate, `migrate --json에 ${field}가 없음`).toContain(field);
-      const last = field.split(".").at(-1) as string;
-      expect(spansOf(body("ds-migrate")), `ds-migrate 본문이 \`${last}\`를 가리키지 않음`).toContain(field === "plan.stale" ? field : last === "before" || last === "after" ? `projected.${last}` : last);
+      // 본문은 JSON 경로 전체로 가리킨다(`plan.planned`). 하위 필드(`plan.files.length`·`plan.stale.changed > 0 …`)로 가리켜도 된다
+      expect(
+        migrateSpans.some((s) => s === field || s.startsWith(`${field}.`)),
+        `ds-migrate 본문이 \`${field}\`를 가리키지 않음`,
+      ).toBe(true);
     }
     for (const field of ["snapshot", "counts", "eslint", "outcomes", "workflow", "notes"]) {
       expect(guardInit, `guard init --json에 ${field}가 없음`).toContain(field);
