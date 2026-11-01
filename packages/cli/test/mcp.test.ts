@@ -96,11 +96,37 @@ describe("dsmith mcp (실제 stdio)", () => {
     try {
       await client.connect(transport);
       await client.listTools();
+      await client.callTool({ name: "list_decisions", arguments: {} });
     } finally {
       await client.close();
     }
     expect(stderr).toContain(`root=${root}`);
     expect(fs.existsSync(path.join(root, ".dsmith", "index.json"))).toBe(true);
+  }, 30_000);
+
+  it("인덱스가 없어도 핸드셰이크는 audit을 기다리지 않고(<1s), 첫 도구 호출이 audit을 만든다", async () => {
+    const root = copyFixture("with-ds-app");
+    const transport = new StdioClientTransport({ command: process.execPath, args: [bin, "mcp", "--root", root, "--no-git"], stderr: "pipe" });
+    let stderr = "";
+    transport.stderr?.on("data", (chunk: Buffer) => (stderr += chunk.toString()));
+    const client = new Client({ name: "test", version: "0" });
+    try {
+      const t0 = Date.now();
+      await client.connect(transport);
+      const handshakeMs = Date.now() - t0;
+      expect(handshakeMs).toBeLessThan(1000);
+      expect(stderr).toContain(`root=${root}`);
+      // 연결만으로는 audit이 시작되지 않는다.
+      expect(fs.existsSync(path.join(root, ".dsmith", "index.json"))).toBe(false);
+      const { tools } = await client.listTools();
+      expect(tools).toHaveLength(6);
+      expect(fs.existsSync(path.join(root, ".dsmith", "index.json"))).toBe(false);
+      const res = await client.callTool({ name: "list_decisions", arguments: {} });
+      expect(res.isError).not.toBe(true);
+      expect(fs.existsSync(path.join(root, ".dsmith", "index.json"))).toBe(true);
+    } finally {
+      await client.close();
+    }
   }, 30_000);
 
   it("stdout에는 JSON-RPC 줄만 나온다", async () => {
