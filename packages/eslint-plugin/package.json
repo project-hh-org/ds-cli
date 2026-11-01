@@ -1,0 +1,55 @@
+{
+  "name": "@dsmith-dev/eslint-plugin",
+  "version": "0.1.0",
+  "description": "ESLint rules for dsmith: no hardcoded style values, prefer design-system components, no deprecated components",
+  "keywords": ["design-system", "dsmith", "eslint", "eslintplugin", "eslint-plugin"],
+  "license": "MIT",
+  "author": "Dahee Hwang <dahee@project-hh.com>",
+  "homepage": "https://github.com/project-hh-org/dsmith#readme",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/project-hh-org/dsmith.git",
+    "directory": "packages/eslint-plugin"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "type": "module",
+  "sideEffects": false,
+  "engines": {
+    "node": ">=20"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "dependencies": {
+    "@dsmith-dev/core": "workspace:*",
+    "@dsmith-dev/extractor-api": "workspace:*",
+    "@dsmith-dev/extractor-css": "workspace:*",
+    "@dsmith-dev/extractor-emotion": "workspace:*",
+    "@dsmith-dev/extractor-inline-style": "workspace:*",
+    "@dsmith-dev/extractor-mui-sx": "workspace:*",
+    "@dsmith-dev/extractor-styled": "workspace:*",
+    "@dsmith-dev/extractor-tailwind": "workspace:*",
+    "picomatch": "^4.0.7"
+  },
+  "peerDependencies": {
+    "eslint": ">=9"
+  },
+  "devDependencies": {
+    "@types/picomatch": "^4.0.3",
+    "eslint": "^10.14.0",
+    "vitest": "^3.0.0"
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  }
+}

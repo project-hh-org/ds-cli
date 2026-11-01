@@ -1,0 +1,18 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "dist"
+  },
+  "include": ["src"],
+  "references": [
+    { "path": "../extractor-api" },
+    { "path": "../core" },
+    { "path": "../extractor-inline-style" },
+    { "path": "../extractor-tailwind" },
+    { "path": "../extractor-css" },
+    { "path": "../extractor-styled" },
+    { "path": "../extractor-emotion" },
+    { "path": "../extractor-mui-sx" }
+  ]
+}
