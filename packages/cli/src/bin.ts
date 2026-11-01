@@ -11,6 +11,7 @@ import {
   runDecideList,
 } from "./commands/decide.js";
 import { detectHints, formatDetectSummary, runDetect } from "./commands/detect.js";
+import { runMcp } from "./commands/mcp.js";
 import { auditWarnings } from "./report/audit-report.js";
 
 interface CommonOptions {
@@ -120,6 +121,26 @@ program
       const record = await runDecideChoose(opts.root, opts.item, opts.choose, opts.note, kind ? { kind } : {});
       out(record, () => `결정 기록: ${record.item} → ${opts.choose} (.dsmith/decisions.json)`);
     }
+  });
+
+interface McpOptions {
+  root?: string;
+  budget?: string;
+  git: boolean;
+}
+
+program
+  .command("mcp")
+  .description("MCP 서버를 stdio로 실행(AI 도구가 띄운다). stdout은 JSON-RPC 전용, 로그는 stderr. 인덱스가 없으면 audit을 1회 실행")
+  .option("--root <dir>", "대상 레포 경로(기본: cwd에서 위로 .dsmith/ 또는 .git이 있는 가장 가까운 디렉터리)")
+  .option("--budget <tokens>", "도구 응답 하나의 추정 토큰 상한(기본 1500)")
+  .option("--no-git", "explain_decision에서 git 이력을 읽지 않는다")
+  .action(async (opts: McpOptions) => {
+    const budget = opts.budget === undefined ? undefined : Number(opts.budget);
+    if (budget !== undefined && (!Number.isInteger(budget) || budget < 1)) {
+      throw new Error(`--budget은 1 이상의 정수여야 합니다: ${opts.budget}`);
+    }
+    await runMcp({ root: opts.root, budget, git: opts.git });
   });
 
 try {

@@ -35,9 +35,11 @@
     "@dsmith-dev/extractor-mui-sx": "workspace:*",
     "@dsmith-dev/extractor-styled": "workspace:*",
     "@dsmith-dev/extractor-tailwind": "workspace:*",
+    "@dsmith-dev/mcp-server": "workspace:*",
     "commander": "^12.1.0"
   },
   "devDependencies": {
+    "@modelcontextprotocol/client": "^2.4.0",
     "vitest": "^3.0.0"
   },
   "scripts": {

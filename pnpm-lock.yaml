@@ -66,10 +66,16 @@ importers:
       '@dsmith-dev/extractor-tailwind':
         specifier: workspace:*
         version: link:../extractor-tailwind
+      '@dsmith-dev/mcp-server':
+        specifier: workspace:*
+        version: link:../mcp-server
       commander:
         specifier: ^12.1.0
         version: 12.1.0
     devDependencies:
+      '@modelcontextprotocol/client':
+        specifier: ^2.4.0
+        version: 2.4.0
       vitest:
         specifier: ^3.0.0
         version: 3.2.7(@types/node@22.20.5)(yaml@2.9.1)
