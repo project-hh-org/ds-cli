@@ -33,15 +33,14 @@ export function componentRule(ruleId: RuleId, description: string): Rule.RuleMod
         "Program:exit"() {
           const a = analyze(context);
           if (a === null) return;
-          for (const f of a.findings) {
+          for (const f of a.componentFindings) {
             if (f.rule !== ruleId || f.component === undefined) continue;
             const name = f.component.name;
             const list = openings.get(f.line) ?? [];
-            const at = list.findIndex((n) => {
-              const tag = (n as unknown as OpeningLike).name;
-              const text = sourceCode.getText(tag as Rule.Node);
-              return text === name || text.startsWith(`${name}.`);
-            });
+            const textOf = (n: Rule.Node): string => sourceCode.getText((n as unknown as OpeningLike).name as Rule.Node);
+            // 같은 줄에 `Button`과 `Button.Group`이 함께 있으면 정확히 같은 태그를 먼저 고른다.
+            let at = list.findIndex((n) => textOf(n) === name);
+            if (at < 0) at = list.findIndex((n) => textOf(n).startsWith(`${name}.`));
             const node = at >= 0 ? list.splice(at, 1)[0] : undefined;
             const data = { message: withStaleNotice(a, f.message) };
             if (node !== undefined) context.report({ node, messageId: "finding", data });

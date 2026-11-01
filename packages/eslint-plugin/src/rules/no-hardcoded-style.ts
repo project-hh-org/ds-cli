@@ -45,7 +45,11 @@ export const noHardcodedStyle: Rule.RuleModule = {
         additionalProperties: false,
       },
     ],
-    messages: { finding: "{{message}}", replace: "{{token}}로 바꾸기" },
+    messages: {
+      finding: "{{message}}",
+      replace: "{{token}}로 바꾸기",
+      replaceStale: "{{token}}로 바꾸기 (guard.json이 낡아 자동 수정하지 않음 — 토큰이 바뀌었는지 확인)",
+    },
   },
   create(context) {
     const options = (context.options[0] ?? {}) as Options;
@@ -54,7 +58,8 @@ export const noHardcodedStyle: Rule.RuleModule = {
       Program() {
         const a = analyze(context);
         if (a === null) return;
-        const findings = a.findings.filter((f) => f.rule === "no-hardcoded-style");
+        const findings = a.styleFindings.filter((f) => f.rule === "no-hardcoded-style");
+        const stale = a.stale.length > 0;
         for (const f of options.reportIneligible === true ? findings : eligibleFindings(findings)) {
           const data = { message: withStaleNotice(a, f.message) };
           const fix = fixOf(a, f);
@@ -64,8 +69,9 @@ export const noHardcodedStyle: Rule.RuleModule = {
           }
           const loc = { start: sourceCode.getLocFromIndex(fix.start), end: sourceCode.getLocFromIndex(fix.end) };
           const edit = (fixer: Rule.RuleFixer): Rule.Fix => fixer.replaceTextRange([fix.start, fix.end], fix.replacement);
-          if (fix.confidence === "exact") context.report({ loc, messageId: "finding", data, fix: edit });
-          else context.report({ loc, messageId: "finding", data, suggest: [{ messageId: "replace", data: { token: fix.token }, fix: edit }] });
+          // 스냅샷이 낡았으면 토큰이 바뀌었거나 없어졌을 수 있다 — exact여도 자동 수정(--fix) 대신 제안으로만 낸다.
+          if (fix.confidence === "exact" && !stale) context.report({ loc, messageId: "finding", data, fix: edit });
+          else context.report({ loc, messageId: "finding", data, suggest: [{ messageId: stale ? "replaceStale" : "replace", data: { token: fix.token }, fix: edit }] });
         }
       },
     };

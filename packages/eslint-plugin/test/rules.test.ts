@@ -154,11 +154,32 @@ describe("no-hardcoded-style", () => {
         errors: [{ message: /가까운 토큰 없음/, suggestions: [] }],
       },
       {
-        // 낡은 스냅샷(토큰 파일 해시 불일치)이어도 검사하되 메시지 앞에 안내
+        // 낡은 스냅샷(토큰 파일 해시 불일치)이면 exact여도 --fix는 하지 않고(output null) 같은 치환을 제안으로만 낸다
         code: `const A = () => <div style={{ color: "#3b82f6" }} />;`,
         ...at(stale, "src/stale.jsx"),
-        output: `const A = () => <div style={{ color: "var(--color-blue-500)" }} />;`,
-        errors: [{ message: /^\[guard\.json이 낡음: tokens\.css 변경됨.*\] 하드코딩 color #3b82f6/ }],
+        output: null,
+        errors: [
+          {
+            message: /^\[guard\.json 낡음: tokens\.css 변경됨.*\] 하드코딩 color #3b82f6/,
+            suggestions: [
+              {
+                messageId: "replaceStale",
+                data: { token: "--color-blue-500" },
+                output: `const A = () => <div style={{ color: "var(--color-blue-500)" }} />;`,
+              },
+            ],
+          },
+        ],
+      },
+      {
+        // 안내는 파일의 첫 메시지에만 붙는다
+        code: `const A = () => <div style={{ color: "#3b82f6", padding: 8 }} />;`,
+        ...at(stale, "src/stale-two.jsx"),
+        output: null,
+        errors: [
+          { message: /^\[guard\.json 낡음: tokens\.css/, suggestions: 1 },
+          { message: /^하드코딩 padding/, suggestions: 1 },
+        ],
       },
       {
         // reportIneligible: true → width도 보고(치환 없음)
@@ -182,6 +203,11 @@ describe("prefer-ds-component", () => {
       { code: `import { Button } from "./legacy/Button";\nexport const A = () => <Button />;`, filename: bare.abs("src/a.jsx") },
       // 결정(preferred)과 같은 module
       { code: `import { Modal } from "../components/ui/modal";\nexport const A = () => <Modal />;`, ...at(withDs, "src/pref-ok.jsx") },
+      // 별칭·namespace여도 DS 모듈이면 통과
+      { code: `import { Button as B } from "../components/ui/button";\nexport const A = () => <B />;`, ...at(withDs, "src/alias-ok.jsx") },
+      { code: `import * as UI from "../components/ui/button";\nexport const A = () => <UI.Button />;`, ...at(withDs, "src/ns-ok.jsx") },
+      // DS에 없는 이름으로 가져온 별칭은 대상 아님
+      { code: `import { Foo as Button } from "./legacy/foo";\nexport const A = () => <Button />;`, ...at(withDs, "src/alias-other.jsx") },
     ],
     invalid: [
       {
@@ -201,6 +227,24 @@ describe("prefer-ds-component", () => {
         ...at(withDs, "src/local.jsx"),
         errors: [{ messageId: "finding", line: 2, column: 24 }],
       },
+      {
+        // 별칭 import
+        code: `import { Button as LegacyBtn } from "./legacy/Button";\nexport const A = () => <LegacyBtn />;`,
+        ...at(withDs, "src/alias.jsx"),
+        errors: [{ message: "Button은 DS 컴포넌트(components/ui/button)를 쓰세요", line: 2, column: 24 }],
+      },
+      {
+        // namespace import
+        code: `import * as L from "./legacy/Button";\nexport const A = () => <L.Button />;`,
+        ...at(withDs, "src/ns.jsx"),
+        errors: [{ message: "Button은 DS 컴포넌트(components/ui/button)를 쓰세요", line: 2, column: 24 }],
+      },
+      {
+        // 같은 줄에 Button.Group이 먼저 있어도 정확히 Button인 태그에 보고
+        code: `import { Button } from "./legacy/Button";\nexport const A = () => <><Button.Group /><Button /></>;`,
+        ...at(withDs, "src/same-line.jsx"),
+        errors: [{ messageId: "finding", line: 2, column: 42 }],
+      },
     ],
   });
 });
@@ -210,8 +254,20 @@ describe("no-deprecated-component", () => {
     valid: [
       { code: `import { Button } from "../components/ui/button";\nexport const A = () => <Button />;`, ...at(withDs, "src/dep-ok.jsx") },
       { code: `import { Dialog } from "../components/ui/dialog";\nexport const A = () => <Dialog />;`, filename: bare.abs("src/dep-none.jsx") },
+      // 다른 모듈에서 Dialog라는 로컬 이름으로 가져온 다른 컴포넌트
+      { code: `import { Foo as Dialog } from "../components/ui/dialog";\nexport const A = () => <Dialog />;`, ...at(withDs, "src/dep-alias-other.jsx") },
     ],
     invalid: [
+      {
+        code: `import { Dialog as Dlg } from "../components/ui/dialog";\nexport const A = () => <Dlg />;`,
+        ...at(withDs, "src/dep-alias.jsx"),
+        errors: [{ message: "Dialog은 deprecated: Use Modal", line: 2, column: 24 }],
+      },
+      {
+        code: `import * as UI from "../components/ui/dialog";\nexport const A = () => <UI.Dialog />;`,
+        ...at(withDs, "src/dep-ns.jsx"),
+        errors: [{ message: "Dialog은 deprecated: Use Modal", line: 2, column: 24 }],
+      },
       {
         code: `import { Dialog } from "../components/ui/dialog";\nexport const A = () => <Dialog />;`,
         ...at(withDs, "src/dep.jsx"),

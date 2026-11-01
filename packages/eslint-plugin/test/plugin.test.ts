@@ -5,7 +5,9 @@ import { Linter } from "eslint";
 import { eligibleFindings, evaluateFile, extractComponentUsage, extractFileStyles, extractorMatchers, parseTsx, ruleContextOf } from "@dsmith-dev/core";
 import plugin from "../src/index.js";
 import { BUILTIN_EXTRACTORS } from "../src/registry.js";
-import { makeRoot, snapshotOf } from "./helpers.js";
+import { createHash } from "node:crypto";
+import { makeRoot, snapshotOf, writeSnapshot } from "./helpers.js";
+import { guardSnapshotHash } from "../src/index.js";
 
 const pkg = JSON.parse(fs.readFileSync(path.resolve(import.meta.dirname, "../package.json"), "utf-8")) as { name: string; version: string };
 
@@ -64,5 +66,51 @@ describe("plugin", () => {
     expect(messages.map((m) => m.ruleId).sort()).toEqual(expected.map((f) => `dsmith/${f.rule}`).sort());
     // 심각도: deprecated는 error(2), 나머지는 warn(1)
     for (const m of messages) expect(m.severity).toBe(m.ruleId === "dsmith/no-deprecated-component" ? 2 : 1);
+  });
+});
+
+describe("recommended의 snapshotHash (eslint --cache 키)", () => {
+  const sha = (s: string) => createHash("sha256").update(s).digest("hex");
+  const hashAt = (cwd: string): unknown => {
+    const prev = process.cwd();
+    process.chdir(cwd);
+    try {
+      return (plugin.configs.recommended.settings as { dsmith: { snapshotHash: string } }).dsmith.snapshotHash;
+    } finally {
+      process.chdir(prev);
+    }
+  };
+
+  it("guard.json 내용의 sha256이고, 파일이 바뀌면 달라진다", () => {
+    const t = makeRoot("hash-change", snapshotOf());
+    const before = hashAt(t.root);
+    expect(before).toBe(sha(fs.readFileSync(t.guardFile, "utf-8")));
+    writeSnapshot(t.guardFile, snapshotOf({ tokens: [] }));
+    const after = hashAt(t.root);
+    expect(after).toBe(sha(fs.readFileSync(t.guardFile, "utf-8")));
+    expect(after).not.toBe(before);
+  });
+
+  it("하위 디렉터리에서도 위로 찾는다", () => {
+    const t = makeRoot("hash-walk", snapshotOf());
+    fs.mkdirSync(t.abs("src/deep"), { recursive: true });
+    expect(hashAt(t.abs("src/deep"))).toBe(sha(fs.readFileSync(t.guardFile, "utf-8")));
+  });
+
+  it("파일이 없으면 none, 던지지 않는다 / 깨진 파일도 해시만 낸다", () => {
+    const t = makeRoot("hash-none", null);
+    expect(hashAt(t.root)).toBe("none");
+    expect(guardSnapshotHash(path.join(t.root, "nope", "deeper"))).toBe("none");
+    const broken = makeRoot("hash-broken", snapshotOf());
+    writeSnapshot(broken.guardFile, "{nope");
+    expect(hashAt(broken.root)).toBe(sha("{nope"));
+  });
+
+  it("접근할 때마다 새로 만든다", () => {
+    const t = makeRoot("hash-fresh", snapshotOf());
+    const a = plugin.configs.recommended;
+    expect(plugin.configs.recommended).not.toBe(a);
+    expect(a.plugins?.["dsmith"]).toBe(plugin);
+    void t;
   });
 });

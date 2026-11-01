@@ -24,16 +24,27 @@ import {
 import type { StyleUsage } from "@dsmith-dev/extractor-api";
 import { BUILTIN_EXTRACTORS } from "./registry.js";
 
+/**
+ * 파일 하나의 분석. 스냅샷·경로 판정은 즉시, 추출은 처음 읽을 때 한 번만 한다 —
+ * 스타일 규칙이 꺼져 있으면 스타일 추출기가, 컴포넌트 규칙이 꺼져 있으면 JSX 파싱이 돌지 않는다.
+ */
 export interface Analysis {
   root: string;
   /** root 상대 POSIX */
   file: string;
-  usages: StyleUsage[];
-  /** evaluateFile 결과 그대로(토큰 치환 대상이 아닌 것 포함 — 거르는 일은 규칙이 한다) */
-  findings: Finding[];
   snapshot: GuardSnapshot;
   /** 스냅샷을 만든 뒤 내용이 바뀌었거나 없어진 토큰 파일(root 상대). 비어 있으면 최신 */
   stale: string[];
+  /** 스타일 추출 결과(지연). styleFindings의 usageIndex가 가리킨다 */
+  readonly usages: StyleUsage[];
+  /** evaluateFile의 스타일 finding 그대로(토큰 치환 대상이 아닌 것 포함 — 거르는 일은 규칙이 한다). 지연 */
+  readonly styleFindings: Finding[];
+  /** evaluateFile의 컴포넌트 finding(prefer-ds-component·no-deprecated-component). 지연 */
+  readonly componentFindings: Finding[];
+  /** 스타일 + 컴포넌트 finding 전체(정렬은 evaluateFile 규칙). 둘 다 추출한다 */
+  readonly findings: Finding[];
+  /** 낡은 스냅샷 안내를 이 파일에서 이미 한 번 냈는지 */
+  staleNoticed: boolean;
 }
 
 interface Loaded {
@@ -152,22 +163,48 @@ function compute(context: Rule.RuleContext): Analysis | null {
   if (entry.excluded(file) || entry.allowed(file)) return null;
 
   const code = context.sourceCode.text;
-  let usages: StyleUsage[];
-  try {
-    usages = extractFileStyles({ root, file, code }, entry.matchers).styles;
-  } catch {
-    return null;
-  }
-  let components: ComponentUsage[] = [];
-  if (SCRIPT_FILE.test(file)) {
+  const lazy = <T>(make: () => T): (() => T) => {
+    let value: { v: T } | undefined;
+    return () => (value ??= { v: make() }).v;
+  };
+  const usages = lazy((): StyleUsage[] => {
     try {
-      components = extractComponentUsage(file, parseTsx(code, file), snapshot.moduleContext.tsPaths, moduleContextOf(snapshot));
+      return extractFileStyles({ root, file, code }, entry.matchers).styles;
     } catch {
-      components = [];
+      return [];
     }
-  }
-  const findings = evaluateFile({ file, usages, components, ...ruleContextOf(snapshot) });
-  return { root, file, usages, findings, snapshot, stale: staleFiles(entry) };
+  });
+  const components = lazy((): ComponentUsage[] => {
+    if (!SCRIPT_FILE.test(file)) return [];
+    try {
+      return extractComponentUsage(file, parseTsx(code, file), snapshot.moduleContext.tsPaths, moduleContextOf(snapshot));
+    } catch {
+      return [];
+    }
+  });
+  const rules = ruleContextOf(snapshot);
+  // 스타일 finding은 usages만, 컴포넌트 finding은 components만 본다 — 한쪽만 필요하면 다른 쪽을 추출하지 않는다.
+  const styleFindings = lazy(() => evaluateFile({ file, usages: usages(), components: [], ...rules }));
+  const componentFindings = lazy(() => evaluateFile({ file, usages: [], components: components(), ...rules }));
+  return {
+    root,
+    file,
+    snapshot,
+    stale: staleFiles(entry),
+    staleNoticed: false,
+    get usages() {
+      return usages();
+    },
+    get styleFindings() {
+      return styleFindings();
+    },
+    get componentFindings() {
+      return componentFindings();
+    },
+    get findings() {
+      return evaluateFile({ file, usages: usages(), components: components(), ...rules });
+    },
+  };
 }
 
 /**
@@ -182,7 +219,9 @@ export function analyze(context: Rule.RuleContext): Analysis | null {
   return result;
 }
 
-/** 낡은 스냅샷이면 메시지 앞에 붙이는 안내 */
+/** 낡은 스냅샷이면 파일의 첫 보고 메시지에만 안내를 붙인다(나머지는 원문 그대로). */
 export function withStaleNotice(a: Analysis, message: string): string {
-  return a.stale.length === 0 ? message : `[guard.json이 낡음: ${a.stale.join(", ")} 변경됨 — dsmith guard init 다시 실행] ${message}`;
+  if (a.stale.length === 0 || a.staleNoticed) return message;
+  a.staleNoticed = true;
+  return `[guard.json 낡음: ${a.stale.join(", ")} 변경됨 — dsmith guard init 다시 실행] ${message}`;
 }
